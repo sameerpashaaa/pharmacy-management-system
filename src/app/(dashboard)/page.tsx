@@ -1,13 +1,13 @@
-import { getServerSession } from 'next-auth'
-import { Package, ShoppingCart, AlertTriangle, TrendingUp, Users, FileText } from 'lucide-react'
+import { Package, ShoppingCart, AlertTriangle, TrendingUp, FileText } from 'lucide-react'
 import type { Metadata } from 'next'
+import { getServerSession } from 'next-auth'
 
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { authOptions } from '@/lib/auth/auth-config'
 import prisma from '@/lib/db/prisma'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDate } from '@/lib/utils/date'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 

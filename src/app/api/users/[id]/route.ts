@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
+import type { NextRequest} from 'next/server';
+import { NextResponse } from 'next/server'
 
-import prisma from '@/lib/db/prisma'
 import { requirePermission } from '@/lib/auth/auth-helpers'
-import { updateUserSchema } from '@/lib/validations/user'
 import { PERMISSIONS } from '@/lib/constants/permissions'
+import prisma from '@/lib/db/prisma'
+import { updateUserSchema } from '@/lib/validations/user'
 
 type RouteParams = { params: { id: string } }
 

@@ -4,15 +4,15 @@
 // Component — UserTable
 // Displays paginated users list with actions
 // ─────────────────────────────────────────────────────────────
-import { useState, useCallback } from 'react'
-import { ColumnDef } from '@tanstack/react-table'
-import { MoreHorizontal, UserPlus, Edit, Trash2, UserCheck, UserX } from 'lucide-react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { UserPlus, Edit, Trash2, UserCheck, UserX } from 'lucide-react'
+import { useCallback } from 'react'
 
 import { DataTable } from '@/components/shared/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { useUiStore } from '@/lib/stores/ui-store'
 import { useToast } from '@/lib/hooks/use-toast'
+import { useUiStore } from '@/lib/stores/ui-store'
 import { formatDate } from '@/lib/utils/date'
 
 // ─── Types ───────────────────────────────────────────────────

@@ -1,4 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import type { NextRequest} from 'next/server';
+import { NextResponse } from 'next/server'
+import { z } from 'zod'
 
 import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
@@ -8,7 +10,6 @@ import {
   getSettings,
   upsertSettings,
 } from '@/lib/organization/org-service'
-import { z } from 'zod'
 
 const updateOrgSchema = z.object({
   name: z.string().min(2).optional(),

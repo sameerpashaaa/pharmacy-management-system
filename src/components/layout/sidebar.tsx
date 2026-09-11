@@ -1,8 +1,5 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useSession } from 'next-auth/react'
 import {
   LayoutDashboard,
   Package,
@@ -26,17 +23,20 @@ import {
   ScrollText,
   Shield,
 } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { signOut } from 'next-auth/react'
 import { toast } from 'sonner'
 
-import { cn } from '@/lib/utils/cn'
-import { ROUTES } from '@/lib/constants/routes'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { ROUTES } from '@/lib/constants/routes'
+import { cn } from '@/lib/utils/cn'
 
 type NavItem = {
   label: string

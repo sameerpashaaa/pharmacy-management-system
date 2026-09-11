@@ -4,6 +4,7 @@
 // Shared Component — EmptyState
 // ─────────────────────────────────────────────────────────────
 import { FileX2 } from 'lucide-react'
+
 import { cn } from '@/lib/utils/cn'
 
 interface EmptyStateProps {

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import type { NextRequest} from 'next/server';
+import { NextResponse } from 'next/server'
 
-import prisma from '@/lib/db/prisma'
 import { requirePermission } from '@/lib/auth/auth-helpers'
-import { createRoleSchema } from '@/lib/validations/user'
 import { PERMISSIONS } from '@/lib/constants/permissions'
+import prisma from '@/lib/db/prisma'
+import { createRoleSchema } from '@/lib/validations/user'
 
 // GET /api/roles
 export async function GET() {

@@ -1,5 +1,5 @@
-import { Suspense } from 'react'
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 
 import { LoginForm } from '@/components/auth/login-form'
 

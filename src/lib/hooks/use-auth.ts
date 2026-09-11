@@ -4,8 +4,9 @@
 // Hook — useAuth
 // ─────────────────────────────────────────────────────────────
 import { useSession } from 'next-auth/react'
-import type { PermissionCode } from '@/lib/constants/permissions'
+
 import { userCan } from '@/lib/auth/auth-helpers'
+import type { PermissionCode } from '@/lib/constants/permissions'
 
 export function useAuth() {
   const { data: session, status } = useSession()

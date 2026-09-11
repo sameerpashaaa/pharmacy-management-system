@@ -119,10 +119,10 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (token && session.user) {
-        session.user.id = token.id as string
-        session.user.permissions = token.permissions as string[]
-        session.user.roles = token.roles as string[]
-        session.user.branchId = token.branchId as string | null
+        session.user.id = token.id
+        session.user.permissions = token.permissions
+        session.user.roles = token.roles
+        session.user.branchId = token.branchId
       }
       return session
     },
@@ -133,10 +133,10 @@ export const authOptions: NextAuthOptions = {
       if (token?.id) {
         await prisma.auditLog.create({
           data: {
-            userId: token.id as string,
+            userId: token.id,
             action: 'LOGOUT',
             entity: 'User',
-            entityId: token.id as string,
+            entityId: token.id,
           },
         })
       }

@@ -4,12 +4,11 @@
 // Component — RoleAssignment
 // Assign / remove roles from a user inline
 // ─────────────────────────────────────────────────────────────
+import { Check, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Check, Plus, X } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/shared/loading-spinner'
+import { Button } from '@/components/ui/button'
 import { useToast } from '@/lib/hooks/use-toast'
 
 type Role = { id: string; name: string; displayName: string }

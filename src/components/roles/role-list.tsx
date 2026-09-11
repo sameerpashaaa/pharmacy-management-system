@@ -4,15 +4,15 @@
 // Component — RoleList
 // Shows all roles with permission counts and actions
 // ─────────────────────────────────────────────────────────────
-import { useState, useCallback } from 'react'
-import { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { Edit, Trash2, Shield, Lock } from 'lucide-react'
+import { useCallback } from 'react'
 
 import { DataTable } from '@/components/shared/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { useUiStore } from '@/lib/stores/ui-store'
 import { useToast } from '@/lib/hooks/use-toast'
+import { useUiStore } from '@/lib/stores/ui-store'
 
 // ─── Types ───────────────────────────────────────────────────
 

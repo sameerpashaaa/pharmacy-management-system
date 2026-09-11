@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 
-import prisma from '@/lib/db/prisma'
 import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
+import prisma from '@/lib/db/prisma'
 
 // GET /api/permissions
 export async function GET() {

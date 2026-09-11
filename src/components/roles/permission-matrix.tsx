@@ -4,8 +4,8 @@
 // Component — PermissionMatrix
 // Grid of all permissions grouped by module, with checkboxes
 // ─────────────────────────────────────────────────────────────
-import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 import { LoadingSpinner } from '@/components/shared/loading-spinner'
 import { useToast } from '@/lib/hooks/use-toast'

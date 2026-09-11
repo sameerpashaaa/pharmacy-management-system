@@ -1,7 +1,8 @@
 import { getServerSession } from 'next-auth'
 
-import { authOptions } from './auth-config'
 import type { PermissionCode } from '@/lib/constants/permissions'
+
+import { authOptions } from './auth-config'
 
 /**
  * Get the current session on the server side (in API routes / Server Components)

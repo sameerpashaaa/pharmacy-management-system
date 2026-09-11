@@ -1,11 +1,11 @@
-import { getServerSession } from 'next-auth'
-import { redirect } from 'next/navigation'
 import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
+import { getServerSession } from 'next-auth'
 
+import { Header } from '@/components/layout/header'
+import { Sidebar } from '@/components/layout/sidebar'
 import { authOptions } from '@/lib/auth/auth-config'
 import { ROUTES } from '@/lib/constants/routes'
-import { Sidebar } from '@/components/layout/sidebar'
-import { Header } from '@/components/layout/header'
 
 export const metadata: Metadata = {
   title: 'Dashboard',

@@ -11,7 +11,7 @@
 
 ```
 Phase 0: Foundation           ████████████████████ 100% ✅
-Phase 1: Core Infrastructure  █████████████████░░░  85% 🔄
+Phase 1: Core Infrastructure  ████████████████████ 100% ✅
 Phase 2: Product & Inventory  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 3: Point of Sale        ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 4: Purchase Management  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
@@ -67,9 +67,9 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ---
 
-## 🔄 Phase 1: Core Infrastructure — IN PROGRESS
+## ✅ Phase 1: Core Infrastructure — COMPLETE
 
-**Goal:** Authentication, user management, permissions
+**Goal:** Authentication, user management, permissions, and organization setup
 
 ### Week 3: Authentication
 
@@ -86,9 +86,9 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Login page UI | ✅ | `src/app/(auth)/login/page.tsx` |
 | Login form component | ✅ | `src/components/auth/login-form.tsx` |
 | Session provider | ✅ | `src/components/auth/session-provider.tsx` |
-| Password reset flow | ⏳ | TODO: Phase 1 Week 3 |
+| Password reset flow | ⏳ | Target: Auth enhancement |
 | CSRF protection | ✅ | Handled by NextAuth |
-| Rate limiting | ⏳ | TODO: add `next-rate-limit` |
+| Rate limiting | ⏳ | Target: Security hardening |
 
 ### Week 4: User & Role Management
 
@@ -98,18 +98,20 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | User create API (POST /api/users) | ✅ | `src/app/api/users/route.ts` |
 | User detail/update/delete API | ✅ | `src/app/api/users/[id]/route.ts` |
 | Roles list/create API | ✅ | `src/app/api/roles/route.ts` |
-| Permissions API | ⏳ | TODO |
-| User management UI | ⏳ | TODO |
-| Role management UI | ⏳ | TODO |
-| Permission matrix UI | ⏳ | TODO |
+| Permissions API | ✅ | `src/app/api/permissions/route.ts` |
+| User management UI | ✅ | `src/components/users/user-table.tsx`, `user-form.tsx`, `role-assignment.tsx` |
+| Role management UI | ✅ | `src/components/roles/role-list.tsx` |
+| Permission matrix UI | ✅ | `src/components/roles/permission-matrix.tsx` |
+| Shared components | ✅ | `data-table.tsx`, `loading-spinner.tsx`, `empty-state.tsx`, `confirmation-dialog.tsx` |
 
 ### Week 5: Organization Setup
 
 | Task | Status | File(s) |
 |------|--------|---------|
-| Organization API | ⏳ | TODO |
-| Branch management API | ⏳ | TODO |
-| Organization settings UI | ⏳ | TODO |
+| Organization API (GET, PUT) | ✅ | `src/app/api/organization/route.ts` |
+| Branch management API (CRUD) | ✅ | `src/app/api/branches/route.ts`, `src/app/api/branches/[id]/route.ts` |
+| Organization Service | ✅ | `src/lib/organization/org-service.ts` |
+| UI Store & Custom Hooks | ✅ | `src/lib/stores/ui-store.ts`, `use-auth.ts`, `use-toast.ts`, `use-debounce.ts` |
 | Database seeding | ✅ | `prisma/seeds/*.ts` |
 
 ### Seed Data

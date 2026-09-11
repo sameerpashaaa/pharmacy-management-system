@@ -4,12 +4,12 @@
 // Shared Component — DataTable
 // Built on TanStack Table v8 with shadcn Table primitives
 // ─────────────────────────────────────────────────────────────
-import { useState } from 'react'
-import {
+import type {
   ColumnDef,
   ColumnFiltersState,
   SortingState,
-  VisibilityState,
+  VisibilityState} from '@tanstack/react-table';
+import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -18,10 +18,12 @@ import {
   useReactTable,
 } from '@tanstack/react-table'
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search } from 'lucide-react'
+import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils/cn'
+
 import { EmptyState } from './empty-state'
 import { LoadingSpinner } from './loading-spinner'
 
