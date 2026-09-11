@@ -1,0 +1,138 @@
+// ─────────────────────────────────────────────────────────────
+// Constants — App Routes
+// ─────────────────────────────────────────────────────────────
+
+export const ROUTES = {
+  // Auth
+  LOGIN: '/login',
+  LOGOUT: '/logout',
+  RESET_PASSWORD: '/reset-password',
+  REGISTER: '/register',
+
+  // Dashboard
+  DASHBOARD: '/',
+
+  // POS
+  POS: '/pos',
+  INVOICES: '/invoices',
+
+  // Products
+  PRODUCTS: '/products',
+  PRODUCTS_NEW: '/products/new',
+  PRODUCT: (id: string) => `/products/${id}`,
+  PRODUCT_EDIT: (id: string) => `/products/${id}/edit`,
+  CATEGORIES: '/products/categories',
+
+  // Inventory
+  INVENTORY: '/inventory',
+  INVENTORY_ADJUSTMENTS: '/inventory/adjustments',
+  INVENTORY_MOVEMENTS: '/inventory/movements',
+
+  // Batches
+  BATCHES: '/batches',
+  BATCHES_EXPIRING: '/batches/expiring',
+  BATCH: (id: string) => `/batches/${id}`,
+
+  // Purchases
+  PURCHASES: '/purchases',
+  PURCHASES_NEW: '/purchases/new',
+  PURCHASE: (id: string) => `/purchases/${id}`,
+  PURCHASE_RECEIVE: (id: string) => `/purchases/${id}/receive`,
+  PURCHASE_RETURNS: '/purchases/returns',
+
+  // Sales
+  SALES: '/sales',
+  SALE: (id: string) => `/sales/${id}`,
+
+  // Returns
+  SALE_RETURNS: '/returns/sales',
+  SALE_RETURNS_NEW: '/returns/sales/new',
+
+  // Prescriptions
+  PRESCRIPTIONS: '/prescriptions',
+  PRESCRIPTIONS_PENDING: '/prescriptions/pending',
+  PRESCRIPTION: (id: string) => `/prescriptions/${id}`,
+
+  // Customers
+  CUSTOMERS: '/customers',
+  CUSTOMERS_NEW: '/customers/new',
+  CUSTOMER: (id: string) => `/customers/${id}`,
+  CUSTOMER_LEDGER: (id: string) => `/customers/${id}/ledger`,
+
+  // Suppliers
+  SUPPLIERS: '/suppliers',
+  SUPPLIERS_NEW: '/suppliers/new',
+  SUPPLIER: (id: string) => `/suppliers/${id}`,
+
+  // Finance
+  FINANCE: '/finance',
+  RECEIVABLES: '/finance/receivables',
+  PAYABLES: '/finance/payables',
+
+  // GST
+  GST: '/gst',
+  GST_REPORTS: '/gst/reports',
+
+  // Expiry
+  EXPIRY: '/expiry',
+
+  // Reports
+  REPORTS: '/reports',
+  REPORTS_SALES: '/reports/sales',
+  REPORTS_PURCHASES: '/reports/purchases',
+  REPORTS_INVENTORY: '/reports/inventory',
+
+  // Users & Roles
+  USERS: '/users',
+  USERS_NEW: '/users/new',
+  ROLES: '/roles',
+
+  // Audit
+  AUDIT: '/audit',
+
+  // Settings
+  SETTINGS: '/settings',
+  SETTINGS_ORGANIZATION: '/settings/organization',
+  SETTINGS_BRANCHES: '/settings/branches',
+  SETTINGS_GENERAL: '/settings/general',
+  SETTINGS_POS: '/settings/pos',
+} as const
+
+// Routes that don't require authentication
+export const PUBLIC_ROUTES = [
+  ROUTES.LOGIN,
+  ROUTES.REGISTER,
+  ROUTES.RESET_PASSWORD,
+  '/api/auth',
+]
+
+// API base routes
+export const API = {
+  AUTH: {
+    LOGIN: '/api/auth/login',
+    LOGOUT: '/api/auth/logout',
+    SESSION: '/api/auth/session',
+    RESET_PASSWORD: '/api/auth/reset-password',
+  },
+  USERS: '/api/users',
+  ROLES: '/api/roles',
+  PERMISSIONS: '/api/permissions',
+  PRODUCTS: '/api/products',
+  INVENTORY: '/api/inventory',
+  BATCHES: '/api/batches',
+  SALES: '/api/sales',
+  PURCHASES: '/api/purchases',
+  CUSTOMERS: '/api/customers',
+  SUPPLIERS: '/api/suppliers',
+  RETURNS: '/api/returns',
+  PRESCRIPTIONS: '/api/prescriptions',
+  ORGANIZATION: '/api/organization',
+  BRANCHES: '/api/branches',
+  SETTINGS: '/api/settings',
+  REPORTS: '/api/reports',
+  GST: '/api/gst',
+  EXPIRY: '/api/expiry',
+  AUDIT: '/api/audit',
+  NOTIFICATIONS: '/api/notifications',
+  FILES: '/api/files',
+} as const
