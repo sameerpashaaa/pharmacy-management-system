@@ -419,6 +419,16 @@ Navigate to `http://localhost:3000/login` and use:
 
 ## 🚀 Next Steps
 
+### 📄 Documentation Reconciliation (Baseline) — Sept 2026
+
+No source code was changed by this audit. A documentation-vs-code reconciliation is captured in **`documentation/IMPLEMENTATION_BASELINE.md`** (first file to read before starting a feature).
+
+- `documentation/` contains **50 tracked files** (added in `3a2e08c`); `README.md` still says "38 files" — fix the count when the suite is next maintained.
+- **9 placeholders** (title-only): SRS, BRD, Use_Case_Documents, User_Stories_Product_Backlog, Scope_Statement, Stakeholder_Analysis, HIPAA, FDA_21CFR_Part11, Data_Privacy_Policy. Templates without data: Bug_Defect_Reports, UAT_Sign_Off, Penetration_Testing_Reports. `Validation_Verification_Report.md` claims unverified "Pass" results (no k6/pentest/FEFO/audit-hash evidence).
+- **Documented-as-design vs code**: architecture/API/DB/security/ops docs describe the rejected React-SPA + Express + Redis + JWT style; the actual code is Next.js 14 App Router + Prisma + NextAuth (permission-based).
+- **Flagged conflicts (see baseline §9–§10)**: adjustment reason codes; approval tiers (≤10 self / 11–50 / >50 vs single-tier `inventory:approve_adjustment`); RBAC role set (`owner/manager/pharmacist/cashier/purchase_manager/accountant` vs doc roles); seeded Pharmacist has only `inventory:read`; `storage_condition` missing from `products`; no TOTP MFA / password policy; no `prisma/migrations/` (docs say Knex).
+- **Statuses and percentages are unchanged** by this reconciliation.
+
 ### Product & Inventory — Outstanding Work (next session)
 
 - [ ] **Batch Management + FEFO** — batch lifecycle, expiry detection, FEFO allocation (`batches`, `batch_status_log`, `batch_disposals`)
@@ -435,4 +445,4 @@ Navigate to `http://localhost:3000/login` and use:
 
 ---
 
-_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management + Product CSV Import complete, 194 tests passing_
+_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management + Product CSV Import complete, 194 tests passing. Documentation reconciliation baseline added (see `documentation/IMPLEMENTATION_BASELINE.md`)._
