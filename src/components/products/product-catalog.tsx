@@ -9,6 +9,7 @@ import { Search } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
+import { ProductImportDialog } from '@/components/products/product-import-dialog'
 import { ProductTable, type ProductRow } from '@/components/products/product-table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +30,7 @@ interface ProductCatalogProps {
   canCreate: boolean
   canUpdate: boolean
   canDelete: boolean
+  canImport: boolean
 }
 
 interface CategoryOption {
@@ -42,6 +44,7 @@ export function ProductCatalog({
   canCreate,
   canUpdate,
   canDelete,
+  canImport,
 }: ProductCatalogProps) {
   const router = useRouter()
   const toast = useToast()
@@ -56,6 +59,7 @@ export function ProductCatalog({
   const [isActive, setIsActive] = useState<string>('all')
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [loading, setLoading] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   // Debounce search
   useEffect(() => {
@@ -189,6 +193,11 @@ export function ProductCatalog({
           >
             Next
           </Button>
+          {canImport && (
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+              Import CSV
+            </Button>
+          )}
           {canCreate && (
             <Button size="sm" onClick={() => router.push(ROUTES.PRODUCTS_NEW)}>
               Add Product
@@ -196,6 +205,12 @@ export function ProductCatalog({
           )}
         </div>
       </div>
+
+      <ProductImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={() => load({ reset: true })}
+      />
 
       <ProductTable
         products={products}

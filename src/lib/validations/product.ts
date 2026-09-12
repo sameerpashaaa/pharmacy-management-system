@@ -92,6 +92,89 @@ export const updateProductSchema = createProductSchema.partial().extend({
 export type CreateProductInput = z.infer<typeof createProductSchema>
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
 
+// ─── CSV Import Schemas ──────────────────────────────────────
+
+// CSV cells arrive as strings. Coerce numeric/boolean cells WITHOUT
+// silently mangling invalid values: unparseable input is returned as-is
+// so the underlying schema rejects it (e.g. "abc" is never turned into 0).
+function toCsvNumber(val: unknown): unknown {
+  if (val === null || val === undefined) return undefined
+  const s = String(val).trim()
+  if (s === '') return undefined
+  const n = Number(s)
+  return Number.isFinite(n) ? n : val
+}
+
+const coerceNumber = (schema: z.ZodNumber) => z.preprocess(toCsvNumber, schema)
+
+// Empty CSV cells on optional numerics act like an unspecified field
+// (preprocess maps "" -> undefined, so the inner schema must accept that).
+const coerceOptionalNumber = (schema: z.ZodNumber) => z.preprocess(toCsvNumber, schema.optional())
+
+const toCsvBoolean = (val: unknown): unknown => {
+  if (val === null || val === undefined) return undefined
+  const s = String(val).trim().toLowerCase()
+  if (s === 'true' || s === 'yes' || s === '1') return true
+  if (s === 'false' || s === 'no' || s === '0') return false
+  return val
+}
+
+const coerceBoolean = z.preprocess(toCsvBoolean, z.boolean())
+
+// Empty cell acts like an unspecified field (so enum defaults apply).
+const coerceEnum = <const T extends readonly [string, ...string[]]>(values: T) =>
+  z.preprocess((val) => {
+    if (val === null || val === undefined) return undefined
+    const s = String(val).trim()
+    if (s === '') return undefined
+    return s.toUpperCase()
+  }, z.enum(values))
+
+export const productImportRowSchema = z.object({
+  name: z.string().min(2, 'Product name must be at least 2 characters').max(200),
+  genericName: z.string().max(200).optional(),
+  sku: z
+    .string()
+    .min(2, 'SKU must be at least 2 characters')
+    .max(50)
+    .regex(/^[A-Z0-9\-]+$/, 'SKU can only contain uppercase letters, numbers, and hyphens'),
+  barcode: z
+    .string()
+    .max(50)
+    .regex(/^[0-9A-Za-z\-]*$/, 'Barcode can only contain alphanumeric characters and hyphens')
+    .optional()
+    .or(z.literal('')),
+  description: z.string().max(2000).optional(),
+  manufacturer: z.string().max(100).optional(),
+  composition: z.string().max(1000).optional(),
+  drugSchedule: coerceEnum(['NONE', 'H', 'H1', 'X', 'G', 'J'] as const).default('NONE'),
+  isPrescriptionRequired: coerceBoolean.default(false),
+  unitOfMeasure: z.string().min(1).max(20).default('Strip'),
+  tabsPerStrip: coerceOptionalNumber(z.number().int().positive()),
+  packSize: z.string().max(50).optional(),
+  hsnCode: z.string().max(20).optional(),
+  gstRate: coerceNumber(z.number().min(0).max(100).step(0.01)).default(12),
+  cgstRate: coerceNumber(z.number().min(0).max(100).step(0.01)).default(6),
+  sgstRate: coerceNumber(z.number().min(0).max(100).step(0.01)).default(6),
+  igstRate: coerceNumber(z.number().min(0).max(100).step(0.01)).default(12),
+  isGstExempt: coerceBoolean.default(false),
+  mrp: coerceNumber(z.number().min(0).max(999999.99).step(0.01)),
+  ptr: coerceOptionalNumber(z.number().min(0).max(999999.99).step(0.01)),
+  costPrice: coerceOptionalNumber(z.number().min(0).max(999999.99).step(0.01)),
+  minStockLevel: coerceNumber(z.number().int().min(0)).default(10),
+  maxStockLevel: coerceOptionalNumber(z.number().int().min(0)),
+  reorderLevel: coerceNumber(z.number().int().min(0)).default(20),
+  imageUrl: z.string().url().optional().or(z.literal('')),
+  isActive: coerceBoolean.default(true),
+  isReturnable: coerceBoolean.default(true),
+  // Semicolon-separated category slugs or names; resolved against the DB.
+  categories: z.string().min(1, 'At least one category is required'),
+  // Semicolon-separated secondary barcodes (become ProductBarcode rows).
+  additionalBarcodes: z.string().optional(),
+})
+
+export type ProductImportRow = z.infer<typeof productImportRowSchema>
+
 // ─── Query Parameters ─────────────────────────────────────────
 
 // Parse "true"/"false" query-string booleans correctly

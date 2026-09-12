@@ -12,7 +12,7 @@
 ```
 Phase 0: Foundation           ████████████████████ 100% ✅
 Phase 1: Core Infrastructure  ████████████████████ 100% ✅
-Phase 2: Product & Inventory  ████████░░░░░░░░░░░░  40% 🔧
+Phase 2: Product & Inventory  ████████████░░░░░░░░  60% 🔧
 Phase 3: Point of Sale        ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 4: Purchase Management  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 5: Prescriptions/Returns░░░░░░░░░░░░░░░░░░░░   0% ⏳
@@ -181,9 +181,21 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 - **Stock status filter** is computed in memory (status is derived, not stored) — acceptable at this scale.
 - **POST create/approve/reject return a scalar `AdjustmentSummary`** (no product/branch relations — `StockAdjustment` only relates to the creator); the UI refetches lists after mutations.
 
-### ⏳ Remaining Phase 2 Tasks (NOT in this commit)
+### ✅ Product CSV Import — COMPLETE
 
-- [ ] Product CSV import
+| Task                                                           | Status | File(s)                                                                                                             |
+| -------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------- |
+| CSV column contract + limits (2 MB / 1000 rows)                | ✅     | `src/lib/constants/product-import.ts`                                                                               |
+| Import service (all-or-nothing, transactional)                 | ✅     | `src/lib/products/product-import.ts`                                                                                |
+| Row validation + coercion (no silent mangling)                 | ✅     | `src/lib/validations/product.ts` (`productImportRowSchema`)                                                         |
+| Import API (permission `products:import`, audit log)           | ✅     | `src/app/api/products/import/route.ts`                                                                              |
+| Import dialog + catalog button (permission-gated)              | ✅     | `src/components/products/product-import-dialog.tsx`, `product-catalog.tsx`                                          |
+| Categories by slug/name, active-HSN check, additional barcodes | ✅     | Service `getCategoryOptions` / `getHsnCodes` + `ProductBarcode` rows                                                |
+| Duplicate guards (in-file SKU/barcode, DB sku/barcode)         | ✅     | Service pre-check + transaction (P2002 → 409)                                                                       |
+| Tests (schema 11, service 34, route 10, dialog 5)              | ✅     | `product-import-schema.test.ts`, `product-import.test.ts`, `import/route.test.ts`, `product-import-dialog.test.tsx` |
+
+### ⏳ Remaining Phase 2 Tasks
+
 - [ ] Batch management with FEFO logic
 - [ ] Expiry detection
 
@@ -242,7 +254,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Jest configuration       | ✅     | `jest.config.ts` with Next.js integration, path aliases |
 | Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
 | React Testing Library    | ✅     | Component testing support configured                    |
-| Unit + integration tests | ✅     | 16 test suites, **132 tests passing**                   |
+| Unit + integration tests | ✅     | 20 test suites, **194 tests passing**                   |
 | TypeScript support       | ✅     | ts-jest with tsconfig.json                              |
 | Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                |
 
@@ -254,10 +266,14 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | `src/lib/validations/user.test.ts`                             | 9     | Zod schema validation tests                             |
 | `src/components/shared/empty-state.test.tsx`                   | 4     | React component tests                                   |
 | `src/lib/validations/product.test.ts`                          | 31    | Product/Category/HSN/barcode schema tests               |
+| `src/lib/validations/product-import-schema.test.ts`            | 11    | CSV row schema: coercion, defaults, rejections          |
 | `src/lib/products/product-service.test.ts`                     | 11    | Service CRUD, tree, uniqueness, pagination              |
+| `src/lib/products/product-import.test.ts`                      | 34    | CSV service: file/parse/row/duplicate/tx behavior       |
 | `src/app/api/categories/route.test.ts`                         | 8     | Categories GET/POST auth + validation + conflict        |
 | `src/app/api/products/route.test.ts`                           | 8     | Products GET/POST auth + validation + conflicts + audit |
+| `src/app/api/products/import/route.test.ts`                    | 10    | Import POST auth, file/size, audit, error mapping       |
 | `src/components/products/product-table.test.tsx`               | 6     | Product table rendering, badges, empty state            |
+| `src/components/products/product-import-dialog.test.tsx`       | 5     | Import dialog select/validate/result/error UX           |
 | `src/lib/inventory/inventory-service.test.ts`                  | 19    | Inventory list/status, movements, adjustment workflow   |
 | `src/app/api/inventory/route.test.ts`                          | 5     | Inventory GET auth + branch scope + validation + 500    |
 | `src/app/api/inventory/movements/route.test.ts`                | 4     | Movements GET auth + filters + validation               |
@@ -405,7 +421,6 @@ Navigate to `http://localhost:3000/login` and use:
 
 ### Product & Inventory — Outstanding Work (next session)
 
-- [ ] **Product CSV import** — bulk upload with SKU/barcode validation, permission `products:import`
 - [ ] **Batch Management + FEFO** — batch lifecycle, expiry detection, FEFO allocation (`batches`, `batch_status_log`, `batch_disposals`)
 - [ ] **Expiry detection** — expiring/expired views (`/expiry/expiring`, `/expiry/expired`)
 - [ ] **POS, Purchases, Reports** (Phases 3+)
@@ -420,4 +435,4 @@ Navigate to `http://localhost:3000/login` and use:
 
 ---
 
-_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management complete, 132 tests passing_
+_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management + Product CSV Import complete, 194 tests passing_
