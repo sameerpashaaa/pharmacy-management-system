@@ -12,7 +12,7 @@
 ```
 Phase 0: Foundation           ████████████████████ 100% ✅
 Phase 1: Core Infrastructure  ████████████████████ 100% ✅
-Phase 2: Product & Inventory  ████░░░░░░░░░░░░░░░░  20% 🔧
+Phase 2: Product & Inventory  ████████░░░░░░░░░░░░  40% 🔧
 Phase 3: Point of Sale        ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 4: Purchase Management  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 5: Prescriptions/Returns░░░░░░░░░░░░░░░░░░░░   0% ⏳
@@ -153,11 +153,37 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Audit log on create + delete                          | ✅     | API routes call `prisma.auditLog.create`                                                   |
 | Permission seeds (products:*, categories:manage)      | ✅     | `prisma/seeds/permissions.ts`, `prisma/seeds/roles.ts`                                     |
 
+### ✅ Inventory Management — COMPLETE
+
+| Task                                                       | Status | File(s)                                                                                             |
+| ---------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------- |
+| Inventory service (list, search, status, pagination)       | ✅     | `src/lib/inventory/inventory-service.ts`                                                            |
+| Branch access control (org-scoped)                         | ✅     | `src/lib/inventory/branch-access.ts`                                                                |
+| Validation schemas (movement, adjustment, query)           | ✅     | `src/lib/validations/inventory.ts`                                                                  |
+| Stock adjustment service (auto-approve ≤10, workflow)      | ✅     | `src/lib/inventory/inventory-service.ts` (threshold + PENDING/APPROVED/REJECTED)                    |
+| Stock apply + movement recording (transactional, CAS)      | ✅     | `applyStockAdjustment` + `InventoryMovement` (ADJUSTMENT, before/after, reference)                  |
+| Inventory API (list with branch/status filters)            | ✅     | `src/app/api/inventory/route.ts`                                                                    |
+| Movements API (list, filters)                              | ✅     | `src/app/api/inventory/movements/route.ts`                                                          |
+| Adjustments API (list + create + audit log)                | ✅     | `src/app/api/inventory/adjustments/route.ts`                                                        |
+| Approve / reject APIs (+ audit log)                        | ✅     | `src/app/api/inventory/adjustments/[id]/approve                                                     | reject/route.ts` |
+| Accessible branches API (filter options)                   | ✅     | `src/app/api/inventory/branches/route.ts`                                                           |
+| Stock overview page (server-rendered, permission-gated)    | ✅     | `src/app/(dashboard)/inventory/page.tsx`, `src/components/inventory/inventory-overview.tsx`         |
+| Movements page                                             | ✅     | `src/app/(dashboard)/inventory/movements/page.tsx`, `src/components/inventory/movements-view.tsx`   |
+| Adjustment page + approve/reject UI + create dialog        | ✅     | `src/app/(dashboard)/inventory/adjustments/page.tsx`, `adjustments-view.tsx`, `adjustment-form.tsx` |
+| Tables (inventory, movements, adjustments)                 | ✅     | `src/components/inventory/*-table.tsx`                                                              |
+| Concurrency safety (optimistic CAS → 409, no double-apply) | ✅     | `updateMany` guarded by `updatedAt` + `status=PENDING`                                              |
+
+#### Known Limitations (Inventory)
+
+- **Session has no `organizationId`** — org isolation resolves through the user's `branchId`; users without a branch assignment are treated as global (consistent with the app's single-org model).
+- **Optimistic concurrency fails fast (409)** — no automated retry; the user reviews and resubmits.
+- **Role seeds vs RBAC doc**: RBAC_Matrix.md says Pharmacists can adjust stock, but the seeded Pharmacist role only has `inventory:read`. Enforcement is permission-driven; if adjustment-by-pharmacist is required, grant `inventory:adjust` to the Pharmacist role in seeds.
+- **Stock status filter** is computed in memory (status is derived, not stored) — acceptable at this scale.
+- **POST create/approve/reject return a scalar `AdjustmentSummary`** (no product/branch relations — `StockAdjustment` only relates to the creator); the UI refetches lists after mutations.
+
 ### ⏳ Remaining Phase 2 Tasks (NOT in this commit)
 
 - [ ] Product CSV import
-- [ ] Inventory tracking core
-- [ ] Stock adjustment workflow
 - [ ] Batch management with FEFO logic
 - [ ] Expiry detection
 
@@ -216,22 +242,30 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Jest configuration       | ✅     | `jest.config.ts` with Next.js integration, path aliases |
 | Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
 | React Testing Library    | ✅     | Component testing support configured                    |
-| Unit + integration tests | ✅     | 8 test suites, **81 tests passing**                     |
+| Unit + integration tests | ✅     | 16 test suites, **132 tests passing**                   |
 | TypeScript support       | ✅     | ts-jest with tsconfig.json                              |
 | Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                |
 
 ### Test Files
 
-| File                                             | Tests | Purpose                                                 |
-| ------------------------------------------------ | ----- | ------------------------------------------------------- |
-| `src/lib/utils/cn.test.ts`                       | 4     | Utility function tests                                  |
-| `src/lib/validations/user.test.ts`               | 9     | Zod schema validation tests                             |
-| `src/components/shared/empty-state.test.tsx`     | 4     | React component tests                                   |
-| `src/lib/validations/product.test.ts`            | 31    | Product/Category/HSN/barcode schema tests               |
-| `src/lib/products/product-service.test.ts`       | 11    | Service CRUD, tree, uniqueness, pagination              |
-| `src/app/api/categories/route.test.ts`           | 8     | Categories GET/POST auth + validation + conflict        |
-| `src/app/api/products/route.test.ts`             | 8     | Products GET/POST auth + validation + conflicts + audit |
-| `src/components/products/product-table.test.tsx` | 6     | Product table rendering, badges, empty state            |
+| File                                                           | Tests | Purpose                                                 |
+| -------------------------------------------------------------- | ----- | ------------------------------------------------------- |
+| `src/lib/utils/cn.test.ts`                                     | 4     | Utility function tests                                  |
+| `src/lib/validations/user.test.ts`                             | 9     | Zod schema validation tests                             |
+| `src/components/shared/empty-state.test.tsx`                   | 4     | React component tests                                   |
+| `src/lib/validations/product.test.ts`                          | 31    | Product/Category/HSN/barcode schema tests               |
+| `src/lib/products/product-service.test.ts`                     | 11    | Service CRUD, tree, uniqueness, pagination              |
+| `src/app/api/categories/route.test.ts`                         | 8     | Categories GET/POST auth + validation + conflict        |
+| `src/app/api/products/route.test.ts`                           | 8     | Products GET/POST auth + validation + conflicts + audit |
+| `src/components/products/product-table.test.tsx`               | 6     | Product table rendering, badges, empty state            |
+| `src/lib/inventory/inventory-service.test.ts`                  | 19    | Inventory list/status, movements, adjustment workflow   |
+| `src/app/api/inventory/route.test.ts`                          | 5     | Inventory GET auth + branch scope + validation + 500    |
+| `src/app/api/inventory/movements/route.test.ts`                | 4     | Movements GET auth + filters + validation               |
+| `src/app/api/inventory/adjustments/route.test.ts`              | 6     | Adjustments GET/POST auth + validation + audit          |
+| `src/app/api/inventory/branches/route.test.ts`                 | 2     | Accessible branches GET                                 |
+| `src/app/api/inventory/adjustments/[id]/approve/route.test.ts` | 4     | Approve POST auth + audit + 404/409 errors              |
+| `src/app/api/inventory/adjustments/[id]/reject/route.test.ts`  | 4     | Reject POST auth + audit + 404/409 errors               |
+| `src/components/inventory/adjustments-table.test.tsx`          | 6     | Adjustments table rendering, actions, empty state       |
 
 ### CI/CD Pipeline
 
@@ -258,7 +292,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 ```bash
 npm run type-check   # ✅ PASS
 npm run lint         # ✅ PASS
-npm run test         # ✅ PASS (81 tests)
+npm run test         # ✅ PASS (132 tests)
 npm run build        # ✅ PASS
 ```
 
@@ -276,7 +310,7 @@ npm run build        # ✅ PASS
 
 ### Current State: PRODUCT MASTER TESTED
 
-Product Master (Category, Product, HSN, Barcode) is now fully covered with unit, API integration, and component tests (81 total, up from 17 smoke tests). Remaining coverage gaps are for later phases (Auth helpers, Inventory, POS, Purchases, etc.).
+Product Master (Category, Product, HSN, Barcode) and Inventory Management (stock, movements, adjustments) are now fully covered with unit, API integration, and component tests (132 total). Remaining coverage gaps are for later phases (Auth helpers, POS, Purchases, etc.).
 
 ### Remaining for Phase 8 Completion
 
@@ -369,11 +403,11 @@ Navigate to `http://localhost:3000/login` and use:
 
 ## 🚀 Next Steps
 
-### Product Master — Outstanding Work (next session)
+### Product & Inventory — Outstanding Work (next session)
 
 - [ ] **Product CSV import** — bulk upload with SKU/barcode validation, permission `products:import`
-- [ ] **Inventory Module** — stock levels, movements, adjustments (`inventory`, `inventory_movements`, `stock_adjustments`)
-- [ ] **Batch Management + FEFO** — batch lifecycle, expiry detection, FEFO allocation
+- [ ] **Batch Management + FEFO** — batch lifecycle, expiry detection, FEFO allocation (`batches`, `batch_status_log`, `batch_disposals`)
+- [ ] **Expiry detection** — expiring/expired views (`/expiry/expiring`, `/expiry/expired`)
 - [ ] **POS, Purchases, Reports** (Phases 3+)
 
 ### Testing — Further Backlog
@@ -382,8 +416,8 @@ Navigate to `http://localhost:3000/login` and use:
 - [ ] Integration tests for users/roles/org/branches API routes
 - [ ] Component tests for UserTable, RoleList, etc.
 - [ ] E2E tests for critical flows
-- [ ] Database testing infrastructure when Phase 2 inventory models are implemented
+- [ ] Database testing infrastructure when Phase 3 models are implemented
 
 ---
 
-_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master complete, 81 tests passing_
+_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management complete, 132 tests passing_
