@@ -18,7 +18,7 @@ Phase 4: Purchase Management  ░░░░░░░░░░░░░░░░�
 Phase 5: Prescriptions/Returns░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 6: Financial & GST      ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 7: Reporting & Analytics░░░░░░░░░░░░░░░░░░░░   0% ⏳
-Phase 8: Testing & Refinement ░░░░░░░░░░░░░░░░░░░░   0% ⏳
+Phase 8: Testing & Refinement ████░░░░░░░░░░░░░░░░   15% 🔧
 Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 ```
 
@@ -28,42 +28,42 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 **Goal:** Project setup, architecture decisions, database design
 
-| Task | Status | Notes |
-|------|--------|-------|
-| Next.js 14 project initialized | ✅ | TypeScript strict mode |
-| package.json with all dependencies | ✅ | 952 packages installed |
-| tsconfig.json (strict, path aliases) | ✅ | `@/*` → `src/*` |
-| tailwind.config.ts | ✅ | PharmaCare green brand colors |
-| ESLint + Prettier config | ✅ | Tailwind plugin included |
-| .gitignore, .env.example | ✅ | All secrets documented |
-| components.json (Shadcn/ui) | ✅ | Default slate style |
-| Complete Prisma Schema | ✅ | **35+ models, all 20 modules** |
-| Prisma seed scripts | ✅ | Roles, users, org, HSN, products |
+| Task                                 | Status | Notes                            |
+| ------------------------------------ | ------ | -------------------------------- |
+| Next.js 14 project initialized       | ✅     | TypeScript strict mode           |
+| package.json with all dependencies   | ✅     | 952 packages installed           |
+| tsconfig.json (strict, path aliases) | ✅     | `@/*` → `src/*`                  |
+| tailwind.config.ts                   | ✅     | PharmaCare green brand colors    |
+| ESLint + Prettier config             | ✅     | Tailwind plugin included         |
+| .gitignore, .env.example             | ✅     | All secrets documented           |
+| components.json (Shadcn/ui)          | ✅     | Default slate style              |
+| Complete Prisma Schema               | ✅     | **35+ models, all 20 modules**   |
+| Prisma seed scripts                  | ✅     | Roles, users, org, HSN, products |
 
 ### 📦 Database Schema Coverage (all 20 modules)
 
-| Module | Tables | Status |
-|--------|--------|--------|
-| Auth | users, accounts, sessions, verification_tokens, password_reset_tokens | ✅ |
-| Users & Roles | roles, permissions, role_permissions, user_roles | ✅ |
-| Organization | organizations, branches, organization_settings | ✅ |
-| Products | products, categories, product_categories, product_barcodes, hsn_codes | ✅ |
-| Inventory | inventory, inventory_movements, stock_adjustments | ✅ |
-| Batches | batches, batch_status_log, batch_disposals | ✅ |
-| POS | sales, sale_items, sale_item_batches, payments, held_bills | ✅ |
-| Prescriptions | prescriptions, prescription_images | ✅ |
-| Purchases | purchases, purchase_items, purchase_returns, purchase_return_items | ✅ |
-| Returns | sale_returns, sale_return_items, credit_notes | ✅ |
-| Customers | customers, customer_ledgers | ✅ |
-| Suppliers | suppliers, supplier_ledgers | ✅ |
-| Finance | ledgers, ledger_entries | ✅ |
-| GST | tax_rates, hsn_codes, gst_transactions | ✅ |
-| Expiry | (via batches + batch_disposals) | ✅ |
-| Reports | (via aggregations on existing tables) | ✅ |
-| Notifications | notifications, notification_preferences | ✅ |
-| Files | files | ✅ |
-| Audit | audit_logs | ✅ |
-| Settings | system_settings | ✅ |
+| Module        | Tables                                                                | Status |
+| ------------- | --------------------------------------------------------------------- | ------ |
+| Auth          | users, accounts, sessions, verification_tokens, password_reset_tokens | ✅     |
+| Users & Roles | roles, permissions, role_permissions, user_roles                      | ✅     |
+| Organization  | organizations, branches, organization_settings                        | ✅     |
+| Products      | products, categories, product_categories, product_barcodes, hsn_codes | ✅     |
+| Inventory     | inventory, inventory_movements, stock_adjustments                     | ✅     |
+| Batches       | batches, batch_status_log, batch_disposals                            | ✅     |
+| POS           | sales, sale_items, sale_item_batches, payments, held_bills            | ✅     |
+| Prescriptions | prescriptions, prescription_images                                    | ✅     |
+| Purchases     | purchases, purchase_items, purchase_returns, purchase_return_items    | ✅     |
+| Returns       | sale_returns, sale_return_items, credit_notes                         | ✅     |
+| Customers     | customers, customer_ledgers                                           | ✅     |
+| Suppliers     | suppliers, supplier_ledgers                                           | ✅     |
+| Finance       | ledgers, ledger_entries                                               | ✅     |
+| GST           | tax_rates, hsn_codes, gst_transactions                                | ✅     |
+| Expiry        | (via batches + batch_disposals)                                       | ✅     |
+| Reports       | (via aggregations on existing tables)                                 | ✅     |
+| Notifications | notifications, notification_preferences                               | ✅     |
+| Files         | files                                                                 | ✅     |
+| Audit         | audit_logs                                                            | ✅     |
+| Settings      | system_settings                                                       | ✅     |
 
 ---
 
@@ -73,58 +73,58 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ### Week 3: Authentication
 
-| Task | Status | File(s) |
-|------|--------|---------|
-| NextAuth.js configuration | ✅ | `src/lib/auth/auth-config.ts` |
-| Credentials provider (email+password) | ✅ | `src/lib/auth/auth-config.ts` |
-| Account lockout (5 failed → 15min) | ✅ | `src/lib/auth/auth-config.ts` |
-| JWT with permissions + roles | ✅ | `src/lib/auth/auth-config.ts` |
-| Session type extensions | ✅ | `src/lib/auth/types.d.ts` |
-| Auth helper functions (`can`, `requirePermission`) | ✅ | `src/lib/auth/auth-helpers.ts` |
-| Route protection middleware | ✅ | `src/middleware.ts` |
-| NextAuth API route | ✅ | `src/app/api/auth/[...nextauth]/route.ts` |
-| Login page UI | ✅ | `src/app/(auth)/login/page.tsx` |
-| Login form component | ✅ | `src/components/auth/login-form.tsx` |
-| Session provider | ✅ | `src/components/auth/session-provider.tsx` |
-| Password reset flow | ⏳ | Target: Auth enhancement |
-| CSRF protection | ✅ | Handled by NextAuth |
-| Rate limiting | ⏳ | Target: Security hardening |
+| Task                                               | Status | File(s)                                    |
+| -------------------------------------------------- | ------ | ------------------------------------------ |
+| NextAuth.js configuration                          | ✅     | `src/lib/auth/auth-config.ts`              |
+| Credentials provider (email+password)              | ✅     | `src/lib/auth/auth-config.ts`              |
+| Account lockout (5 failed → 15min)                 | ✅     | `src/lib/auth/auth-config.ts`              |
+| JWT with permissions + roles                       | ✅     | `src/lib/auth/auth-config.ts`              |
+| Session type extensions                            | ✅     | `src/lib/auth/types.d.ts`                  |
+| Auth helper functions (`can`, `requirePermission`) | ✅     | `src/lib/auth/auth-helpers.ts`             |
+| Route protection middleware                        | ✅     | `src/middleware.ts`                        |
+| NextAuth API route                                 | ✅     | `src/app/api/auth/[...nextauth]/route.ts`  |
+| Login page UI                                      | ✅     | `src/app/(auth)/login/page.tsx`            |
+| Login form component                               | ✅     | `src/components/auth/login-form.tsx`       |
+| Session provider                                   | ✅     | `src/components/auth/session-provider.tsx` |
+| Password reset flow                                | ⏳     | Target: Auth enhancement                   |
+| CSRF protection                                    | ✅     | Handled by NextAuth                        |
+| Rate limiting                                      | ⏳     | Target: Security hardening                 |
 
 ### Week 4: User & Role Management
 
-| Task | Status | File(s) |
-|------|--------|---------|
-| User list API (GET /api/users) | ✅ | `src/app/api/users/route.ts` |
-| User create API (POST /api/users) | ✅ | `src/app/api/users/route.ts` |
-| User detail/update/delete API | ✅ | `src/app/api/users/[id]/route.ts` |
-| Roles list/create API | ✅ | `src/app/api/roles/route.ts` |
-| Permissions API | ✅ | `src/app/api/permissions/route.ts` |
-| User management UI | ✅ | `src/components/users/user-table.tsx`, `user-form.tsx`, `role-assignment.tsx` |
-| Role management UI | ✅ | `src/components/roles/role-list.tsx` |
-| Permission matrix UI | ✅ | `src/components/roles/permission-matrix.tsx` |
-| Shared components | ✅ | `data-table.tsx`, `loading-spinner.tsx`, `empty-state.tsx`, `confirmation-dialog.tsx` |
+| Task                              | Status | File(s)                                                                               |
+| --------------------------------- | ------ | ------------------------------------------------------------------------------------- |
+| User list API (GET /api/users)    | ✅     | `src/app/api/users/route.ts`                                                          |
+| User create API (POST /api/users) | ✅     | `src/app/api/users/route.ts`                                                          |
+| User detail/update/delete API     | ✅     | `src/app/api/users/[id]/route.ts`                                                     |
+| Roles list/create API             | ✅     | `src/app/api/roles/route.ts`                                                          |
+| Permissions API                   | ✅     | `src/app/api/permissions/route.ts`                                                    |
+| User management UI                | ✅     | `src/components/users/user-table.tsx`, `user-form.tsx`, `role-assignment.tsx`         |
+| Role management UI                | ✅     | `src/components/roles/role-list.tsx`                                                  |
+| Permission matrix UI              | ✅     | `src/components/roles/permission-matrix.tsx`                                          |
+| Shared components                 | ✅     | `data-table.tsx`, `loading-spinner.tsx`, `empty-state.tsx`, `confirmation-dialog.tsx` |
 
 ### Week 5: Organization Setup
 
-| Task | Status | File(s) |
-|------|--------|---------|
-| Organization API (GET, PUT) | ✅ | `src/app/api/organization/route.ts` |
-| Branch management API (CRUD) | ✅ | `src/app/api/branches/route.ts`, `src/app/api/branches/[id]/route.ts` |
-| Organization Service | ✅ | `src/lib/organization/org-service.ts` |
-| UI Store & Custom Hooks | ✅ | `src/lib/stores/ui-store.ts`, `use-auth.ts`, `use-toast.ts`, `use-debounce.ts` |
-| Database seeding | ✅ | `prisma/seeds/*.ts` |
+| Task                         | Status | File(s)                                                                        |
+| ---------------------------- | ------ | ------------------------------------------------------------------------------ |
+| Organization API (GET, PUT)  | ✅     | `src/app/api/organization/route.ts`                                            |
+| Branch management API (CRUD) | ✅     | `src/app/api/branches/route.ts`, `src/app/api/branches/[id]/route.ts`          |
+| Organization Service         | ✅     | `src/lib/organization/org-service.ts`                                          |
+| UI Store & Custom Hooks      | ✅     | `src/lib/stores/ui-store.ts`, `use-auth.ts`, `use-toast.ts`, `use-debounce.ts` |
+| Database seeding             | ✅     | `prisma/seeds/*.ts`                                                            |
 
 ### Seed Data
 
-| Seed | Status |
-|------|--------|
-| 60 permissions | ✅ |
-| 6 default roles (Owner, Manager, Pharmacist, Cashier, Purchase Mgr, Accountant) | ✅ |
-| Default organization (PharmaCare Medical Store, Bangalore) | ✅ |
-| 4 default users (admin, manager, pharmacist, cashier) | ✅ |
-| 20 system settings (POS, inventory, notifications, GST) | ✅ |
-| 12 HSN codes (pharmaceutical) | ✅ |
-| 10 product categories + 5 sample products | ✅ |
+| Seed                                                                            | Status |
+| ------------------------------------------------------------------------------- | ------ |
+| 60 permissions                                                                  | ✅     |
+| 6 default roles (Owner, Manager, Pharmacist, Cashier, Purchase Mgr, Accountant) | ✅     |
+| Default organization (PharmaCare Medical Store, Bangalore)                      | ✅     |
+| 4 default users (admin, manager, pharmacist, cashier)                           | ✅     |
+| 20 system settings (POS, inventory, notifications, GST)                         | ✅     |
+| 12 HSN codes (pharmaceutical)                                                   | ✅     |
+| 10 product categories + 5 sample products                                       | ✅     |
 
 ---
 
@@ -133,6 +133,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 **Target:** Weeks 6–8 | **Modules:** 4, 5, 6
 
 ### Planned Tasks
+
 - [ ] Product CRUD API + UI
 - [ ] Category tree management
 - [ ] Product CSV import
@@ -148,6 +149,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 **Target:** Weeks 9–11 | **Modules:** 7, 8
 
 ### Planned Tasks
+
 - [ ] POS full-screen layout
 - [ ] Fast product search (by name, barcode, generic)
 - [ ] Zustand cart state management
@@ -184,14 +186,85 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ---
 
-## ⏳ Phase 8: Testing & Refinement — NOT STARTED
+## ✅ Testing Infrastructure — FOUNDATION ESTABLISHED
+
+**Goal:** Establish minimal, correct testing and CI foundation (completed in this task)
+
+### Testing Framework Setup
+
+| Task                  | Status | Details                                                 |
+| --------------------- | ------ | ------------------------------------------------------- |
+| Jest configuration    | ✅     | `jest.config.ts` with Next.js integration, path aliases |
+| Jest setup            | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
+| React Testing Library | ✅     | Component testing support configured                    |
+| Unit test smoke tests | ✅     | 3 test suites, 17 tests passing                         |
+| TypeScript support    | ✅     | ts-jest with tsconfig.json                              |
+| Coverage thresholds   | ✅     | Configured (0% baseline, ready to raise)                |
+
+### Test Files Created
+
+| File                                         | Tests | Purpose                     |
+| -------------------------------------------- | ----- | --------------------------- |
+| `src/lib/utils/cn.test.ts`                   | 4     | Utility function tests      |
+| `src/lib/validations/user.test.ts`           | 9     | Zod schema validation tests |
+| `src/components/shared/empty-state.test.tsx` | 4     | React component tests       |
+
+### CI/CD Pipeline
+
+| Task                    | Status | Details                                        |
+| ----------------------- | ------ | ---------------------------------------------- |
+| GitHub Actions workflow | ✅     | `.github/workflows/ci.yml`                     |
+| Dependency installation | ✅     | `npm ci --legacy-peer-deps`                    |
+| Prisma generation       | ✅     | `npm run db:generate`                          |
+| Database migrations     | ✅     | `npm run db:migrate:prod` (PostgreSQL service) |
+| Type check              | ✅     | `npm run type-check`                           |
+| Lint                    | ✅     | `npm run lint`                                 |
+| Unit tests              | ✅     | `npm run test`                                 |
+| Production build        | ✅     | `npm run build`                                |
+
+### Pre-commit Hooks
+
+| Task             | Status | Details                                    |
+| ---------------- | ------ | ------------------------------------------ |
+| Husky pre-commit | ✅     | `.husky/pre-commit` runs `npx lint-staged` |
+| lint-staged      | ✅     | ESLint + Prettier on staged files          |
+
+### Commands Verified
+
+```bash
+npm run type-check   # ✅ PASS
+npm run lint         # ✅ PASS
+npm run test         # ✅ PASS (17 tests)
+npm run build        # ✅ PASS
+```
+
+---
+
+## ⏳ Phase 8: Testing & Refinement — INFRASTRUCTURE READY
 
 **Target:** Weeks 20–21
 
 ### Test Coverage Targets
+
 - Overall: 80%+
 - Auth, POS, Inventory: 90%+
 - Business Logic: 95%+
+
+### Current State: INFRASTRUCTURE ONLY 🔧
+
+**IMPORTANT DISTINCTION:** This task only established the testing **infrastructure** (runners, config, CI, smoke tests). Actual project **test coverage** remains very low (~0% of application code). The 17 passing tests are smoke tests for utilities and validation schemas only.
+
+### Remaining for Phase 8 Completion
+
+- [ ] Unit tests for auth helpers, permission logic, Prisma utilities
+- [ ] Integration tests for API routes (users, roles, organization, branches)
+- [ ] Component tests for UI components (UserTable, RoleList, etc.)
+- [ ] E2E tests for critical flows (login, user management)
+- [ ] Database testing infrastructure (testcontainers or test DB)
+- [ ] Raise coverage thresholds incrementally
+- [ ] Phase 2 business logic tests (when implemented)
+
+---
 
 ---
 
@@ -203,14 +276,14 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ## 🗂️ Key Files Reference
 
-| Category | File | Purpose |
-|----------|------|---------|
-| DB Schema | `prisma/schema.prisma` | All 35+ table definitions |
-| Auth Config | `src/lib/auth/auth-config.ts` | NextAuth setup |
-| Middleware | `src/middleware.ts` | Route protection |
-| DB Client | `src/lib/db/prisma.ts` | Prisma singleton |
-| Permissions | `src/lib/constants/permissions.ts` | All permission codes |
-| Routes | `src/lib/constants/routes.ts` | All app routes |
+| Category    | File                               | Purpose                   |
+| ----------- | ---------------------------------- | ------------------------- |
+| DB Schema   | `prisma/schema.prisma`             | All 35+ table definitions |
+| Auth Config | `src/lib/auth/auth-config.ts`      | NextAuth setup            |
+| Middleware  | `src/middleware.ts`                | Route protection          |
+| DB Client   | `src/lib/db/prisma.ts`             | Prisma singleton          |
+| Permissions | `src/lib/constants/permissions.ts` | All permission codes      |
+| Routes      | `src/lib/constants/routes.ts`      | All app routes            |
 
 ---
 
@@ -218,34 +291,38 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 > ⚠️ Change all passwords before production deployment!
 
-| User | Email | Password | Role |
-|------|-------|----------|------|
-| Admin | admin@pharmacare.local | Admin@123 | Owner |
-| Manager | manager@pharmacare.local | Manager@123 | Manager |
-| Pharmacist | pharmacist@pharmacare.local | Pharma@123 | Pharmacist |
-| Cashier | cashier@pharmacare.local | Cashier@123 | Cashier |
+| User       | Email                       | Password    | Role       |
+| ---------- | --------------------------- | ----------- | ---------- |
+| Admin      | admin@pharmacare.local      | Admin@123   | Owner      |
+| Manager    | manager@pharmacare.local    | Manager@123 | Manager    |
+| Pharmacist | pharmacist@pharmacare.local | Pharma@123  | Pharmacist |
+| Cashier    | cashier@pharmacare.local    | Cashier@123 | Cashier    |
 
 ---
 
 ## 📝 Setup Instructions
 
 ### 1. Prerequisites
+
 - Node.js ≥18 ✅
 - PostgreSQL running locally
 - Git
 
 ### 2. Environment Setup
+
 ```bash
 cp .env.example .env.local
 # Edit .env.local with your DATABASE_URL and NEXTAUTH_SECRET
 ```
 
 ### 3. Generate NEXTAUTH_SECRET
+
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
 ### 4. Database Setup
+
 ```bash
 npm run db:push        # Push schema to DB (dev)
 npm run db:seed        # Seed with default data
@@ -253,18 +330,21 @@ npm run db:studio      # Open Prisma Studio (GUI)
 ```
 
 ### 5. Start Development
+
 ```bash
 npm run dev            # http://localhost:3000
 ```
 
 ### 6. Login
+
 Navigate to `http://localhost:3000/login` and use:
+
 - Email: `admin@pharmacare.local`
 - Password: `Admin@123`
 
 ---
 
-## 🚀 Next Steps (Phase 1 Completion)
+## 🚀 Next Steps (Phase 1 Completion + Testing Infrastructure)
 
 1. **Set up PostgreSQL** — Create `pharmacare_dev` database
 2. **Configure .env.local** — Set `DATABASE_URL` and `NEXTAUTH_SECRET`
@@ -277,4 +357,15 @@ Navigate to `http://localhost:3000/login` and use:
 
 ---
 
-*Last updated: September 2026 | Phase 0 complete, Phase 1 in progress*
+## 📝 Testing Infrastructure — Next Steps (Post-Phase 2 Start)
+
+1. **Add unit tests** for auth helpers, permission logic, Prisma utilities
+2. **Add integration tests** for API routes (users, roles, organization, branches)
+3. **Add component tests** for UI components (UserTable, RoleList, etc.)
+4. **Expand E2E tests** for critical flows (login, user management)
+5. **Add database testing** infrastructure when Phase 2 models are implemented
+6. **Raise coverage thresholds** incrementally as tests are added
+
+---
+
+_Last updated: September 2026 | Phase 0 complete, Phase 1 backend complete, Testing infrastructure established_

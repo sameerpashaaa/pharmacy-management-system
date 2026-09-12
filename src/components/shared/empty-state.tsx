@@ -30,13 +30,11 @@ export function EmptyState({
       )}
     >
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-        <Icon className="h-6 w-6 text-muted-foreground" />
+        <Icon className="h-6 w-6 text-muted-foreground" data-testid="empty-state-icon" />
       </div>
       <div>
         <p className="text-sm font-medium">{title}</p>
-        {description && (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        )}
+        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       </div>
       {action && <div className="mt-2">{action}</div>}
     </div>
