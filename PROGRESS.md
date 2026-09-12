@@ -12,7 +12,7 @@
 ```
 Phase 0: Foundation           ████████████████████ 100% ✅
 Phase 1: Core Infrastructure  ████████████████████ 100% ✅
-Phase 2: Product & Inventory  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
+Phase 2: Product & Inventory  ████░░░░░░░░░░░░░░░░  20% 🔧
 Phase 3: Point of Sale        ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 4: Purchase Management  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 5: Prescriptions/Returns░░░░░░░░░░░░░░░░░░░░   0% ⏳
@@ -128,14 +128,33 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ---
 
-## ⏳ Phase 2: Product & Inventory — NOT STARTED
+## ⏳ Phase 2: Product & Inventory — IN PROGRESS
 
 **Target:** Weeks 6–8 | **Modules:** 4, 5, 6
 
-### Planned Tasks
+### ✅ Product Master — COMPLETE
 
-- [ ] Product CRUD API + UI
-- [ ] Category tree management
+| Task                                                  | Status | File(s)                                                                                    |
+| ----------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------ |
+| Product service (CRUD, search, pagination)            | ✅     | `src/lib/products/product-service.ts`                                                      |
+| Validation schemas (Product, Category, HSN)           | ✅     | `src/lib/validations/product.ts`                                                           |
+| Category API (GET/POST + tree, options)               | ✅     | `src/app/api/categories/route.ts`, `[id]/route.ts`, `options/route.ts`                     |
+| Product API (GET/POST + search, filters)              | ✅     | `src/app/api/products/route.ts`, `[id]/route.ts`                                           |
+| HSN codes API (list)                                  | ✅     | `src/app/api/hsn-codes/route.ts`                                                           |
+| Category manager UI (tree + flat, dialog form)        | ✅     | `src/components/categories/category-manager.tsx`, `category-tree.tsx`, `category-form.tsx` |
+| Product catalog UI (search, filter, paginated)        | ✅     | `src/components/products/product-catalog.tsx`, `product-table.tsx`                         |
+| Product form UI (create/edit, HSN/GST, barcodes)      | ✅     | `src/components/products/product-form.tsx`                                                 |
+| Product list page (server-rendered, permission-gated) | ✅     | `src/app/(dashboard)/products/page.tsx`                                                    |
+| Category management page                              | ✅     | `src/app/(dashboard)/products/categories/page.tsx`                                         |
+| New product page                                      | ✅     | `src/app/(dashboard)/products/new/page.tsx`                                                |
+| Product detail page                                   | ✅     | `src/app/(dashboard)/products/[id]/page.tsx`                                               |
+| Edit product page                                     | ✅     | `src/app/(dashboard)/products/[id]/edit/page.tsx`                                          |
+| SKU / barcode uniqueness guards                       | ✅     | API routes + service functions                                                             |
+| Audit log on create + delete                          | ✅     | API routes call `prisma.auditLog.create`                                                   |
+| Permission seeds (products:*, categories:manage)      | ✅     | `prisma/seeds/permissions.ts`, `prisma/seeds/roles.ts`                                     |
+
+### ⏳ Remaining Phase 2 Tasks (NOT in this commit)
+
 - [ ] Product CSV import
 - [ ] Inventory tracking core
 - [ ] Stock adjustment workflow
@@ -192,22 +211,27 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ### Testing Framework Setup
 
-| Task                  | Status | Details                                                 |
-| --------------------- | ------ | ------------------------------------------------------- |
-| Jest configuration    | ✅     | `jest.config.ts` with Next.js integration, path aliases |
-| Jest setup            | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
-| React Testing Library | ✅     | Component testing support configured                    |
-| Unit test smoke tests | ✅     | 3 test suites, 17 tests passing                         |
-| TypeScript support    | ✅     | ts-jest with tsconfig.json                              |
-| Coverage thresholds   | ✅     | Configured (0% baseline, ready to raise)                |
+| Task                     | Status | Details                                                 |
+| ------------------------ | ------ | ------------------------------------------------------- |
+| Jest configuration       | ✅     | `jest.config.ts` with Next.js integration, path aliases |
+| Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
+| React Testing Library    | ✅     | Component testing support configured                    |
+| Unit + integration tests | ✅     | 8 test suites, **81 tests passing**                     |
+| TypeScript support       | ✅     | ts-jest with tsconfig.json                              |
+| Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                |
 
-### Test Files Created
+### Test Files
 
-| File                                         | Tests | Purpose                     |
-| -------------------------------------------- | ----- | --------------------------- |
-| `src/lib/utils/cn.test.ts`                   | 4     | Utility function tests      |
-| `src/lib/validations/user.test.ts`           | 9     | Zod schema validation tests |
-| `src/components/shared/empty-state.test.tsx` | 4     | React component tests       |
+| File                                             | Tests | Purpose                                                 |
+| ------------------------------------------------ | ----- | ------------------------------------------------------- |
+| `src/lib/utils/cn.test.ts`                       | 4     | Utility function tests                                  |
+| `src/lib/validations/user.test.ts`               | 9     | Zod schema validation tests                             |
+| `src/components/shared/empty-state.test.tsx`     | 4     | React component tests                                   |
+| `src/lib/validations/product.test.ts`            | 31    | Product/Category/HSN/barcode schema tests               |
+| `src/lib/products/product-service.test.ts`       | 11    | Service CRUD, tree, uniqueness, pagination              |
+| `src/app/api/categories/route.test.ts`           | 8     | Categories GET/POST auth + validation + conflict        |
+| `src/app/api/products/route.test.ts`             | 8     | Products GET/POST auth + validation + conflicts + audit |
+| `src/components/products/product-table.test.tsx` | 6     | Product table rendering, badges, empty state            |
 
 ### CI/CD Pipeline
 
@@ -234,7 +258,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 ```bash
 npm run type-check   # ✅ PASS
 npm run lint         # ✅ PASS
-npm run test         # ✅ PASS (17 tests)
+npm run test         # ✅ PASS (81 tests)
 npm run build        # ✅ PASS
 ```
 
@@ -250,9 +274,9 @@ npm run build        # ✅ PASS
 - Auth, POS, Inventory: 90%+
 - Business Logic: 95%+
 
-### Current State: INFRASTRUCTURE ONLY 🔧
+### Current State: PRODUCT MASTER TESTED
 
-**IMPORTANT DISTINCTION:** This task only established the testing **infrastructure** (runners, config, CI, smoke tests). Actual project **test coverage** remains very low (~0% of application code). The 17 passing tests are smoke tests for utilities and validation schemas only.
+Product Master (Category, Product, HSN, Barcode) is now fully covered with unit, API integration, and component tests (81 total, up from 17 smoke tests). Remaining coverage gaps are for later phases (Auth helpers, Inventory, POS, Purchases, etc.).
 
 ### Remaining for Phase 8 Completion
 
@@ -262,7 +286,6 @@ npm run build        # ✅ PASS
 - [ ] E2E tests for critical flows (login, user management)
 - [ ] Database testing infrastructure (testcontainers or test DB)
 - [ ] Raise coverage thresholds incrementally
-- [ ] Phase 2 business logic tests (when implemented)
 
 ---
 
@@ -344,28 +367,23 @@ Navigate to `http://localhost:3000/login` and use:
 
 ---
 
-## 🚀 Next Steps (Phase 1 Completion + Testing Infrastructure)
+## 🚀 Next Steps
 
-1. **Set up PostgreSQL** — Create `pharmacare_dev` database
-2. **Configure .env.local** — Set `DATABASE_URL` and `NEXTAUTH_SECRET`
-3. **Run migrations** — `npm run db:push && npm run db:seed`
-4. **Test login** — Verify auth flow works end-to-end
-5. **Build User Management UI** — user-table, user-form, role-assignment components
-6. **Build Organization Settings UI** — org-settings-form component
-7. **Add password reset flow** — email token flow
-8. **Begin Phase 2** — Product catalog
+### Product Master — Outstanding Work (next session)
 
----
+- [ ] **Product CSV import** — bulk upload with SKU/barcode validation, permission `products:import`
+- [ ] **Inventory Module** — stock levels, movements, adjustments (`inventory`, `inventory_movements`, `stock_adjustments`)
+- [ ] **Batch Management + FEFO** — batch lifecycle, expiry detection, FEFO allocation
+- [ ] **POS, Purchases, Reports** (Phases 3+)
 
-## 📝 Testing Infrastructure — Next Steps (Post-Phase 2 Start)
+### Testing — Further Backlog
 
-1. **Add unit tests** for auth helpers, permission logic, Prisma utilities
-2. **Add integration tests** for API routes (users, roles, organization, branches)
-3. **Add component tests** for UI components (UserTable, RoleList, etc.)
-4. **Expand E2E tests** for critical flows (login, user management)
-5. **Add database testing** infrastructure when Phase 2 models are implemented
-6. **Raise coverage thresholds** incrementally as tests are added
+- [ ] Unit tests for auth helpers, permission logic, Prisma utilities
+- [ ] Integration tests for users/roles/org/branches API routes
+- [ ] Component tests for UserTable, RoleList, etc.
+- [ ] E2E tests for critical flows
+- [ ] Database testing infrastructure when Phase 2 inventory models are implemented
 
 ---
 
-_Last updated: September 2026 | Phase 0 complete, Phase 1 backend complete, Testing infrastructure established_
+_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master complete, 81 tests passing_
