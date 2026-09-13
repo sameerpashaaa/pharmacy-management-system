@@ -75,6 +75,8 @@ export const ROUTES = {
 
   // Expiry
   EXPIRY: '/expiry',
+  EXPIRY_EXPIRING: '/expiry/expiring',
+  EXPIRY_EXPIRED: '/expiry/expired',
 
   // Reports
   REPORTS: '/reports',
@@ -99,12 +101,7 @@ export const ROUTES = {
 } as const
 
 // Routes that don't require authentication
-export const PUBLIC_ROUTES = [
-  ROUTES.LOGIN,
-  ROUTES.REGISTER,
-  ROUTES.RESET_PASSWORD,
-  '/api/auth',
-]
+export const PUBLIC_ROUTES = [ROUTES.LOGIN, ROUTES.REGISTER, ROUTES.RESET_PASSWORD, '/api/auth']
 
 // API base routes
 export const API = {
@@ -132,6 +129,8 @@ export const API = {
   REPORTS: '/api/reports',
   GST: '/api/gst',
   EXPIRY: '/api/expiry',
+  EXPIRY_EXPIRING: '/api/expiry/expiring',
+  EXPIRY_EXPIRED: '/api/expiry/expired',
   AUDIT: '/api/audit',
   NOTIFICATIONS: '/api/notifications',
   FILES: '/api/files',

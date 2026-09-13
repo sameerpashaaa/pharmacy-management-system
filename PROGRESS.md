@@ -12,7 +12,7 @@
 ```
 Phase 0: Foundation           ████████████████████ 100% ✅
 Phase 1: Core Infrastructure  ████████████████████ 100% ✅
-Phase 2: Product & Inventory  ████████████░░░░░░░░  60% 🔧
+Phase 2: Product & Inventory  ████████████████████ 100% ✅
 Phase 3: Point of Sale        ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 4: Purchase Management  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 5: Prescriptions/Returns░░░░░░░░░░░░░░░░░░░░   0% ⏳
@@ -222,7 +222,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 - **No batch creation API** — batches arrive via GRN/Purchases (out of scope); `createBatch` is service-level for that future flow.
 - **Disposal does not mutate product-level inventory** — no linkage exists until GRN/Purchases land (documented in `documentation/IMPLEMENTATION_BASELINE.md` §9).
 - **FEFO sell-time wiring** (POS calls `selectFefoBatches` and deducts stock transactionally) remains Phase 3 — the reusable FEFO selection service is now **complete** (see FEFO section below).
-- **Expiry detection views** (`/expiry/*`) remain stub pages — a separate Phase 2 task.
+- **Expiry detection views** are now **COMPLETE** (see Expiry Detection section below).
 
 ### ✅ FEFO Selection (domain/service) — COMPLETE
 
@@ -242,11 +242,46 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 - **Expiry handling:** expired (`expiryDate` passed / status `EXPIRED`) vs near-expiry (no alerting — that is the Expiry Detection task). Uses the existing single Batch expiry model.
 - **Concurrency boundary:** selection is read-only **advisory** — it does NOT reserve or deduct stock. POS/dispensing must re-check and mutate batch rows transactionally (optimistic CAS, like stock adjustments). `fefo_enabled` organisation setting is seeded; POS decides whether to invoke FEFO.
 
+### ✅ Expiry Detection — COMPLETE
+
+| Task                                                              | Status | File(s)                                                                          |
+| ----------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------- |
+| Pure classification (days remaining + severity, injectable `now`) | ✅     | `src/lib/batches/expiry-service.ts` (`daysUntilExpiryDate`, `expirySeverity`)    |
+| Expiring service (ACTIVE, (now, now+90], available > 0)           | ✅     | `getExpiringBatches` (severity filter + pagination)                              |
+| Expired service (status EXPIRED after lazy sweep)                 | ✅     | `getExpiredBatches` (daysPast, oldest-first, pagination)                         |
+| Expiry summary (hub counts, branch-scoped)                        | ✅     | `getExpirySummary`                                                               |
+| Lazy sweep reuse (single expiry mechanism)                        | ✅     | `expireDueBatches()` called before every read                                    |
+| Query validation schemas (expiring + expired)                     | ✅     | `src/lib/validations/expiry.ts`                                                  |
+| API routes (GET, batches:read, branch scope)                      | ✅     | `src/app/api/expiry/expiring/route.ts`, `src/app/api/expiry/expired/route.ts`    |
+| Expiring page (server-rendered, permission-gated)                 | ✅     | `src/app/(dashboard)/expiry/expiring/page.tsx`, `src/components/expiry/*`        |
+| Expired page (server-rendered, permission-gated)                  | ✅     | `src/app/(dashboard)/expiry/expired/page.tsx`, `src/components/expiry/*`         |
+| Expiry hub page (severity + expired summary cards)                | ✅     | `src/app/(dashboard)/expiry/page.tsx`                                            |
+| Route constants                                                   | ✅     | `src/lib/constants/routes.ts` (`EXPIRY_EXPIRING`, `EXPIRY_EXPIRED`, API mirrors) |
+| Tests (service 22, expiring route 6, expired route 4)             | ✅     | `expiry-service.test.ts`, `api/expiry/**/route.test.ts` (32 total)               |
+
+#### Expiry Classification Rules (implemented)
+
+- **Boundaries (inclusive), per `Batch_Expiry_Tracking.md` §3 / FAQ / DFD L2**: `daysRemaining = ceil((expiryDate - now) / 1 day)`; `≤ 30` → CRITICAL, `≤ 60` → WARNING, `≤ 90` → INFO, `> 90` → outside window, `≤ 0` → EXPIRED (never shown in the expiring view).
+- **Expiring view** = `ACTIVE` status + positive available quantity + expiry strictly after `now` and `≤ now + 90d`. Zero-availability batches are not "at risk" stock and are excluded. BLOCKED/EXPIRED/DISPOSED/EXHAUSTED are excluded.
+- **Expired view** = `status EXPIRED` only (kept consistent by the lazy sweep — a batch never appears here merely because its date passed). Oldest-expired first, deterministic tie-break by batch id.
+- **No alerting** — no SMS/email/notifications/cron. The views are the alert surface (notification workflows are a future module).
+- **No schema change, no new permissions** — reuses the single `Batch.expiryDate` model + `batches:read`.
+- **Server-side authorization**: pages (`can`) and API routes (`requirePermission` + `resolveBranchScope`) both gate on `batches:read`.
+
+#### Known Limitations (Expiry)
+
+- **Severity classification + expiring pagination are in-memory** — the classification is derived from `now`, not stored; fine at this scale (90-day window).
+- **Expired batches are the sweep's EXPIRED status**, not a separate "expiry date passed" computation everywhere — deliberate, so there is exactly ONE expiry mechanism.
+- **`/batches/expiring` stub is untouched** (orphan route from the original spec, superseded by `/expiry/expiring`; out of scope).
+- **Disposal of expired stock** is handled by the existing Batch dispose flow (`/batches/[id]/dispose`), not duplicated here.
+
 ### ⏳ Remaining Phase 2 Tasks
 
 - [x] Batch management — lifecycle COMPLETE (FEFO sell-time selection stays in Phase 3 POS)
 - [x] FEFO selection (domain/service) — COMPLETE (POS wiring stays in Phase 3)
-- [ ] Expiry detection (expiring/expired views, `/expiry/expiring` + `/expiry/expired`)
+- [x] Expiry detection (expiring/expired views + hub) — COMPLETE
+
+**Phase 2 (Product & Inventory) is now fully delivered.** Phase 3 (POS, incl. the FEFO + expiry-aware dispensing wiring) is the next phase.
 
 ---
 
@@ -303,7 +338,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Jest configuration       | ✅     | `jest.config.ts` with Next.js integration, path aliases |
 | Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
 | React Testing Library    | ✅     | Component testing support configured                    |
-| Unit + integration tests | ✅     | 26 test suites, **276 tests passing**                   |
+| Unit + integration tests | ✅     | 29 test suites, **308 tests passing**                   |
 | TypeScript support       | ✅     | ts-jest with tsconfig.json                              |
 | Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                |
 
@@ -337,6 +372,9 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | `src/app/api/batches/[id]/block/route.test.ts`                 | 5     | Block POST auth + validation + 404/409 + audit                               |
 | `src/app/api/batches/[id]/dispose/route.test.ts`               | 7     | Dispose POST auth + validation + 404/409/400 + audit                         |
 | `src/lib/batches/fefo.test.ts`                                 | 38    | FEFO eligibility, ordering, allocation, insufficient, product/branch service |
+| `src/lib/batches/expiry-service.test.ts`                       | 22    | Expiry classification boundaries, expiring/expired views, summary            |
+| `src/app/api/expiry/expiring/route.test.ts`                    | 6     | Expiring GET auth + validation + severity + branch scope                     |
+| `src/app/api/expiry/expired/route.test.ts`                     | 4     | Expired GET auth + validation + branch scope                                 |
 
 ### CI/CD Pipeline
 
@@ -363,7 +401,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 ```bash
 npm run type-check   # ✅ PASS
 npm run lint         # ✅ PASS
-npm run test         # ✅ PASS (276 tests)
+npm run test         # ✅ PASS (308 tests)
 npm run build        # ✅ PASS
 ```
 
@@ -500,7 +538,7 @@ Controlled decision task resolving the five `UNRESOLVED` items in `documentation
 
 - [x] **Batch Management** — lifecycle COMPLETE (commit `feat: implement batch management`)
 - [x] **FEFO selection** — domain/service COMPLETE (commit `feat: implement fefo batch selection`; POS wiring stays Phase 3)
-- [ ] **Expiry detection** — expiring/expired views (`/expiry/expiring`, `/expiry/expired`)
+- [x] **Expiry detection** — expiring/expired views + hub COMPLETE (`/expiry/expiring`, `/expiry/expired`; commit `feat: implement expiry detection`)
 - [ ] **POS, Purchases, Reports** (Phases 3+)
 
 ### Testing — Further Backlog
@@ -513,4 +551,4 @@ Controlled decision task resolving the five `UNRESOLVED` items in `documentation
 
 ---
 
-_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management + Product CSV Import + Batch Management + FEFO selection complete, 276 tests passing. Documentation reconciliation baseline added (see `documentation/IMPLEMENTATION_BASELINE.md`). Commit log: `feat: implement batch management` then `feat: implement fefo batch selection` (reusable ACTIVE-only, earliest-expiry-first service; no API/UI/schema change). Expiry-detection views remain outstanding; POS/dispensing FEFO wiring stays in Phase 3._
+_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product & Inventory fully delivered (Product Master + Inventory Management + Product CSV Import + Batch Management + FEFO selection + Expiry Detection), 308 tests passing. Documentation reconciliation baseline added (see `documentation/IMPLEMENTATION_BASELINE.md`). Commit log: `feat: implement batch management` then `feat: implement fefo batch selection` (reusable ACTIVE-only, earliest-expiry-first service; no API/UI/schema change) then `feat: implement expiry detection` (30/60/90-day expiring + expired views; reuses lazy sweep + batches:read; no alerting/schema change). Phase 3 POS — including FEFO + expiry-aware dispensing wiring — remains._
