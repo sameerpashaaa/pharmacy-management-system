@@ -168,12 +168,12 @@ Legend: **A** Consistent · **B** New detail only (additive) · **C** Conflictin
 
 ## 9. Critical Conflicts — Inventory (Stock_Management_Module vs implementation)
 
-| Aspect                    | Document                                                                 | Implementation                                                            | Recommendation                                                                                                      |
-| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Reason codes              | `BREAKAGE, SPILLAGE, THEFT, DATA_ERROR, EXPIRY_DISPOSAL, QUALITY_REJECT` | `DAMAGE, THEFT, EXPIRY, CORRECTION, PHYSICAL_COUNT, OPENING_STOCK`        | Keep code enum; update doc (documentation task). `UNRESOLVED` until doc updated.                                    |
-| Approval tiers            | ≤10 self / 11–50 Manager / >50 Chief + evidence                          | ≤10 auto-approve; >10 PENDING → any `inventory:approve_adjustment` holder | Schema has no approver-role column; decide if 3-tier escalation is required (future controlled task). `UNRESOLVED`. |
-| Self-approval opportunity | "≤10 self"                                                               | Auto-approve (no explicit self-approve step)                              | Semantically equivalent; doc wording differs. Documented as acceptable.                                             |
-| Schedule X gating         | Required on adjustments                                                  | Absent                                                                    | **FUTURE** — defer to a future controlled task.                                                                     |
+| Aspect                    | Document                                                                 | Implementation                                                            | Recommendation                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Reason codes              | `BREAKAGE, SPILLAGE, THEFT, DATA_ERROR, EXPIRY_DISPOSAL, QUALITY_REJECT` | `DAMAGE, THEFT, EXPIRY, CORRECTION, PHYSICAL_COUNT, OPENING_STOCK`        | Keep code enum; mapping recorded in §14 D1 (RESOLVED — doc change). `QUALITY_REJECT` deferred to Purchases/GRN. |
+| Approval tiers            | ≤10 self / 11–50 Manager / >50 Chief + evidence                          | ≤10 auto-approve; >10 PENDING → any `inventory:approve_adjustment` holder | Docs internally inconsistent (module vs FAQ vs Test_Cases). Owner decision pending — see §14 D2 (`UNRESOLVED`). |
+| Self-approval opportunity | "≤10 self"                                                               | Auto-approve (no explicit self-approve step)                              | Semantically equivalent; doc wording differs. Documented as acceptable.                                         |
+| Schedule X gating         | Required on adjustments                                                  | Absent                                                                    | **FUTURE** — defer to a future controlled task.                                                                 |
 
 ## 10. Critical Conflicts — Architecture (design docs vs repo)
 
@@ -203,7 +203,7 @@ Legend: **A** Consistent · **B** New detail only (additive) · **C** Conflictin
 ## 12. Assumptions & Open Decisions
 
 - **Code is the source of truth for implemented behaviour.** Where docs conflict with working, tested code, the code wins and the doc update is queued.
-- **Unresolved (`UNRESOLVED`)**: (1) adjustment reason-code vocabulary; (2) 3-tier approval escalation (11–50 / >50) vs single-tier `inventory:approve_adjustment`; (3) whether `storage_condition` must be added to `products` for cold-chain module (it is absent today); (4) whether TOTP MFA + password policy are required pre-production; (5) role taxonomy alignment (`owner/manager/...` vs `admin/pharmacist/nurse/procurement/auditor`).
+- **Unresolved (`UNRESOLVED`)**: only **D2 (3-tier approval escalation)** remains open — see §14. Decisions D1/D3/D4/D5 were analysed and resolved (documentation change / future implementation) in §14; no code change resulted.
 - **No source changes were made by this reconciliation.** Future controlled tasks (not this one) must implement: Batch/FEFO, Expiry, Purchases/GRN, POS, Prescriptions/Returns, notifications, deployments.
 
 ## 13. Documentation Maintenance Rules
@@ -221,4 +221,58 @@ Legend: **A** Consistent · **B** New detail only (additive) · **C** Conflictin
 
 ---
 
-_Maintained by: PharmaCare Development | Baseline generated: September 13, 2026 | No source code changed for this document._
+## 14. Specification Decisions (Resolution Record) — Sept 2026
+
+Controlled decision/gap-analysis on the five `UNRESOLVED` items from v1.0 of this file. **No source code, schema, permissions, or authentication were modified.** Evidence base: the initial-commit project tracker (`PROGRESS.md` at `f4cecee`), the docs suite, `prisma/schema.prisma` (unchanged since `f4cecee`), seeds, auth, and the inventory implementation. Original assignment PDFs are **not available** in the workspace; where a requirement relies only on inference it is labelled `INFERENCE`.
+
+### D1 — Stock adjustment reason-code vocabulary — `RESOLVED — DOCUMENTATION CHANGE` (no code change)
+
+- Evidence: `Stock_Management_Module.md` §4 lists 6 codes (`BREAKAGE, SPILLAGE, THEFT, DATA_ERROR, EXPIRY_DISPOSAL, QUALITY_REJECT`); implementation enum `AdjustmentType` = `PHYSICAL_COUNT, DAMAGE, THEFT, EXPIRY, CORRECTION, OPENING_STOCK`. All defined at initial commit.
+- The two vocabularies describe the **same concept space with different labels**. Defensible correspondence: `BREAKAGE→DAMAGE`, `DATA_ERROR→CORRECTION`, `EXPIRY_DISPOSAL→EXPIRY`, `THEFT→THEFT`; `SPILLAGE→DAMAGE` (`INFERENCE` — no code concept; subsumed by DAMAGE). Code-only codes `PHYSICAL_COUNT` (cycle counts, doc §7) and `OPENING_STOCK` (initial balances) are additive and non-conflicting.
+- Real gap: **`QUALITY_REJECT`** (failed quality check at GRN) has **no representation**. It is only consumed by receiving/quality workflows, which belong to the future Purchases/GRN module — not to completed Inventory.
+- Migration: changing the enum would require a Prisma schema change + data re-map. Defer until a related enum (e.g., `DisposalReason` for Batch) is introduced, then do it in a single migration.
+- Batch/FEFO dependency: **NONE** for FEFO. Batch disposal already has its own enum `DisposalReason = EXPIRED, DAMAGED, RECALLED, CONTAMINATED, OTHER` which covers the write-off needs.
+- Decision: keep the current enum. Record the mapping doc-side. Add `QUALITY_REJECT` when Purchases/GRN is built (controlled task).
+
+### D2 — Stock adjustment approval tiers — `REQUIRES PROJECT OWNER DECISION` (`UNRESOLVED`)
+
+- Evidence of **internal contradiction** in the docs themselves, weakening any single doc's authority:
+  - `Stock_Management_Module.md` §4: ≤10 self / 11–50 Pharmacy Manager / >50 Chief Pharmacist + documented evidence.
+  - `FAQ_Troubleshooting_Guide.md`: "Pharmacy Manager ... must approve adjustments **over 50** units".
+  - `Test_Cases_Test_Scripts.md` TC-STK-004: "manager notified if **> 10** units".
+- No role named `chief_pharmacist` and no "Chief Pharmacist" concept exists in seeds, schema, or code; `UAT_Sign_Off_Document.md` and `Validation_Verification_Report.md` reference Chief Pharmacist only as **empty template sign-off rows**.
+- Implementation: ≤10 auto-approved (applied immediately, recorded `APPROVED` with `approvedById = creator` — semantically equivalent to document tier 1 "self-approval"); >10 → `PENDING`, approved/rejected by any holder of `inventory:approve_adjustment` (Manager role).
+- `PROGRESS.md` (the project's own tracker) records Inventory COMPLETE with exactly this rule — i.e., the implemented rule is the project's chosen spec.
+- Verdict: the 3-tier workflow is **aspirational/unresolved in the docs**, not a violation by the implementation. No correction now. If the owner wants true 11–50 / >50 escalation, it is a controlled enhancement (add escalation level + evidence field) — not a Batch/FEFO blocker. **Leave `UNRESOLVED` pending owner sign-off.**
+
+### D3 — `storage_condition` — `RESOLVED — FUTURE IMPLEMENTATION` (not a Batch/FEFO blocker)
+
+- Evidence: `Cold_Chain_Storage_Monitoring.md` §2 — "Each drug in the master has a `storage_condition` field that maps to these classifications" (5 classes: Deep Freeze −25–−15 °C; Refrigerated +2–+8 °C; Cool +8–+15 °C; Room Temp +15–+25 °C; Controlled Room Temp +20–+25 °C). `Database_Design_ER_Diagrams.md` §2.1 `drugs` table: `storage_condition VARCHAR(100) | Room temp / Cold chain`.
+- Intended location: **Product (drug master)** only. Not on Batch or Inventory in any source.
+- Type/values: `VARCHAR(100)`, classified against the 5 temperature ranges above.
+- Product Master: per the two docs it "should have" existed there; in practice nothing consumes it and `PROGRESS.md` Product Master scope never included it. Absent from schema (`products` model has no such field — confirmed). Adding it now = schema migration (nullable column + optional enum/check), no backfill required.
+- FEFO: **not required** — FEFO is expiry ordering (`batches.expiryDate`). Batch: not required for batch creation/FEFO; useful for cold-chain quarantine UX in a later task.
+- Decision: implement on `Product` **with the Cold Chain module** (future), not before Batch/FEFO.
+
+### D4 — TOTP / password policy — `RESOLVED — FUTURE IMPLEMENTATION` (security hardening)
+
+- Documented: `Security_Architecture_Document.md` §2 — "Multi-Factor Auth: TOTP (Google Authenticator) — **mandatory for admin roles**"; "Password Policy: Min 10 chars, uppercase, number, special char, **no reuse of last 5**"; "Account Lockout: 5 failed → 15 min"; "bcrypt (cost factor 12)". `User_Manual_Admin_Guide.md`: "If prompted, enter your MFA code from your authenticator app."
+- Implemented: NextAuth CredentialsProvider; **lockout 5→15 min ✅**; **bcrypt cost 12 ✅** (`prisma/seeds/users.ts` uses `bcrypt.hash(u.password, 12)`). Not implemented: **TOTP** (no library in `package.json`), **password policy enforcement** (no rule; 2 of 4 seed passwords violate min-10: `Admin@123` = 8 chars, `Pharma@123` = 9 chars), and the documented 15-min access + 7-day refresh JWT model (NextAuth uses a 30-day session JWT instead).
+- `PROGRESS.md` Phase 1 explicitly defers auth enhancements ("Password reset flow ⏳ Target: Auth enhancement", "Rate limiting ⏳ Target: Security hardening") and never lists TOTP. Verdict: a **security-hardening/future requirement**, not a Phase 1 correction.
+- Batch/FEFO impact: **NONE** (orthogonal).
+
+### D5 — Role taxonomy alignment — `RESOLVED — DOCUMENTATION CHANGE` (no code change)
+
+- Implemented taxonomy (`owner, manager, pharmacist, cashier, purchase_manager, accountant`) is **the original project design**: it is present in the initial commit seeds (`prisma/seeds/roles.ts` at `f4cecee`) and in the original `PROGRESS.md` ("6 default roles (Owner, Manager, Pharmacist, Cashier, Purchase Mgr, Accountant)"). No schema change to roles since.
+- Doc taxonomy (`admin, pharmacist, nurse, procurement, auditor`) appears in `RBAC_Matrix.md`, `Security_Architecture_Document.md`, `Training_Materials.md`, `User_Manual_Admin_Guide.md` — an **alternative/aspirational hospital-style design** (nurse, procurement officer audiences) not present in seeds, code, or the original tracker.
+- The system is **permission-driven**, not role-name-driven: the only role-name reference in code is collecting names into the session token (`src/lib/auth/auth-config.ts`); every gate uses `permission` codes. Adding roles is therefore a **seeds-only change, no migration**.
+- Roles required for Inventory/Batch/FEFO/future: current `manager` covers `inventory:*`, `batches:*`; `owner` is ALL; `accountant` holds `audit:read`. No new roles strictly required for Batch/FEFO; `nurse`/`procurement`/`auditor` become real requirements only if those user types are confirmed by the owner (e.g., for EHR dispensing or GRN officer workflows).
+- Decision: **keep implemented role names unchanged**; classify the doc role model as stale/alternative and correct the docs (RBAC matrix, security doc, user-facing materials) separately. No migration.
+
+### D6 — Cross-cutting note
+
+Only **D2** remains `UNRESOLVED` (owner decision). D1/D5 are documentation corrections; D3/D4 are scheduled future implementation. None of the five block starting Batch Management + FEFO.
+
+---
+
+_Maintained by: PharmaCare Development | Baseline generated: September 13, 2026 | Specification decisions record §14 added September 13, 2026 | No source code changed for this document._

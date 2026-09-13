@@ -429,6 +429,18 @@ No source code was changed by this audit. A documentation-vs-code reconciliation
 - **Flagged conflicts (see baseline §9–§10)**: adjustment reason codes; approval tiers (≤10 self / 11–50 / >50 vs single-tier `inventory:approve_adjustment`); RBAC role set (`owner/manager/pharmacist/cashier/purchase_manager/accountant` vs doc roles); seeded Pharmacist has only `inventory:read`; `storage_condition` missing from `products`; no TOTP MFA / password policy; no `prisma/migrations/` (docs say Knex).
 - **Statuses and percentages are unchanged** by this reconciliation.
 
+### 📌 Specification Decisions & Gap Analysis — Sept 2026
+
+Controlled decision task resolving the five `UNRESOLVED` items in `documentation/IMPLEMENTATION_BASELINE.md` §14 (record kept there). **No application code, schema, permissions, or auth changed.**
+
+- **D1 Reason codes** → keep current `AdjustmentType` enum; mapping to doc vocabulary recorded. `QUALITY_REJECT` deferred to Purchases/GRN. (RESOLVED — documentation change)
+- **D2 Approval tiers** → docs are internally inconsistent (module `>50 Chief` vs FAQ `>50 Manager` vs Test_Cases `>10 Manager`); implementation matches tier-1 and `PROGRESS.md` spec. **`UNRESOLVED` — requires project-owner decision** on adopting true 11–50 / >50 escalation. Not a Batch/FEFO blocker.
+- **D3 `storage_condition`** → doc location = Product master (`VARCHAR(100)`, 5 temperature classifications). Only needed by the Cold Chain module; **not** required for FEFO/Batch. (RESOLVED — future implementation)
+- **D4 TOTP / password policy** → documented TOTP (mandatory for admins) and password policy are security-hardening/future; lockout + bcrypt cost 12 already implemented. Not a Phase-1 correction per `PROGRESS.md` deferral. (RESOLVED — future implementation)
+- **D5 Role taxonomy** → implemented 6-role taxonomy is the original initial-commit design; permission-driven, so roles are seeds-only (no migration). Docs' `nurse/procurement/auditor` model is alternative/stale → documentation correction. (RESOLVED — documentation change)
+
+**Batch/FEFO readiness:** all five decisions verified as non-blocking — **Batch Management + FEFO can begin** (schema, permissions, and inventory hook points already exist).
+
 ### Product & Inventory — Outstanding Work (next session)
 
 - [ ] **Batch Management + FEFO** — batch lifecycle, expiry detection, FEFO allocation (`batches`, `batch_status_log`, `batch_disposals`)
