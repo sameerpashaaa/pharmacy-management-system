@@ -194,10 +194,40 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Duplicate guards (in-file SKU/barcode, DB sku/barcode)         | ✅     | Service pre-check + transaction (P2002 → 409)                                                                       |
 | Tests (schema 11, service 34, route 10, dialog 5)              | ✅     | `product-import-schema.test.ts`, `product-import.test.ts`, `import/route.test.ts`, `product-import-dialog.test.tsx` |
 
+### ✅ Batch Management — COMPLETE
+
+| Task                                                                | Status | File(s)                                                                                     |
+| ------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
+| Validation schemas (batch, list query, create/update/block/dispose) | ✅     | `src/lib/validations/batch.ts`                                                              |
+| Batch service (lifecycle + lazy expiry sweep)                       | ✅     | `src/lib/batches/batch-service.ts`                                                          |
+| Batch creation service (duplicate + product guards, status log)     | ✅     | `createBatch` (used by future GRN/Purchases; **no create API** — creation is spec'd to GRN) |
+| Batch list API (search, filters, branch scope, pagination)          | ✅     | `src/app/api/batches/route.ts`                                                              |
+| Batch detail + update API (ACTIVE-only, non-lifecycle fields)       | ✅     | `src/app/api/batches/[id]/route.ts`                                                         |
+| Block API (ACTIVE→BLOCKED, reason, status log, audit)               | ✅     | `src/app/api/batches/[id]/block/route.ts`                                                   |
+| Dispose API (partial/full, DisposalReason, audit)                   | ✅     | `src/app/api/batches/[id]/dispose/route.ts`                                                 |
+| Batch list page (server-rendered, permission-gated, filters)        | ✅     | `src/app/(dashboard)/batches/page.tsx`, `src/components/batches/batches-view.tsx`           |
+| Batch table (expiry countdown, status, available qty)               | ✅     | `src/components/batches/batches-table.tsx`                                                  |
+| Batch detail page (fields, stock, disposals, status history)        | ✅     | `src/app/(dashboard)/batches/[id]/page.tsx`                                                 |
+| Edit / block / dispose actions (dialog forms)                       | ✅     | `src/components/batches/batch-detail-actions.tsx`                                           |
+| Tests (service 22, route 22)                                        | ✅     | `src/lib/batches/batch-service.test.ts`, `src/app/api/batches/**/route.test.ts`             |
+
+#### Batch Lifecycle (implemented)
+
+- **Explicit transitions only:** `ACTIVE → BLOCKED` (block action, `batches:block`), `ACTIVE/BLOCKED/EXPIRED → DISPOSED` (dispose action, `batches:dispose`), `ACTIVE/BLOCKED → EXPIRED` (system sweep), `EXHAUSTED` terminal (reached programmatically by future POS consumption).
+- **Expiry sweep is lazy** — `expireDueBatches()` flips due ACTIVE/BLOCKED batches to EXPIRED on list/detail reads; no cron/worker.
+- Every transition writes a `BatchStatusLog` row; audits are written by the API routes (`BLOCK`/`DISPOSE`/`UPDATE`).
+
+#### Known Limitations (Batch)
+
+- **No batch creation API** — batches arrive via GRN/Purchases (out of scope); `createBatch` is service-level for that future flow.
+- **Disposal does not mutate product-level inventory** — no linkage exists until GRN/Purchases land (documented in `documentation/IMPLEMENTATION_BASELINE.md` §9).
+- **FEFO sell-time auto-selection** (nearest-expiry allocation) remains in Phase 3 (POS) — this module exposes `expiryDate`/`status`/`availableQuantity` for it.
+- **Expiry detection views** (`/expiry/*`) remain stub pages — a separate Phase 2 task.
+
 ### ⏳ Remaining Phase 2 Tasks
 
-- [ ] Batch management with FEFO logic
-- [ ] Expiry detection
+- [x] Batch management — lifecycle COMPLETE (FEFO sell-time selection stays in Phase 3 POS)
+- [ ] Expiry detection (expiring/expired views, `/expiry/expiring` + `/expiry/expired`)
 
 ---
 
@@ -254,7 +284,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Jest configuration       | ✅     | `jest.config.ts` with Next.js integration, path aliases |
 | Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
 | React Testing Library    | ✅     | Component testing support configured                    |
-| Unit + integration tests | ✅     | 20 test suites, **194 tests passing**                   |
+| Unit + integration tests | ✅     | 25 test suites, **238 tests passing**                   |
 | TypeScript support       | ✅     | ts-jest with tsconfig.json                              |
 | Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                |
 
@@ -282,6 +312,11 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | `src/app/api/inventory/adjustments/[id]/approve/route.test.ts` | 4     | Approve POST auth + audit + 404/409 errors              |
 | `src/app/api/inventory/adjustments/[id]/reject/route.test.ts`  | 4     | Reject POST auth + audit + 404/409 errors               |
 | `src/components/inventory/adjustments-table.test.tsx`          | 6     | Adjustments table rendering, actions, empty state       |
+| `src/lib/batches/batch-service.test.ts`                        | 22    | Batch lifecycle: create/update/block/dispose/expiry     |
+| `src/app/api/batches/route.test.ts`                            | 3     | Batches GET auth + validation + branch scope            |
+| `src/app/api/batches/[id]/route.test.ts`                       | 7     | Batch GET/PATCH auth + 404 + validation + audit         |
+| `src/app/api/batches/[id]/block/route.test.ts`                 | 5     | Block POST auth + validation + 404/409 + audit          |
+| `src/app/api/batches/[id]/dispose/route.test.ts`               | 7     | Dispose POST auth + validation + 404/409/400 + audit    |
 
 ### CI/CD Pipeline
 
@@ -308,7 +343,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 ```bash
 npm run type-check   # ✅ PASS
 npm run lint         # ✅ PASS
-npm run test         # ✅ PASS (132 tests)
+npm run test         # ✅ PASS (238 tests)
 npm run build        # ✅ PASS
 ```
 
@@ -457,4 +492,4 @@ Controlled decision task resolving the five `UNRESOLVED` items in `documentation
 
 ---
 
-_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management + Product CSV Import complete, 194 tests passing. Documentation reconciliation baseline added (see `documentation/IMPLEMENTATION_BASELINE.md`)._
+_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management + Product CSV Import + Batch Management complete, 238 tests passing. Documentation reconciliation baseline added (see `documentation/IMPLEMENTATION_BASELINE.md`). Batch Management: lifecycle API/service/UI/tests shipped (commit `feat: implement batch management`); FEFO sell-time auto-selection deferred to Phase 3 (POS). Expiry-detection views remain outstanding._

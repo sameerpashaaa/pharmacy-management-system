@@ -269,10 +269,18 @@ Controlled decision/gap-analysis on the five `UNRESOLVED` items from v1.0 of thi
 - Roles required for Inventory/Batch/FEFO/future: current `manager` covers `inventory:*`, `batches:*`; `owner` is ALL; `accountant` holds `audit:read`. No new roles strictly required for Batch/FEFO; `nurse`/`procurement`/`auditor` become real requirements only if those user types are confirmed by the owner (e.g., for EHR dispensing or GRN officer workflows).
 - Decision: **keep implemented role names unchanged**; classify the doc role model as stale/alternative and correct the docs (RBAC matrix, security doc, user-facing materials) separately. No migration.
 
+### D7 — Batch Management implementation (Sept 2026) — `RESOLVED — SHIPPED`
+
+- **Scope shipped** (commit `feat: implement batch management`): batch list/detail/update/block/dispose APIs (`batches:read|update|block|dispose` — no `batches:create` exists in seeds, and none added), lifecycle service in `src/lib/batches/batch-service.ts`, batch list + detail pages under `/batches`, unit + route tests (44 added; suite now 238 passing / 25 suites), PROGRESS.md updated.
+- **No schema change** was required — the `Batch` / `BatchStatus` / `BatchStatusLog` / `BatchDisposal` / `DisposalReason` models (unchanged since `f4cecee`) fully covered the lifecycle.
+- **FEFO confirmation:** `batches.expiryDate` + `productId` indexes exist and the list/detail responses expose `expiryDate`/`status`/`availableQuantity`; nearest-expiry **sell-time auto-selection** and the `/expiry/*` views remain in scope (POS phase + Expiry Detection task). D3's `storage_condition` confirmed **not** required here.
+- **D1 cross-reference:** batch disposal uses its own `DisposalReason` enum (EXPIRED, DAMAGED, RECALLED, CONTAMINATED, OTHER); `QUALITY_REJECT` still deferred to Purchases/GRN.
+- **Documented limitations:** batch creation is a service-level `createBatch` for the future GRN flow (no standalone API, per `Batch_Expiry_Tracking.md` §2 / `Stock_Management_Module.md` §2); disposal does **not** mutate product-level inventory (no linkage until GRN/Purchases); EXHAUSTED is terminal and reached programmatically by future POS consumption.
+
 ### D6 — Cross-cutting note
 
 Only **D2** remains `UNRESOLVED` (owner decision). D1/D5 are documentation corrections; D3/D4 are scheduled future implementation. None of the five block starting Batch Management + FEFO.
 
 ---
 
-_Maintained by: PharmaCare Development | Baseline generated: September 13, 2026 | Specification decisions record §14 added September 13, 2026 | No source code changed for this document._
+_Maintained by: PharmaCare Development | Baseline generated: September 13, 2026 | Specification decisions record §14 added September 13, 2026 | §14 maintained per feature — D7 (Batch Management) added September 13, 2026._
