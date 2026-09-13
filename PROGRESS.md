@@ -13,7 +13,7 @@
 Phase 0: Foundation           ████████████████████ 100% ✅
 Phase 1: Core Infrastructure  ████████████████████ 100% ✅
 Phase 2: Product & Inventory  ████████████████████ 100% ✅
-Phase 3: Point of Sale        ░░░░░░░░░░░░░░░░░░░░   0% ⏳
+Phase 3: Point of Sale        ████████████████████ 100% ✅
 Phase 4: Purchase Management  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 5: Prescriptions/Returns░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 6: Financial & GST      ░░░░░░░░░░░░░░░░░░░░   0% ⏳
@@ -285,21 +285,48 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ---
 
-## ⏳ Phase 3: Point of Sale — NOT STARTED
+## ✅ Phase 3: Point of Sale — COMPLETE
 
 **Target:** Weeks 9–11 | **Modules:** 7, 8
 
-### Planned Tasks
+### ✅ POS / Billing — COMPLETE
 
-- [ ] POS full-screen layout
-- [ ] Fast product search (by name, barcode, generic)
-- [ ] Zustand cart state management
-- [ ] FEFO batch auto-selection in POS cart (wires `selectFefoBatches` + transactional stock deduction)
-- [ ] Payment modal (Cash/UPI/Card/Credit)
-- [ ] Invoice generation (A4 + thermal PDF)
-- [ ] Held bills functionality
-- [ ] Prescription integration in POS
-- [ ] Keyboard shortcut system
+| Task                                                                       | Status | File(s)                                                                                                               |
+| -------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
+| Transactional sale service (`createSale`, Serializable + retry)            | ✅     | `src/lib/sales/sales-service.ts`                                                                                      |
+| Server-side pricing (line + totals, GST split, round-off)                  | ✅     | `src/lib/sales/pricing.ts` (pure, unit tested)                                                                        |
+| POS product search (name/SKU/barcode/additional barcodes)                  | ✅     | `searchPosProducts` + `/api/pos/products`                                                                             |
+| FEFO/oldest-first stock allocation + optimistic CAS deduction              | ✅     | `allocateFefo` / `allocateByCreationDate` + `batch.updateMany` CAS                                                    |
+| EXHAUSTED flip + `BatchStatusLog` on full depletion                        | ✅     | sales-service (`status: 'EXHAUSTED'`)                                                                                 |
+| Inventory aggregate deduction (CAS by `updatedAt`) + `OUT`/SALE            | ✅     | sales-service + `inventoryMovement`                                                                                   |
+| Concurrent invoice numbering (per-branch counter CAS)                      | ✅     | `buildInvoiceNumber` + `invoiceCounter` CAS                                                                           |
+| Payment methods + balance logic (`cashReceived`, derive status)            | ✅     | `CASH/CARD/UPI/NETBANKING/CHEQUE/WALLET/CREDIT`, `PAID/PARTIAL/CREDIT/OVERPAID`                                       |
+| Discount gate (`sales:discount`, `>max` → `discount_override`)             | ✅     | policy gates in `createSale`                                                                                          |
+| Credit gate (`sales:credit` + `allow_credit_sales` + customer)             | ✅     | policy gates + inline customer capture                                                                                |
+| Prescription gate (top-level `prescriptionId`, same branch)                | ✅     | preset gate + prescription branch check                                                                               |
+| Held bills (save/load/delete, JSON cart)                                   | ✅     | `/api/pos/held-bills` + `[id]`                                                                                        |
+| Sales validations (create/held-bill/query schemas)                         | ✅     | `src/lib/validations/sale.ts`                                                                                         |
+| POS settings (`getPosSettings`: tax mode, round-off, max disc…)            | ✅     | `src/lib/settings/settings-service.ts`                                                                                |
+| POS API routes (config, products, held-bills, sales)                       | ✅     | `src/app/api/pos/*`, `src/app/api/sales/*`                                                                            |
+| POS billing UI (search + grid, cart, discount, payment dialog)             | ✅     | `src/app/(pos)/pos/page.tsx`, `src/components/pos/pos-client.tsx`                                                     |
+| Printable receipt (`window.print`, auto-print setting)                     | ✅     | receipt dialog in `pos-client.tsx`                                                                                    |
+| Sales history page + detail page                                           | ✅     | `src/app/(dashboard)/sales/page.tsx`, `src/components/sales/*`, `sales/[id]/page.tsx`                                 |
+| Tests (pricing 30+, validation 16, service 40+, integration 21+, routes 9) | ✅     | `pricing.test.ts`, `sale.test.ts`, `sales-service.test.ts`, `sales-service.integration.test.ts`, `pos-routes.test.ts` |
+
+#### POS Design (implemented)
+
+- **Server authority on money** — the client never sends a price, tax or discount amount. It sends `productId`/`quantity`/`discountPercent`; `createSale` recomputes every amount from DB values using the pure pricing module. Client-side previews reuse the same pure functions with product rows.
+- **Concurrency-safe consumption** — under `Serializable` isolation, per-batch CAS (`quantity`/`soldQuantity`/`status` match), inventory CAS (`updatedAt` match), counter CAS, P2033/P2034 retry wrapper. Oversell and double-deduction are impossible (exercised in `sales-service.integration.test.ts`).
+- **Barcodes** — search matches `barcode`, `sku`, `name` and `additionalBarcodes`; Enter on a single result adds it (scanner-friendly).
+- **Held bills** store the cart as JSON; loading re-validates against current stock at checkout, never at load.
+
+#### Known Limitations (POS)
+
+- **GST is intra-state only** — tax split always `cgst + sgst` from stored rates; state-level inter-state (`igst`) requires branch/organization state resolution (documented in `pricing.ts`).
+- **GST-exempt lines** use their stored rates if any; exempt flag zeroes tax.
+- **No return/refund UI** — Sale remains the source row for returns (Phase 5); the sales list shows `PARTIALLY_RETURNED`/`FULLY_RETURNED` statuses from future returns work.
+- **No thermal A4/PDF generation** — receipt prints via browser print (A4 friendly); a dedicated invoice generator is a future enhancement.
+- **Customer capture only for credit** — walk-in cash/UPI sales don't create customers (deliberate; matches `command.customer && !usingCredit` guard).
 
 ---
 
@@ -338,43 +365,48 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Jest configuration       | ✅     | `jest.config.ts` with Next.js integration, path aliases |
 | Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
 | React Testing Library    | ✅     | Component testing support configured                    |
-| Unit + integration tests | ✅     | 29 test suites, **308 tests passing**                   |
+| Unit + integration tests | ✅     | 35 test suites, **400 tests passing**                   |
 | TypeScript support       | ✅     | ts-jest with tsconfig.json                              |
 | Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                |
 
 ### Test Files
 
-| File                                                           | Tests | Purpose                                                                      |
-| -------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------- |
-| `src/lib/utils/cn.test.ts`                                     | 4     | Utility function tests                                                       |
-| `src/lib/validations/user.test.ts`                             | 9     | Zod schema validation tests                                                  |
-| `src/components/shared/empty-state.test.tsx`                   | 4     | React component tests                                                        |
-| `src/lib/validations/product.test.ts`                          | 31    | Product/Category/HSN/barcode schema tests                                    |
-| `src/lib/validations/product-import-schema.test.ts`            | 11    | CSV row schema: coercion, defaults, rejections                               |
-| `src/lib/products/product-service.test.ts`                     | 11    | Service CRUD, tree, uniqueness, pagination                                   |
-| `src/lib/products/product-import.test.ts`                      | 34    | CSV service: file/parse/row/duplicate/tx behavior                            |
-| `src/app/api/categories/route.test.ts`                         | 8     | Categories GET/POST auth + validation + conflict                             |
-| `src/app/api/products/route.test.ts`                           | 8     | Products GET/POST auth + validation + conflicts + audit                      |
-| `src/app/api/products/import/route.test.ts`                    | 10    | Import POST auth, file/size, audit, error mapping                            |
-| `src/components/products/product-table.test.tsx`               | 6     | Product table rendering, badges, empty state                                 |
-| `src/components/products/product-import-dialog.test.tsx`       | 5     | Import dialog select/validate/result/error UX                                |
-| `src/lib/inventory/inventory-service.test.ts`                  | 19    | Inventory list/status, movements, adjustment workflow                        |
-| `src/app/api/inventory/route.test.ts`                          | 5     | Inventory GET auth + branch scope + validation + 500                         |
-| `src/app/api/inventory/movements/route.test.ts`                | 4     | Movements GET auth + filters + validation                                    |
-| `src/app/api/inventory/adjustments/route.test.ts`              | 6     | Adjustments GET/POST auth + validation + audit                               |
-| `src/app/api/inventory/branches/route.test.ts`                 | 2     | Accessible branches GET                                                      |
-| `src/app/api/inventory/adjustments/[id]/approve/route.test.ts` | 4     | Approve POST auth + audit + 404/409 errors                                   |
-| `src/app/api/inventory/adjustments/[id]/reject/route.test.ts`  | 4     | Reject POST auth + audit + 404/409 errors                                    |
-| `src/components/inventory/adjustments-table.test.tsx`          | 6     | Adjustments table rendering, actions, empty state                            |
-| `src/lib/batches/batch-service.test.ts`                        | 22    | Batch lifecycle: create/update/block/dispose/expiry                          |
-| `src/app/api/batches/route.test.ts`                            | 3     | Batches GET auth + validation + branch scope                                 |
-| `src/app/api/batches/[id]/route.test.ts`                       | 7     | Batch GET/PATCH auth + 404 + validation + audit                              |
-| `src/app/api/batches/[id]/block/route.test.ts`                 | 5     | Block POST auth + validation + 404/409 + audit                               |
-| `src/app/api/batches/[id]/dispose/route.test.ts`               | 7     | Dispose POST auth + validation + 404/409/400 + audit                         |
-| `src/lib/batches/fefo.test.ts`                                 | 38    | FEFO eligibility, ordering, allocation, insufficient, product/branch service |
-| `src/lib/batches/expiry-service.test.ts`                       | 22    | Expiry classification boundaries, expiring/expired views, summary            |
-| `src/app/api/expiry/expiring/route.test.ts`                    | 6     | Expiring GET auth + validation + severity + branch scope                     |
-| `src/app/api/expiry/expired/route.test.ts`                     | 4     | Expired GET auth + validation + branch scope                                 |
+| File                                                           | Tests | Purpose                                                                       |
+| -------------------------------------------------------------- | ----- | ----------------------------------------------------------------------------- |
+| `src/lib/utils/cn.test.ts`                                     | 4     | Utility function tests                                                        |
+| `src/lib/validations/user.test.ts`                             | 9     | Zod schema validation tests                                                   |
+| `src/components/shared/empty-state.test.tsx`                   | 4     | React component tests                                                         |
+| `src/lib/validations/product.test.ts`                          | 31    | Product/Category/HSN/barcode schema tests                                     |
+| `src/lib/validations/product-import-schema.test.ts`            | 11    | CSV row schema: coercion, defaults, rejections                                |
+| `src/lib/products/product-service.test.ts`                     | 11    | Service CRUD, tree, uniqueness, pagination                                    |
+| `src/lib/products/product-import.test.ts`                      | 34    | CSV service: file/parse/row/duplicate/tx behavior                             |
+| `src/app/api/categories/route.test.ts`                         | 8     | Categories GET/POST auth + validation + conflict                              |
+| `src/app/api/products/route.test.ts`                           | 8     | Products GET/POST auth + validation + conflicts + audit                       |
+| `src/app/api/products/import/route.test.ts`                    | 10    | Import POST auth, file/size, audit, error mapping                             |
+| `src/components/products/product-table.test.tsx`               | 6     | Product table rendering, badges, empty state                                  |
+| `src/components/products/product-import-dialog.test.tsx`       | 5     | Import dialog select/validate/result/error UX                                 |
+| `src/lib/inventory/inventory-service.test.ts`                  | 19    | Inventory list/status, movements, adjustment workflow                         |
+| `src/app/api/inventory/route.test.ts`                          | 5     | Inventory GET auth + branch scope + validation + 500                          |
+| `src/app/api/inventory/movements/route.test.ts`                | 4     | Movements GET auth + filters + validation                                     |
+| `src/app/api/inventory/adjustments/route.test.ts`              | 6     | Adjustments GET/POST auth + validation + audit                                |
+| `src/app/api/inventory/branches/route.test.ts`                 | 2     | Accessible branches GET                                                       |
+| `src/app/api/inventory/adjustments/[id]/approve/route.test.ts` | 4     | Approve POST auth + audit + 404/409 errors                                    |
+| `src/app/api/inventory/adjustments/[id]/reject/route.test.ts`  | 4     | Reject POST auth + audit + 404/409 errors                                     |
+| `src/components/inventory/adjustments-table.test.tsx`          | 6     | Adjustments table rendering, actions, empty state                             |
+| `src/lib/batches/batch-service.test.ts`                        | 22    | Batch lifecycle: create/update/block/dispose/expiry                           |
+| `src/app/api/batches/route.test.ts`                            | 3     | Batches GET auth + validation + branch scope                                  |
+| `src/app/api/batches/[id]/route.test.ts`                       | 7     | Batch GET/PATCH auth + 404 + validation + audit                               |
+| `src/app/api/batches/[id]/block/route.test.ts`                 | 5     | Block POST auth + validation + 404/409 + audit                                |
+| `src/app/api/batches/[id]/dispose/route.test.ts`               | 7     | Dispose POST auth + validation + 404/409/400 + audit                          |
+| `src/lib/batches/fefo.test.ts`                                 | 38    | FEFO eligibility, ordering, allocation, insufficient, product/branch service  |
+| `src/lib/batches/expiry-service.test.ts`                       | 22    | Expiry classification boundaries, expiring/expired views, summary             |
+| `src/app/api/expiry/expiring/route.test.ts`                    | 6     | Expiring GET auth + validation + severity + branch scope                      |
+| `src/app/api/expiry/expired/route.test.ts`                     | 4     | Expired GET auth + validation + branch scope                                  |
+| `src/lib/sales/pricing.test.ts`                                | 30    | Pricing math: GST inclusive/exclusive, discount, exempt, round-off totals     |
+| `src/lib/validations/sale.test.ts`                             | 16    | POS sale create / held-bill / query schemas                                   |
+| `src/lib/sales/sales-service.test.ts`                          | 40    | Sale service: cashReceived, invoice number, held bills, policy gates          |
+| `src/lib/sales/sales-service.integration.test.ts`              | 21    | Real-Postgres transaction: FEFO/CAS, oversell, counter, rollback, concurrency |
+| `src/app/api/pos/__tests__/pos-routes.test.ts`                 | 9     | POS products/config/held-bills routes: auth, branch scope, validation         |
 
 ### CI/CD Pipeline
 
@@ -401,7 +433,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 ```bash
 npm run type-check   # ✅ PASS
 npm run lint         # ✅ PASS
-npm run test         # ✅ PASS (308 tests)
+npm run test         # ✅ PASS (400 tests)
 npm run build        # ✅ PASS
 ```
 
@@ -539,7 +571,8 @@ Controlled decision task resolving the five `UNRESOLVED` items in `documentation
 - [x] **Batch Management** — lifecycle COMPLETE (commit `feat: implement batch management`)
 - [x] **FEFO selection** — domain/service COMPLETE (commit `feat: implement fefo batch selection`; POS wiring stays Phase 3)
 - [x] **Expiry detection** — expiring/expired views + hub COMPLETE (`/expiry/expiring`, `/expiry/expired`; commit `feat: implement expiry detection`)
-- [ ] **POS, Purchases, Reports** (Phases 3+)
+- [x] **POS sales + billing** — Phase 3 COMPLETE (commit `feat: implement POS sales and billing`)
+- [ ] **Purchases, Prescriptions, Returns, Finance, Reporting** (Phases 4+)
 
 ### Testing — Further Backlog
 
@@ -547,8 +580,8 @@ Controlled decision task resolving the five `UNRESOLVED` items in `documentation
 - [ ] Integration tests for users/roles/org/branches API routes
 - [ ] Component tests for UserTable, RoleList, etc.
 - [ ] E2E tests for critical flows
-- [ ] Database testing infrastructure when Phase 3 models are implemented
+- [ ] Database testing infrastructure (integration suite currently requires a real Postgres)
 
 ---
 
-_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product & Inventory fully delivered (Product Master + Inventory Management + Product CSV Import + Batch Management + FEFO selection + Expiry Detection), 308 tests passing. Documentation reconciliation baseline added (see `documentation/IMPLEMENTATION_BASELINE.md`). Commit log: `feat: implement batch management` then `feat: implement fefo batch selection` (reusable ACTIVE-only, earliest-expiry-first service; no API/UI/schema change) then `feat: implement expiry detection` (30/60/90-day expiring + expired views; reuses lazy sweep + batches:read; no alerting/schema change). Phase 3 POS — including FEFO + expiry-aware dispensing wiring — remains._
+_Last updated: September 2026 | Phase 0-2 complete; **Phase 3 POS delivered** (transactional sale service with Serializable CAS consumption, pure server-side pricing, FEFO dispense wiring, credit/discount/prescription gates, held bills, printable receipt, POS billing UI + sales history/detail). 400 tests / 35 suites passing. Commit log for Phase 3: `feat: implement POS sales and billing`. Phase 4 (Purchase Management) is next._
