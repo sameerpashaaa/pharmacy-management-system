@@ -221,12 +221,31 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 - **No batch creation API** — batches arrive via GRN/Purchases (out of scope); `createBatch` is service-level for that future flow.
 - **Disposal does not mutate product-level inventory** — no linkage exists until GRN/Purchases land (documented in `documentation/IMPLEMENTATION_BASELINE.md` §9).
-- **FEFO sell-time auto-selection** (nearest-expiry allocation) remains in Phase 3 (POS) — this module exposes `expiryDate`/`status`/`availableQuantity` for it.
+- **FEFO sell-time wiring** (POS calls `selectFefoBatches` and deducts stock transactionally) remains Phase 3 — the reusable FEFO selection service is now **complete** (see FEFO section below).
 - **Expiry detection views** (`/expiry/*`) remain stub pages — a separate Phase 2 task.
+
+### ✅ FEFO Selection (domain/service) — COMPLETE
+
+| Task                                                                         | Status | File(s)                                                           |
+| ---------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------- |
+| Pure FEFO domain logic (eligibility, ordering, allocation)                   | ✅     | `src/lib/batches/fefo.ts`                                         |
+| DB selection service (`selectFefoBatches`: product/branch scope, lazy sweep) | ✅     | `src/lib/batches/fefo-service.ts`                                 |
+| Tests (pure + service)                                                       | ✅     | `src/lib/batches/fefo.test.ts` (38 tests)                         |
+| Public API / UI                                                              | —      | **None** — FEFO is reusable service logic consumed by Phase 3 POS |
+
+#### FEFO Rules (implemented)
+
+- **Ordering:** earliest expiry date first (spec `Stock_Management_Module.md` §5, TC-STK-002). No manufacturing/creation/cost/quantity key. Equal expiry dates → deterministic tie-break by batch id (implementation choice, not a business rule).
+- **Eligibility:** only `ACTIVE` batches with available quantity `> 0` and non-passed expiry are selectable. `BLOCKED` (quarantine), `EXPIRED`, `DISPOSED`, `EXHAUSTED` and zero-availability batches are excluded — never selected merely because they hold quantity.
+- **Partial allocation:** greedy across batches (e.g. available 40/35/50 → request 100 = 40/35/25).
+- **Insufficient stock:** never silently fulfilled — returns a structured result (`success` | `insufficient` + `shortfall` | `no_stock`).
+- **Expiry handling:** expired (`expiryDate` passed / status `EXPIRED`) vs near-expiry (no alerting — that is the Expiry Detection task). Uses the existing single Batch expiry model.
+- **Concurrency boundary:** selection is read-only **advisory** — it does NOT reserve or deduct stock. POS/dispensing must re-check and mutate batch rows transactionally (optimistic CAS, like stock adjustments). `fefo_enabled` organisation setting is seeded; POS decides whether to invoke FEFO.
 
 ### ⏳ Remaining Phase 2 Tasks
 
 - [x] Batch management — lifecycle COMPLETE (FEFO sell-time selection stays in Phase 3 POS)
+- [x] FEFO selection (domain/service) — COMPLETE (POS wiring stays in Phase 3)
 - [ ] Expiry detection (expiring/expired views, `/expiry/expiring` + `/expiry/expired`)
 
 ---
@@ -240,7 +259,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 - [ ] POS full-screen layout
 - [ ] Fast product search (by name, barcode, generic)
 - [ ] Zustand cart state management
-- [ ] FEFO batch auto-selection
+- [ ] FEFO batch auto-selection in POS cart (wires `selectFefoBatches` + transactional stock deduction)
 - [ ] Payment modal (Cash/UPI/Card/Credit)
 - [ ] Invoice generation (A4 + thermal PDF)
 - [ ] Held bills functionality
@@ -284,39 +303,40 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Jest configuration       | ✅     | `jest.config.ts` with Next.js integration, path aliases |
 | Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
 | React Testing Library    | ✅     | Component testing support configured                    |
-| Unit + integration tests | ✅     | 25 test suites, **238 tests passing**                   |
+| Unit + integration tests | ✅     | 26 test suites, **276 tests passing**                   |
 | TypeScript support       | ✅     | ts-jest with tsconfig.json                              |
 | Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                |
 
 ### Test Files
 
-| File                                                           | Tests | Purpose                                                 |
-| -------------------------------------------------------------- | ----- | ------------------------------------------------------- |
-| `src/lib/utils/cn.test.ts`                                     | 4     | Utility function tests                                  |
-| `src/lib/validations/user.test.ts`                             | 9     | Zod schema validation tests                             |
-| `src/components/shared/empty-state.test.tsx`                   | 4     | React component tests                                   |
-| `src/lib/validations/product.test.ts`                          | 31    | Product/Category/HSN/barcode schema tests               |
-| `src/lib/validations/product-import-schema.test.ts`            | 11    | CSV row schema: coercion, defaults, rejections          |
-| `src/lib/products/product-service.test.ts`                     | 11    | Service CRUD, tree, uniqueness, pagination              |
-| `src/lib/products/product-import.test.ts`                      | 34    | CSV service: file/parse/row/duplicate/tx behavior       |
-| `src/app/api/categories/route.test.ts`                         | 8     | Categories GET/POST auth + validation + conflict        |
-| `src/app/api/products/route.test.ts`                           | 8     | Products GET/POST auth + validation + conflicts + audit |
-| `src/app/api/products/import/route.test.ts`                    | 10    | Import POST auth, file/size, audit, error mapping       |
-| `src/components/products/product-table.test.tsx`               | 6     | Product table rendering, badges, empty state            |
-| `src/components/products/product-import-dialog.test.tsx`       | 5     | Import dialog select/validate/result/error UX           |
-| `src/lib/inventory/inventory-service.test.ts`                  | 19    | Inventory list/status, movements, adjustment workflow   |
-| `src/app/api/inventory/route.test.ts`                          | 5     | Inventory GET auth + branch scope + validation + 500    |
-| `src/app/api/inventory/movements/route.test.ts`                | 4     | Movements GET auth + filters + validation               |
-| `src/app/api/inventory/adjustments/route.test.ts`              | 6     | Adjustments GET/POST auth + validation + audit          |
-| `src/app/api/inventory/branches/route.test.ts`                 | 2     | Accessible branches GET                                 |
-| `src/app/api/inventory/adjustments/[id]/approve/route.test.ts` | 4     | Approve POST auth + audit + 404/409 errors              |
-| `src/app/api/inventory/adjustments/[id]/reject/route.test.ts`  | 4     | Reject POST auth + audit + 404/409 errors               |
-| `src/components/inventory/adjustments-table.test.tsx`          | 6     | Adjustments table rendering, actions, empty state       |
-| `src/lib/batches/batch-service.test.ts`                        | 22    | Batch lifecycle: create/update/block/dispose/expiry     |
-| `src/app/api/batches/route.test.ts`                            | 3     | Batches GET auth + validation + branch scope            |
-| `src/app/api/batches/[id]/route.test.ts`                       | 7     | Batch GET/PATCH auth + 404 + validation + audit         |
-| `src/app/api/batches/[id]/block/route.test.ts`                 | 5     | Block POST auth + validation + 404/409 + audit          |
-| `src/app/api/batches/[id]/dispose/route.test.ts`               | 7     | Dispose POST auth + validation + 404/409/400 + audit    |
+| File                                                           | Tests | Purpose                                                                      |
+| -------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------- |
+| `src/lib/utils/cn.test.ts`                                     | 4     | Utility function tests                                                       |
+| `src/lib/validations/user.test.ts`                             | 9     | Zod schema validation tests                                                  |
+| `src/components/shared/empty-state.test.tsx`                   | 4     | React component tests                                                        |
+| `src/lib/validations/product.test.ts`                          | 31    | Product/Category/HSN/barcode schema tests                                    |
+| `src/lib/validations/product-import-schema.test.ts`            | 11    | CSV row schema: coercion, defaults, rejections                               |
+| `src/lib/products/product-service.test.ts`                     | 11    | Service CRUD, tree, uniqueness, pagination                                   |
+| `src/lib/products/product-import.test.ts`                      | 34    | CSV service: file/parse/row/duplicate/tx behavior                            |
+| `src/app/api/categories/route.test.ts`                         | 8     | Categories GET/POST auth + validation + conflict                             |
+| `src/app/api/products/route.test.ts`                           | 8     | Products GET/POST auth + validation + conflicts + audit                      |
+| `src/app/api/products/import/route.test.ts`                    | 10    | Import POST auth, file/size, audit, error mapping                            |
+| `src/components/products/product-table.test.tsx`               | 6     | Product table rendering, badges, empty state                                 |
+| `src/components/products/product-import-dialog.test.tsx`       | 5     | Import dialog select/validate/result/error UX                                |
+| `src/lib/inventory/inventory-service.test.ts`                  | 19    | Inventory list/status, movements, adjustment workflow                        |
+| `src/app/api/inventory/route.test.ts`                          | 5     | Inventory GET auth + branch scope + validation + 500                         |
+| `src/app/api/inventory/movements/route.test.ts`                | 4     | Movements GET auth + filters + validation                                    |
+| `src/app/api/inventory/adjustments/route.test.ts`              | 6     | Adjustments GET/POST auth + validation + audit                               |
+| `src/app/api/inventory/branches/route.test.ts`                 | 2     | Accessible branches GET                                                      |
+| `src/app/api/inventory/adjustments/[id]/approve/route.test.ts` | 4     | Approve POST auth + audit + 404/409 errors                                   |
+| `src/app/api/inventory/adjustments/[id]/reject/route.test.ts`  | 4     | Reject POST auth + audit + 404/409 errors                                    |
+| `src/components/inventory/adjustments-table.test.tsx`          | 6     | Adjustments table rendering, actions, empty state                            |
+| `src/lib/batches/batch-service.test.ts`                        | 22    | Batch lifecycle: create/update/block/dispose/expiry                          |
+| `src/app/api/batches/route.test.ts`                            | 3     | Batches GET auth + validation + branch scope                                 |
+| `src/app/api/batches/[id]/route.test.ts`                       | 7     | Batch GET/PATCH auth + 404 + validation + audit                              |
+| `src/app/api/batches/[id]/block/route.test.ts`                 | 5     | Block POST auth + validation + 404/409 + audit                               |
+| `src/app/api/batches/[id]/dispose/route.test.ts`               | 7     | Dispose POST auth + validation + 404/409/400 + audit                         |
+| `src/lib/batches/fefo.test.ts`                                 | 38    | FEFO eligibility, ordering, allocation, insufficient, product/branch service |
 
 ### CI/CD Pipeline
 
@@ -343,7 +363,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 ```bash
 npm run type-check   # ✅ PASS
 npm run lint         # ✅ PASS
-npm run test         # ✅ PASS (238 tests)
+npm run test         # ✅ PASS (276 tests)
 npm run build        # ✅ PASS
 ```
 
@@ -478,7 +498,8 @@ Controlled decision task resolving the five `UNRESOLVED` items in `documentation
 
 ### Product & Inventory — Outstanding Work (next session)
 
-- [ ] **Batch Management + FEFO** — batch lifecycle, expiry detection, FEFO allocation (`batches`, `batch_status_log`, `batch_disposals`)
+- [x] **Batch Management** — lifecycle COMPLETE (commit `feat: implement batch management`)
+- [x] **FEFO selection** — domain/service COMPLETE (commit `feat: implement fefo batch selection`; POS wiring stays Phase 3)
 - [ ] **Expiry detection** — expiring/expired views (`/expiry/expiring`, `/expiry/expired`)
 - [ ] **POS, Purchases, Reports** (Phases 3+)
 
@@ -492,4 +513,4 @@ Controlled decision task resolving the five `UNRESOLVED` items in `documentation
 
 ---
 
-_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management + Product CSV Import + Batch Management complete, 238 tests passing. Documentation reconciliation baseline added (see `documentation/IMPLEMENTATION_BASELINE.md`). Batch Management: lifecycle API/service/UI/tests shipped (commit `feat: implement batch management`); FEFO sell-time auto-selection deferred to Phase 3 (POS). Expiry-detection views remain outstanding._
+_Last updated: September 2026 | Phase 0-1 complete, Phase 2 Product Master + Inventory Management + Product CSV Import + Batch Management + FEFO selection complete, 276 tests passing. Documentation reconciliation baseline added (see `documentation/IMPLEMENTATION_BASELINE.md`). Commit log: `feat: implement batch management` then `feat: implement fefo batch selection` (reusable ACTIVE-only, earliest-expiry-first service; no API/UI/schema change). Expiry-detection views remain outstanding; POS/dispensing FEFO wiring stays in Phase 3._

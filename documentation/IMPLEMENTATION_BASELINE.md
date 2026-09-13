@@ -90,23 +90,24 @@ Browser ──> Next.js 14 App Router (SSR + Route Handlers /api/**)
 
 ## 5. Completed Feature Baseline (verified)
 
-| Module                                                                     | Status (PROGRESS.md) | Key evidence                                                                 |
-| -------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------- |
-| Foundation (Next.js, TS, Tailwind, Shadcn)                                 | ✅ COMPLETE          | `package.json`, configs                                                      |
-| DB schema — all 20 modules of tables                                       | ✅ COMPLETE          | `prisma/schema.prisma` (69 model/enum defs)                                  |
-| Seed data (60 permissions, 6 roles, org, branches, HSN, categories, users) | ✅ COMPLETE          | `prisma/seeds/*.ts`                                                          |
-| Auth + users/roles + org/branches APIs + UI                                | ✅ COMPLETE          | `src/lib/auth/auth-config.ts`, `src/app/api/users                            | roles | organization | branches` |
-| Product Master (CRUD, categories, HSN, barcodes)                           | ✅ COMPLETE          | `src/lib/products/*`, products APIs + pages                                  |
-| Inventory (list, movements, adjustments, approve/reject)                   | ✅ COMPLETE          | `src/lib/inventory/*`, inventory APIs + pages                                |
-| Product CSV Import                                                         | ✅ COMPLETE          | `src/lib/products/product-import.ts`, `src/app/api/products/import/route.ts` |
-| Testing + CI                                                               | ✅ FOUNDATION        | 20 suites / 194 tests; `.github/workflows/ci.yml`; Husky + lint-staged       |
+| Module                                                                      | Status (PROGRESS.md) | Key evidence                                                                   |
+| --------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------ |
+| Foundation (Next.js, TS, Tailwind, Shadcn)                                  | ✅ COMPLETE          | `package.json`, configs                                                        |
+| DB schema — all 20 modules of tables                                        | ✅ COMPLETE          | `prisma/schema.prisma` (69 model/enum defs)                                    |
+| Seed data (60 permissions, 6 roles, org, branches, HSN, categories, users)  | ✅ COMPLETE          | `prisma/seeds/*.ts`                                                            |
+| Auth + users/roles + org/branches APIs + UI                                 | ✅ COMPLETE          | `src/lib/auth/auth-config.ts`, `src/app/api/users                              | roles | organization | branches` |
+| Product Master (CRUD, categories, HSN, barcodes)                            | ✅ COMPLETE          | `src/lib/products/*`, products APIs + pages                                    |
+| Inventory (list, movements, adjustments, approve/reject)                    | ✅ COMPLETE          | `src/lib/inventory/*`, inventory APIs + pages                                  |
+| Product CSV Import                                                          | ✅ COMPLETE          | `src/lib/products/product-import.ts`, `src/app/api/products/import/route.ts`   |
+| Batch Management (list/detail/update/block/dispose, status logs, disposals) | ✅ COMPLETE          | `src/lib/batches/batch-service.ts`, `src/app/api/batches/**`, `/batches` pages |
+| FEFO selection (domain/service, reusable allocation)                        | ✅ COMPLETE          | `src/lib/batches/fefo.ts` (pure), `src/lib/batches/fefo-service.ts` (DB)       |
+| Testing + CI                                                                | ✅ FOUNDATION        | 26 suites / 276 tests; `.github/workflows/ci.yml`; Husky + lint-staged         |
 
 ## 6. Future / Not Implemented Features (documented, consistent with `PROGRESS.md`)
 
 Marked `NOT STARTED` in `PROGRESS.md` (Phases 3–9) and NOT present in working route handlers:
 
-- **Batch Management + FEFO** (schema `batches/batch_status_log/batch_disposals` exists, logic not built) — `PROGRESS.md` "Remaining Phase 2 Tasks".
-- **Expiry detection / alerts** (near-expiry, expired views).
+- **Batch Management** — ✅ SHIPPED (§5; §14 D7). **FEFO selection service** — ✅ SHIPPED (`src/lib/batches/fefo.ts` + `fefo-service.ts`). Remaining: **Expiry detection views** (near-expiry/expired, `PROGRESS.md` remaining Phase 2) and **POS FEFO wiring** (Phase 3). `sale_item_batches` schema exists, no POS workflow.
 - **POS / Sales / Billing** (schema exists: `sales/sale_items/payments/held_bills`).
 - **Purchases + GRN / PO / 3-way match** (schema exists: `purchases/purchase_items/purchase_returns`).
 - **Prescriptions, Returns & Recall, Customers/Suppliers ledgers, Finance/ledgers, GST transaction posting, Reports, Notifications, Files** — some schema/models exist; no workflows implemented.
@@ -119,16 +120,16 @@ Marked `NOT STARTED` in `PROGRESS.md` (Phases 3–9) and NOT present in working 
 
 ### 7.1 From `Stock_Management_Module.md`
 
-| #   | Rule (doc quote / summary)                                                                                     | Actual implementation                                                                                                                                  | Class                                                                    |
-| --- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| 1   | Adjustment reason codes `BREAKAGE, SPILLAGE, THEFT, DATA_ERROR, EXPIRY_DISPOSAL, QUALITY_REJECT` (§2)          | Enum `AdjustmentType = PHYSICAL_COUNT, DAMAGE, THEFT, EXPIRY, CORRECTION, OPENING_STOCK`                                                               | **CONFLICT** (code is authoritative; docs must be updated)               |
-| 2   | Approval: "≤ 10 units Pharmacist self-approval; 11–50 Pharmacy Manager; >50 Chief Pharmacist (+evidence)" (§4) | `AUTO_APPROVE_THRESHOLD = 10`; `>10 → PENDING`, approved/rejected by any holder of `inventory:approve_adjustment` (Manager role); no 11–50 / >50 split | **PARTIAL CONFLICT** (auto-approve ≤10 matches; escalation tiers differ) |
-| 3   | Receiving via GRN (PO required, expiry <6 months rejected, cold-chain temp log)                                | Purchases/GRN not implemented                                                                                                                          | **FUTURE**                                                               |
-| 4   | FEFO dispensing policy                                                                                         | Not implemented (schema has `batches`)                                                                                                                 | **FUTURE**                                                               |
-| 5   | Schedule X dual authorization on adjustments/disposals                                                         | No Schedule X gating anywhere                                                                                                                          | **FUTURE**                                                               |
-| 6   | Weighted-average cost valuation                                                                                | `costPrice` on product, `purchasePrice` on batch; no costing algorithm                                                                                 | **FUTURE**                                                               |
-| 7   | Quarterly cycle count; >2% variance investigation                                                              | No cycle-count workflow                                                                                                                                | **FUTURE**                                                               |
-| 8   | Near-expiry <30 days red highlight                                                                             | No expiry views                                                                                                                                        | **FUTURE**                                                               |
+| #   | Rule (doc quote / summary)                                                                                     | Actual implementation                                                                                                                                                                                     | Class                                                                    |
+| --- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 1   | Adjustment reason codes `BREAKAGE, SPILLAGE, THEFT, DATA_ERROR, EXPIRY_DISPOSAL, QUALITY_REJECT` (§2)          | Enum `AdjustmentType = PHYSICAL_COUNT, DAMAGE, THEFT, EXPIRY, CORRECTION, OPENING_STOCK`                                                                                                                  | **CONFLICT** (code is authoritative; docs must be updated)               |
+| 2   | Approval: "≤ 10 units Pharmacist self-approval; 11–50 Pharmacy Manager; >50 Chief Pharmacist (+evidence)" (§4) | `AUTO_APPROVE_THRESHOLD = 10`; `>10 → PENDING`, approved/rejected by any holder of `inventory:approve_adjustment` (Manager role); no 11–50 / >50 split                                                    | **PARTIAL CONFLICT** (auto-approve ≤10 matches; escalation tiers differ) |
+| 3   | Receiving via GRN (PO required, expiry <6 months rejected, cold-chain temp log)                                | Purchases/GRN not implemented                                                                                                                                                                             | **FUTURE**                                                               |
+| 4   | FEFO dispensing policy                                                                                         | Selection service shipped (`src/lib/batches/fefo-service.ts`): ACTIVE-only, earliest-expiry-first allocation. POS/dispensing call-time wiring (incl. optional batch override w/ justification) **FUTURE** | **PARTIAL / FUTURE**                                                     |
+| 5   | Schedule X dual authorization on adjustments/disposals                                                         | No Schedule X gating anywhere                                                                                                                                                                             | **FUTURE**                                                               |
+| 6   | Weighted-average cost valuation                                                                                | `costPrice` on product, `purchasePrice` on batch; no costing algorithm                                                                                                                                    | **FUTURE**                                                               |
+| 7   | Quarterly cycle count; >2% variance investigation                                                              | No cycle-count workflow                                                                                                                                                                                   | **FUTURE**                                                               |
+| 8   | Near-expiry <30 days red highlight                                                                             | No expiry views                                                                                                                                                                                           | **FUTURE**                                                               |
 
 ### 7.2 Consistent rules already honoured by implementation
 
@@ -142,27 +143,27 @@ Marked `NOT STARTED` in `PROGRESS.md` (Phases 3–9) and NOT present in working 
 
 Legend: **A** Consistent · **B** New detail only (additive) · **C** Conflicting · **D** Placeholder (no spec) · **E** Implemented differently · **F** Future requirement (not implemented)
 
-| #   | Area                                                             | Class                       | Evidence / note                                                              |
-| --- | ---------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------- |
-| 1   | Product master fields & uniqueness (SKU/barcode)                 | **A**                       | `products` model + guards + tests                                            |
-| 2   | Product CSV import                                               | **A**                       | Contract + 2MB/1000 rows + all-or-nothing + tests                            |
-| 3   | Inventory list/status per product–branch                         | **A**                       | `inventory` model (total/reserved/available), status derived in memory       |
-| 4   | Inventory movements ledger                                       | **A**                       | `inventory_movements` w/ before/after                                        |
-| 5   | Stock adjustments                                                | **E(partial)/C**            | Workflow + auto-approve ≤10 ✓; reason codes and approval tiers differ (§7.1) |
-| 6   | Batch management & FEFO                                          | **F**                       | Schema ready, logic not built                                                |
-| 7   | Expiry detection & alerts                                        | **F**                       | `BatchStatus=EXPIRED` possible; no detection workflow                        |
-| 8   | Reorder-level alerts / auto-reorder                              | **F**                       | `reorderLevel` field exists; no alert engine                                 |
-| 9   | Schedule H/H1/X compliance (dual auth, batch control)            | **F**                       | `drugSchedule` enum exists; no enforcement                                   |
-| 10  | GRN / PO / 3-way match (±2%)                                     | **F**                       | Purchases phase not started                                                  |
-| 11  | Audit trail (events logged)                                      | **A partial / F(chaining)** | Events logged; append-only + hash chain + retention not enforced             |
-| 12  | RBAC (permission-driven)                                         | **E**                       | Roles differ from `RBAC_Matrix.md`; enforcement is permission-based          |
-| 13  | Authentication                                                   | **C**                       | NextAuth JWT sessions vs doc JWT 15m/7d + TOTP                               |
-| 14  | Cold chain monitoring & breach quarantine                        | **F**                       | No `storage_condition` field on `products`; no sensors                       |
-| 15  | Notifications (SMS/email)                                        | **F**                       | `notifications` schema; nodemailer only                                      |
-| 16  | Barcode/RFID scanning & GS1 parsing                              | **F**                       | `product_barcodes` only; no GS1/RFID                                         |
-| 17  | Returns & recall (7-day, disposal for Schedule X, CDSCO/FDA ack) | **F**                       | Schema present; no workflow                                                  |
-| 18  | POS / sales / invoices / held bills                              | **F**                       | Schema present; Phase 3 not started                                          |
-| 19  | Deployment & ops (AWS/ECS, Redis, monitoring stack)              | **F**                       | Only GitHub Actions CI present                                               |
+| #   | Area                                                             | Class                       | Evidence / note                                                                                                                   |
+| --- | ---------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Product master fields & uniqueness (SKU/barcode)                 | **A**                       | `products` model + guards + tests                                                                                                 |
+| 2   | Product CSV import                                               | **A**                       | Contract + 2MB/1000 rows + all-or-nothing + tests                                                                                 |
+| 3   | Inventory list/status per product–branch                         | **A**                       | `inventory` model (total/reserved/available), status derived in memory                                                            |
+| 4   | Inventory movements ledger                                       | **A**                       | `inventory_movements` w/ before/after                                                                                             |
+| 5   | Stock adjustments                                                | **E(partial)/C**            | Workflow + auto-approve ≤10 ✓; reason codes and approval tiers differ (§7.1)                                                      |
+| 6   | Batch management & FEFO                                          | **A**                       | Batch lifecycle + FEFO selection shipped (eligibility ACTIVE-only, earliest-expiry order); POS auto-select wiring remains Phase 3 |
+| 7   | Expiry detection & alerts                                        | **F**                       | `BatchStatus=EXPIRED` possible; no detection workflow                                                                             |
+| 8   | Reorder-level alerts / auto-reorder                              | **F**                       | `reorderLevel` field exists; no alert engine                                                                                      |
+| 9   | Schedule H/H1/X compliance (dual auth, batch control)            | **F**                       | `drugSchedule` enum exists; no enforcement                                                                                        |
+| 10  | GRN / PO / 3-way match (±2%)                                     | **F**                       | Purchases phase not started                                                                                                       |
+| 11  | Audit trail (events logged)                                      | **A partial / F(chaining)** | Events logged; append-only + hash chain + retention not enforced                                                                  |
+| 12  | RBAC (permission-driven)                                         | **E**                       | Roles differ from `RBAC_Matrix.md`; enforcement is permission-based                                                               |
+| 13  | Authentication                                                   | **C**                       | NextAuth JWT sessions vs doc JWT 15m/7d + TOTP                                                                                    |
+| 14  | Cold chain monitoring & breach quarantine                        | **F**                       | No `storage_condition` field on `products`; no sensors                                                                            |
+| 15  | Notifications (SMS/email)                                        | **F**                       | `notifications` schema; nodemailer only                                                                                           |
+| 16  | Barcode/RFID scanning & GS1 parsing                              | **F**                       | `product_barcodes` only; no GS1/RFID                                                                                              |
+| 17  | Returns & recall (7-day, disposal for Schedule X, CDSCO/FDA ack) | **F**                       | Schema present; no workflow                                                                                                       |
+| 18  | POS / sales / invoices / held bills                              | **F**                       | Schema present; Phase 3 not started                                                                                               |
+| 19  | Deployment & ops (AWS/ECS, Redis, monitoring stack)              | **F**                       | Only GitHub Actions CI present                                                                                                    |
 
 ---
 
@@ -277,10 +278,21 @@ Controlled decision/gap-analysis on the five `UNRESOLVED` items from v1.0 of thi
 - **D1 cross-reference:** batch disposal uses its own `DisposalReason` enum (EXPIRED, DAMAGED, RECALLED, CONTAMINATED, OTHER); `QUALITY_REJECT` still deferred to Purchases/GRN.
 - **Documented limitations:** batch creation is a service-level `createBatch` for the future GRN flow (no standalone API, per `Batch_Expiry_Tracking.md` §2 / `Stock_Management_Module.md` §2); disposal does **not** mutate product-level inventory (no linkage until GRN/Purchases); EXHAUSTED is terminal and reached programmatically by future POS consumption.
 
+### D8 — FEFO selection implementation (Sept 2026) — `RESOLVED — SHIPPED`
+
+- **Scope shipped** (commit `feat: implement fefo batch selection`): reusable FEFO domain logic + DB-backed selection service. **No public API, no UI, no schema change, no permissions, no POS.**
+- **Architecture:** pure logic in `src/lib/batches/fefo.ts` (`filterEligibleBatches`, `compareFefoCandidates`, `allocateFefo`) consumed by `src/lib/batches/fefo-service.ts` (`selectFefoBatches(productId, requestedQuantity, { branchId? })`). Tests: `src/lib/batches/fefo.test.ts` (38 tests; suite now 276 passing / 26 suites).
+- **Eligibility rule (documented):** only `status === ACTIVE` batches with available quantity (`quantity - reservedQuantity - soldQuantity`) `> 0` and `expiryDate >= now`. BLOCKED (quarantined), EXPIRED, DISPOSED, EXHAUSTED and zero-availability batches are **never** selected — per `Stock_Management_Module.md` §3 ("System blocks dispensing of expired batches"), `Batch_Expiry_Tracking.md` §5 ("removed from available stock display"), and `BatchStatus=BLOCKED` quarantine semantics.
+- **Ordering:** earliest expiry date first (spec §5). No manufacturing/creation/cost/quantity key used. Equal expiry dates → deterministic tie-break by ascending batch id — an **implementation choice, not a business rule**.
+- **Partial allocation:** pure greedy allocation across batches (A=40, B=35, C=50 → req 100 → 40/35/25). **Insufficient stock is never silently fulfilled**: result is a structured union (`success` / `insufficient` w/ shortfall / `no_stock`).
+- **Expiry handling:** distinguishes expired (`expiryDate` passed / status EXPIRED) from near-expiry (no near-expiry alerting built — that is the Expiry Detection task, not FEFO). Uses the single existing Batch expiry model; no second model.
+- **Concurrency boundary:** selection is **read-only advisory** — it does not reserve or deduct stock. POS/dispensing consumption must re-check and mutate batch rows transactionally with optimistic CAS (same pattern as `stock_adjustments`). The `fefo_enabled` organisation setting (seeds) is documented; POS decides whether to invoke FEFO.
+- **Product isolation:** enforced by the DB query's `where.productId`; the pure layer re-checks status/availability/expiry defensively.
+
 ### D6 — Cross-cutting note
 
 Only **D2** remains `UNRESOLVED` (owner decision). D1/D5 are documentation corrections; D3/D4 are scheduled future implementation. None of the five block starting Batch Management + FEFO.
 
 ---
 
-_Maintained by: PharmaCare Development | Baseline generated: September 13, 2026 | Specification decisions record §14 added September 13, 2026 | §14 maintained per feature — D7 (Batch Management) added September 13, 2026._
+_Maintained by: PharmaCare Development | Baseline generated: September 13, 2026 | Specification decisions record §14 added September 13, 2026 | §14 maintained per feature — D7 (Batch Management) added September 13, 2026; D8 (FEFO selection) added September 13, 2026._
