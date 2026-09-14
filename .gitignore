@@ -46,3 +46,6 @@ next-env.d.ts
 
 # Uploads
 public/uploads/
+
+# Graphify — locally generated viewer asset (re-created by `npm run graphify`)
+documentation/graphify/assets/

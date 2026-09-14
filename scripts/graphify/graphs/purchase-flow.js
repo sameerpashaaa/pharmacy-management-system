@@ -1,0 +1,77 @@
+'use strict'
+
+const { classDefs } = require('../lib/mermaid')
+
+/**
+ * Graphify — Purchase Flow.
+ *
+ * The purchase lifecycle as modelled in the Prisma schema (Purchases,
+ * Suppliers, Batches, Inventory, Finance). Phase 4 is not started: these are
+ * DESIGNED entities and flows, not yet implemented application code.
+ */
+
+module.exports = function buildPurchaseFlow(ctx) {
+  const lines = [
+    'flowchart TB',
+    classDefs({
+      model: 'fill:#fdf4ff,stroke:#a21caf,color:#701a75',
+      future: 'fill:#fef2f2,stroke:#dc2626,color:#7f1d1d',
+      enumv: 'fill:#f8fafc,stroke:#94a3b8,color:#334155',
+    }),
+    '',
+    'subgraph PROC["Purchase process — DESIGNED (Phase 4, not started)"]',
+    '  N1["Supplier (suppliers table)"]:::model',
+    '  N2["Purchase / Purchase Order (purchases)"]:::model',
+    '  N3["PurchaseItem (purchase_items)"]:::model',
+    '  N4["Batch created (batches) — batchNumber, expiryDate, purchasePrice, mrp"]:::model',
+    '  N5["Inventory stock-in (inventory + inventory_movements IN/PURCHASE)"]:::model',
+    '  N6["Payment to supplier (payments)"]:::model',
+    '  N7["SupplierLedger entry (supplier_ledgers)"]:::model',
+    'end',
+    '',
+    'subgraph RET["Supplier returns — DESIGNED (Phase 4)"]',
+    '  R1["PurchaseReturn (purchase_returns)"]:::model',
+    '  R2["PurchaseReturnItem (purchase_return_items)"]:::model',
+    '  R3["Stock-out movement / write-off"]:::model',
+    'end',
+    '',
+    'subgraph ST["PurchaseStatus machine (schema enum)"]',
+    '  S1["DRAFT → ORDERED → PARTIALLY_RECEIVED → RECEIVED → INVOICED"]:::enumv',
+    '  S2["push-back: CANCELLED"]:::enumv',
+    'end',
+    '',
+    'subgraph NOTE["Status"]',
+    '  X1["PAGES: /purchases, /purchases/new, /purchases/returns are Coming in Phase 4 placeholders"]:::future',
+    '  X2["NO API route /api/purchases exists yet"]:::future',
+    '  X3["Create batch service createBatch() is ready for GRN wiring"]:::enumv',
+    'end',
+    '',
+    'N1 --> N2',
+    'N2 --> N3',
+    'N3 --> N4',
+    'N4 --> N5',
+    'N2 --> N6',
+    'N6 --> N7',
+    'N2 --> R1',
+    'R1 --> R2',
+    'R2 --> R3',
+    'N2 --> ST',
+    'N1 --> ST',
+  ]
+
+  return {
+    id: 'purchase-flow',
+    title: 'Purchase Flow',
+    group: 'Business Flows',
+    groupOrder: 6,
+    accent: '#a21caf',
+    description:
+      'The purchase lifecycle as modelled in the Prisma schema (Purchases, Suppliers, Batches, Inventory, Finance). Phase 4 is not started: these are DESIGNED entities and flows, not yet implemented application code.',
+    sourceFiles: [
+      'prisma/schema.prisma (Purchase, PurchaseItem, PurchaseReturn, PurchaseReturnItem, Supplier, SupplierLedger, Batch)',
+      'src/app/(dashboard)/purchases/** (placeholder pages)',
+      'src/lib/batches/batch-service.ts (createBatch readiness)',
+    ],
+    mermaid: lines.join('\n'),
+  }
+}
