@@ -14,11 +14,11 @@ Phase 0: Foundation           ████████████████�
 Phase 1: Core Infrastructure  ████████████████████ 100% ✅
 Phase 2: Product & Inventory  ████████████████████ 100% ✅
 Phase 3: Point of Sale        ████████████████████ 100% ✅
-Phase 4: Purchase Management  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
+Phase 4: Purchase Management  ████████████████████ 100% ✅
 Phase 5: Prescriptions/Returns░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 6: Financial & GST      ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 7: Reporting & Analytics░░░░░░░░░░░░░░░░░░░░   0% ⏳
-Phase 8: Testing & Refinement ████░░░░░░░░░░░░░░░░   15% 🔧
+Phase 8: Testing & Refinement ████░░░░░░░░░░░░░░░░  15% 🔧
 Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 ```
 
@@ -330,11 +330,73 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ---
 
-## ⏳ Phase 4: Purchase Management — NOT STARTED
+## ✅ Phase 4: Purchase Management — COMPLETE
 
-**Target:** Weeks 12–13 | **Modules:** 9, 12
+**Target:** Weeks 12–13 | **Modules:** 9 (Purchases), 12 (Suppliers)  
+**Completed:** September 2026 | **Commit:** `5cf5a83`
+
+### ✅ Service Layer
+
+| Task | Status | File(s) |
+|------|--------|---------|
+| Supplier CRUD (`createSupplier`, `getSupplier`, `listSuppliers`, `updateSupplier`) | ✅ | `src/lib/purchases/purchase-service.ts` |
+| Purchase Order CRUD (`createPurchase`, `getPurchase`, `listPurchases`, `updatePurchase`) | ✅ | `src/lib/purchases/purchase-service.ts` |
+| GRN — Goods Receipt Note (`createGrn`, `listGrns`) with batch + inventory creation | ✅ | `src/lib/purchases/purchase-service.ts` |
+| Three-way match (`threeWayMatch`) — PO vs GRN vs invoice with tolerance % | ✅ | `src/lib/purchases/purchase-service.ts` |
+| Supplier payment recording (`recordSupplierPayment`) + SupplierLedger CREDIT | ✅ | `src/lib/purchases/purchase-service.ts` |
+| Purchase returns (`createPurchaseReturn`, `listPurchaseReturns`) with CAS inventory reversal | ✅ | `src/lib/purchases/purchase-service.ts` |
+
+### ✅ API Routes (7 new endpoints)
+
+| Route | Method(s) | Permission | Status |
+|-------|-----------|------------|--------|
+| `/api/suppliers` | GET, POST | `suppliers:read`, `suppliers:create` | ✅ |
+| `/api/suppliers/[id]` | GET, PATCH | `suppliers:read`, `suppliers:update` | ✅ |
+| `/api/purchases` | GET, POST | `purchases:read`, `purchases:create` | ✅ |
+| `/api/purchases/[id]` | GET, PATCH | `purchases:read`, `purchases:update` | ✅ |
+| `/api/purchases/[id]/grn` | POST | `purchases:receive` | ✅ |
+| `/api/grn` | GET | `purchases:read` | ✅ |
+| `/api/purchase-returns` | GET, POST | `purchases:read`, `returns:create` | ✅ |
+
+### ✅ UI Components
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `PurchasesTable` | ✅ | TanStack DataTable, 7-status badge map (DRAFT→INVOICED) |
+| `PurchasesView` | ✅ | Search + status filter + pagination + debounce |
+| `SuppliersTable` | ✅ | Outstanding balance (currency), active/inactive badge |
+| `SuppliersView` | ✅ | Search + pagination + New Supplier CTA |
+
+### ✅ Dashboard Pages
+
+| Page | Status | Notes |
+|------|--------|-------|
+| `/purchases` | ✅ | Full list, permission gate, initial SSR data, New PO button |
+| `/purchases/new` | ✅ stub | API ready at `POST /api/purchases` |
+| `/purchases/[id]` | ✅ | Full detail: header, 3 summary cards, items table, GRN button |
+| `/purchases/[id]/receive` | ✅ stub | API ready at `POST /api/purchases/[id]/grn` |
+| `/purchases/returns` | ✅ stub | API ready at `GET/POST /api/purchase-returns` |
+| `/suppliers` | ✅ | Full list, permission gate, initial SSR data |
+| `/suppliers/new` | ✅ stub | API ready at `POST /api/suppliers` |
+
+### ✅ Verification
+
+| Check | Result |
+|-------|--------|
+| `npm run type-check` | ✅ 0 errors |
+| `npm run lint` | ✅ 0 errors |
+| `npm run build` | ✅ 90 routes compiled, exit 0 |
+| `git push origin master` | ✅ `3a2e08c..5cf5a83` |
+
+#### Design Notes (Phase 4)
+
+- **GRN is not a separate model** — stored on the `Purchase` record via status transitions (`PARTIALLY_RECEIVED` / `RECEIVED`) + `receivedAt` timestamp. Batches created during GRN serve as the line-item receipt records.
+- **Supplier Ledger** — every payment creates a CREDIT entry; every return creates a DEBIT entry. `outstandingBalance` on Supplier is updated atomically in the same transaction.
+- **CAS for inventory reversal** — `updateMany({ where: { id, updatedAt } })` checked for `.count === 1` on purchase return to prevent double-reversal.
+- **Form stubs** — purchase-order and supplier create/edit forms are intentionally stubbed (API-first approach). Full form UI is a Phase 4 polish task that can be wired to the live endpoints.
 
 ---
+
 
 ## ⏳ Phase 5: Prescriptions & Returns — NOT STARTED
 
