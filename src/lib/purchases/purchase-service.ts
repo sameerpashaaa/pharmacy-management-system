@@ -1,13 +1,6 @@
-import type {
-  Purchase,
-  PurchaseItem,
-  Supplier,
-  Payment,
-  PurchaseReturn,
-} from '@prisma/client'
+import type { Purchase, PurchaseItem, Supplier, Payment, PurchaseReturn } from '@prisma/client'
 import { Prisma } from '@prisma/client'
 import type { z } from 'zod'
-
 
 import prisma from '@/lib/db/prisma'
 import { assertBranchAccess, type AuthUser } from '@/lib/inventory/branch-access'
@@ -23,7 +16,6 @@ import {
   type CreateSupplierInput,
   type UpdateSupplierInput,
 } from '@/lib/validations/purchase'
-
 
 // ─────────────────────────────────────────────────────────────
 // Purchase Service — Supplier & Purchase Order Management
@@ -617,7 +609,14 @@ export async function listGrns(
   params: z.infer<typeof grnListQuerySchema>,
   actor: AuthUser
 ): Promise<{
-  data: any[]
+  data: {
+    id: string
+    grnNumber: string
+    grnDate: Date
+    purchaseId: string
+    branchId: string
+    supplier: { id: string; name: string }
+  }[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
   await assertBranchAccess(actor, '')

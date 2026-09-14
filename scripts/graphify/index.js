@@ -199,7 +199,7 @@ function watchMode() {
   const schemas = [path.join(PROJECT_ROOT, 'prisma', 'schema.prisma')]
   const srcRoot = path.join(PROJECT_ROOT, 'src')
   const e2eRoot = path.join(PROJECT_ROOT, 'e2e')
-  const configs = ['package.json', 'playwright.config.ts', 'jest.config.ts']
+  const configs = ['package.json', 'playwright.config.ts', 'jest.config.js']
     .map((p) => path.join(PROJECT_ROOT, p))
 
   function collect(dir, acc = []) {

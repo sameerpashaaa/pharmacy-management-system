@@ -76,7 +76,7 @@ npm run graphify:view     # regenerates, then opens viewer.html in your default 
 ```
 
 Or manually open `documentation/graphify/viewer.html` (double-click /
-`start documentation\graphify\viewer.html`). The viewer is fully self-contained and works offline.
+`start documentation\graphify\viewer.html`).
 
 The **Markdown** files under `documentation/graphify/graphs/` also render
 anywhere Mermaid is supported: VS Code (Mermaid extension), Obsidian, Typora,
@@ -88,55 +88,54 @@ GitLab/GitHub markdown, etc.
 
 ### System
 
-| # | Graph | Markdown |
-|---|-------|----------|
-| 1 | **System Architecture** — How the PharmaCare layers fit together: Next.js App Router UI, NextAuth JWT sessions, domain services, API routes, the Prisma client and PostgreSQL. Drawn from the actual files in src/ and prisma/. | [`graphs/system-architecture.md`](graphs/system-architecture.md) |
-| 2 | **Module / Feature Map** — Business modules shown in the PharmaCare navigation with their real implementation status. Status is derived from the codebase: pages (are they placeholders?), API route handlers, domain services and Prisma models per module. | [`graphs/module-map.md`](graphs/module-map.md) |
+| #   | Graph                                                                                                                                                                                                                                                        | Markdown                                                         |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| 1   | **System Architecture** — How the PharmaCare layers fit together: Next.js App Router UI, NextAuth JWT sessions, domain services, API routes, the Prisma client and PostgreSQL. Drawn from the actual files in src/ and prisma/.                              | [`graphs/system-architecture.md`](graphs/system-architecture.md) |
+| 2   | **Module / Feature Map** — Business modules shown in the PharmaCare navigation with their real implementation status. Status is derived from the codebase: pages (are they placeholders?), API route handlers, domain services and Prisma models per module. | [`graphs/module-map.md`](graphs/module-map.md)                   |
 
 ### Database
 
-| # | Graph | Markdown |
-|---|-------|----------|
-| 3 | **Database Overview — all 50 models by module** — Every Prisma model grouped by its business module. This is a structural overview; the three following ERDs show fields and FK relations per domain. | [`graphs/database-overview.md`](graphs/database-overview.md) |
-| 4 | **Database ERD — Identity & Access, Organization, Audit & Config** — Schema-derived entity/relationship diagram for the identity & access, organization, audit & config domain, including attributes, PKs, UKs and FK relations. | [`graphs/database-erd-identity-access.md`](graphs/database-erd-identity-access.md) |
-| 5 | **Database ERD — Catalog, Inventory & Batch Management** — Schema-derived entity/relationship diagram for the catalog, inventory & batch management domain, including attributes, PKs, UKs and FK relations. | [`graphs/database-erd-catalog-inventory.md`](graphs/database-erd-catalog-inventory.md) |
-| 6 | **Database ERD — Sales, Purchasing, Customers, Finance & Tax** — Schema-derived entity/relationship diagram for the sales, purchasing, customers, finance & tax domain, including attributes, PKs, UKs and FK relations. | [`graphs/database-erd-commerce-finance.md`](graphs/database-erd-commerce-finance.md) |
+| #   | Graph                                                                                                                                                                                                                            | Markdown                                                                               |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 3   | **Database Overview — all 50 models by module** — Every Prisma model grouped by its business module. This is a structural overview; the three following ERDs show fields and FK relations per domain.                            | [`graphs/database-overview.md`](graphs/database-overview.md)                           |
+| 4   | **Database ERD — Identity & Access, Organization, Audit & Config** — Schema-derived entity/relationship diagram for the identity & access, organization, audit & config domain, including attributes, PKs, UKs and FK relations. | [`graphs/database-erd-identity-access.md`](graphs/database-erd-identity-access.md)     |
+| 5   | **Database ERD — Catalog, Inventory & Batch Management** — Schema-derived entity/relationship diagram for the catalog, inventory & batch management domain, including attributes, PKs, UKs and FK relations.                     | [`graphs/database-erd-catalog-inventory.md`](graphs/database-erd-catalog-inventory.md) |
+| 6   | **Database ERD — Sales, Purchasing, Customers, Finance & Tax** — Schema-derived entity/relationship diagram for the sales, purchasing, customers, finance & tax domain, including attributes, PKs, UKs and FK relations.         | [`graphs/database-erd-commerce-finance.md`](graphs/database-erd-commerce-finance.md)   |
 
 ### Security
 
-| # | Graph | Markdown |
-|---|-------|----------|
-| 7 | **Authentication & Authorization Flow** — How users log in, how sessions are created, how middleware gates routes, and how RBAC (role + permission) authorization works at both the page and API route levels. All policies, lockout thresholds and seeded role/permission names are from the actual implementation. | [`graphs/auth-flow.md`](graphs/auth-flow.md) |
+| #   | Graph                                                                                                                                                                                                                                                                                                                | Markdown                                     |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| 7   | **Authentication & Authorization Flow** — How users log in, how sessions are created, how middleware gates routes, and how RBAC (role + permission) authorization works at both the page and API route levels. All policies, lockout thresholds and seeded role/permission names are from the actual implementation. | [`graphs/auth-flow.md`](graphs/auth-flow.md) |
 
 ### Business Flows
 
-| # | Graph | Markdown |
-|---|-------|----------|
-| 8 | **Sales / POS Flow** — The complete sales flow as implemented (Phase 3): POS search, server-side pricing, FEFO/oldest-first batch allocation, optimistic-CAS stock deduction, invoice counter and payment. Money is computed only on the server. | [`graphs/sales-flow.md`](graphs/sales-flow.md) |
-| 9 | **Purchase Flow** — The purchase lifecycle as modelled in the Prisma schema (Purchases, Suppliers, Batches, Inventory, Finance). Phase 4 is not started: these are DESIGNED entities and flows, not yet implemented application code. | [`graphs/purchase-flow.md`](graphs/purchase-flow.md) |
-| 10 | **Reporting / Data Flow** — Where analytics data comes from and how it reaches users today. Only the dashboard live-aggregates are implemented; the dedicated reports module and export pipelines are future phases (the installed PDF/Excel libraries are not yet used in source code). | [`graphs/reporting-flow.md`](graphs/reporting-flow.md) |
+| #   | Graph                                                                                                                                                                                                                                                                                    | Markdown                                               |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| 8   | **Sales / POS Flow** — The complete sales flow as implemented (Phase 3): POS search, server-side pricing, FEFO/oldest-first batch allocation, optimistic-CAS stock deduction, invoice counter and payment. Money is computed only on the server.                                         | [`graphs/sales-flow.md`](graphs/sales-flow.md)         |
+| 9   | **Purchase Flow** — The purchase lifecycle as modelled in the Prisma schema (Purchases, Suppliers, Batches, Inventory, Finance). Phase 4 is not started: these are DESIGNED entities and flows, not yet implemented application code.                                                    | [`graphs/purchase-flow.md`](graphs/purchase-flow.md)   |
+| 10  | **Reporting / Data Flow** — Where analytics data comes from and how it reaches users today. Only the dashboard live-aggregates are implemented; the dedicated reports module and export pipelines are future phases (the installed PDF/Excel libraries are not yet used in source code). | [`graphs/reporting-flow.md`](graphs/reporting-flow.md) |
 
 ### Quality
 
-| # | Graph | Markdown |
-|---|-------|----------|
-| 11 | **Testing Architecture** — Three test layers (Jest unit/component, Prisma-backed integration, Playwright E2E) plus the CI pipeline and pre-commit hooking. Counts reflect the test files actually present in the repo. | [`graphs/testing-architecture.md`](graphs/testing-architecture.md) |
-
+| #   | Graph                                                                                                                                                                                                                  | Markdown                                                           |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 11  | **Testing Architecture** — Three test layers (Jest unit/component, Prisma-backed integration, Playwright E2E) plus the CI pipeline and pre-commit hooking. Counts reflect the test files actually present in the repo. | [`graphs/testing-architecture.md`](graphs/testing-architecture.md) |
 
 ---
 
 ## 6 · Where the data comes from
 
-| Graph | Input source(s) |
-|---|---|
-| System Architecture | `src/app/**`, `src/components/**`, `src/lib/**`, `src/middleware.ts`, `next.config.js`, `package.json` |
-| Module / Feature Map | `src/components/layout/sidebar.tsx`, `src/app/**`, `src/app/api/**`, `src/lib/**`, `prisma/schema.prisma` |
-| Database overview + ERDs | `prisma/schema.prisma` (models, attributes, `@relation`, enums) |
-| Authentication flow | `src/lib/auth/auth-config.ts`, `src/lib/auth/auth-helpers.ts`, `src/middleware.ts`, `src/app/(auth)/login/**`, seed role/permission files |
-| Sales / POS flow | `src/lib/sales/sales-service.ts`, `src/lib/sales/pricing.ts`, `src/lib/batches/fefo-service.ts`, `src/app/api/pos/**`, `src/components/pos/**` |
-| Purchase flow | `prisma/schema.prisma` (schema-only — Phase 4 not started) |
-| Reporting flow | `src/app/(dashboard)/page.tsx`, `src/app/(dashboard)/reports/**`, `src/lib/constants/permissions.ts` |
-| Testing architecture | `jest.config.ts`, `playwright.config.ts`, `e2e/**`, `src/**/*.test.ts(x)`, `.github/workflows/ci.yml` |
+| Graph                    | Input source(s)                                                                                                                                |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| System Architecture      | `src/app/**`, `src/components/**`, `src/lib/**`, `src/middleware.ts`, `next.config.js`, `package.json`                                         |
+| Module / Feature Map     | `src/components/layout/sidebar.tsx`, `src/app/**`, `src/app/api/**`, `src/lib/**`, `prisma/schema.prisma`                                      |
+| Database overview + ERDs | `prisma/schema.prisma` (models, attributes, `@relation`, enums)                                                                                |
+| Authentication flow      | `src/lib/auth/auth-config.ts`, `src/lib/auth/auth-helpers.ts`, `src/middleware.ts`, `src/app/(auth)/login/**`, seed role/permission files      |
+| Sales / POS flow         | `src/lib/sales/sales-service.ts`, `src/lib/sales/pricing.ts`, `src/lib/batches/fefo-service.ts`, `src/app/api/pos/**`, `src/components/pos/**` |
+| Purchase flow            | `prisma/schema.prisma` (schema-only — Phase 4 not started)                                                                                     |
+| Reporting flow           | `src/app/(dashboard)/page.tsx`, `src/app/(dashboard)/reports/**`, `src/lib/constants/permissions.ts`                                           |
+| Testing architecture     | `jest.config.js`, `playwright.config.ts`, `e2e/**`, `src/**/*.test.ts(x)`, `.github/workflows/ci.yml`                                          |
 
 The generator itself is deterministic: it parses files (no guessing), so the
 diagrams stay accurate as long as the code changes.

@@ -26,7 +26,7 @@ module.exports = function buildTestingArchitecture(ctx) {
     }),
     '',
     'subgraph T1["Jest — unit & integration (jsdom, ts-jest, next/jest)"]',
-    '  J1["jest.config.ts — roots src/ · @ alias mapping · setupFilesAfterEach jest.setup.ts"]:::jest',
+    '  J1["jest.config.js — roots src/ · @ alias mapping · setupFilesAfterEach jest.setup.ts"]:::jest',
     '  J2["testMatch **/*.test.ts(x) — ' + unitFiles.length + ' test files scanned"]:::jest',
     '  J3["Validations — product, sale, user, batch, expiry (Zod)"]:::jest',
     '  J4["Services — product-service, product-import, inventory-service, batch-service, fefo (38), expiry-service, pricing (30), sales-service (40)"]:::jest',
@@ -78,7 +78,7 @@ module.exports = function buildTestingArchitecture(ctx) {
     description:
       'Three test layers (Jest unit/component, Prisma-backed integration, Playwright E2E) plus the CI pipeline and pre-commit hooking. Counts reflect the test files actually present in the repo.',
     sourceFiles: [
-      'jest.config.ts',
+      'jest.config.js',
       'jest.setup.ts',
       'src/**/*.test.ts(x)',
       'src/lib/sales/sales-service.integration.test.ts',

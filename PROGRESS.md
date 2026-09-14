@@ -337,56 +337,65 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ### ✅ Service Layer
 
-| Task | Status | File(s) |
-|------|--------|---------|
-| Supplier CRUD (`createSupplier`, `getSupplier`, `listSuppliers`, `updateSupplier`) | ✅ | `src/lib/purchases/purchase-service.ts` |
-| Purchase Order CRUD (`createPurchase`, `getPurchase`, `listPurchases`, `updatePurchase`) | ✅ | `src/lib/purchases/purchase-service.ts` |
-| GRN — Goods Receipt Note (`createGrn`, `listGrns`) with batch + inventory creation | ✅ | `src/lib/purchases/purchase-service.ts` |
-| Three-way match (`threeWayMatch`) — PO vs GRN vs invoice with tolerance % | ✅ | `src/lib/purchases/purchase-service.ts` |
-| Supplier payment recording (`recordSupplierPayment`) + SupplierLedger CREDIT | ✅ | `src/lib/purchases/purchase-service.ts` |
-| Purchase returns (`createPurchaseReturn`, `listPurchaseReturns`) with CAS inventory reversal | ✅ | `src/lib/purchases/purchase-service.ts` |
+| Task                                                                                         | Status | File(s)                                 |
+| -------------------------------------------------------------------------------------------- | ------ | --------------------------------------- |
+| Supplier CRUD (`createSupplier`, `getSupplier`, `listSuppliers`, `updateSupplier`)           | ✅     | `src/lib/purchases/purchase-service.ts` |
+| Purchase Order CRUD (`createPurchase`, `getPurchase`, `listPurchases`, `updatePurchase`)     | ✅     | `src/lib/purchases/purchase-service.ts` |
+| GRN — Goods Receipt Note (`createGrn`, `listGrns`) with batch + inventory creation           | ✅     | `src/lib/purchases/purchase-service.ts` |
+| Three-way match (`threeWayMatch`) — PO vs GRN vs invoice with tolerance %                    | ✅     | `src/lib/purchases/purchase-service.ts` |
+| Supplier payment recording (`recordSupplierPayment`) + SupplierLedger CREDIT                 | ✅     | `src/lib/purchases/purchase-service.ts` |
+| Purchase returns (`createPurchaseReturn`, `listPurchaseReturns`) with CAS inventory reversal | ✅     | `src/lib/purchases/purchase-service.ts` |
 
 ### ✅ API Routes (7 new endpoints)
 
-| Route | Method(s) | Permission | Status |
-|-------|-----------|------------|--------|
-| `/api/suppliers` | GET, POST | `suppliers:read`, `suppliers:create` | ✅ |
-| `/api/suppliers/[id]` | GET, PATCH | `suppliers:read`, `suppliers:update` | ✅ |
-| `/api/purchases` | GET, POST | `purchases:read`, `purchases:create` | ✅ |
-| `/api/purchases/[id]` | GET, PATCH | `purchases:read`, `purchases:update` | ✅ |
-| `/api/purchases/[id]/grn` | POST | `purchases:receive` | ✅ |
-| `/api/grn` | GET | `purchases:read` | ✅ |
-| `/api/purchase-returns` | GET, POST | `purchases:read`, `returns:create` | ✅ |
+| Route                     | Method(s)  | Permission                           | Status |
+| ------------------------- | ---------- | ------------------------------------ | ------ |
+| `/api/suppliers`          | GET, POST  | `suppliers:read`, `suppliers:create` | ✅     |
+| `/api/suppliers/[id]`     | GET, PATCH | `suppliers:read`, `suppliers:update` | ✅     |
+| `/api/purchases`          | GET, POST  | `purchases:read`, `purchases:create` | ✅     |
+| `/api/purchases/[id]`     | GET, PATCH | `purchases:read`, `purchases:update` | ✅     |
+| `/api/purchases/[id]/grn` | POST       | `purchases:receive`                  | ✅     |
+| `/api/grn`                | GET        | `purchases:read`                     | ✅     |
+| `/api/purchase-returns`   | GET, POST  | `purchases:read`, `returns:create`   | ✅     |
 
 ### ✅ UI Components
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| `PurchasesTable` | ✅ | TanStack DataTable, 7-status badge map (DRAFT→INVOICED) |
-| `PurchasesView` | ✅ | Search + status filter + pagination + debounce |
-| `SuppliersTable` | ✅ | Outstanding balance (currency), active/inactive badge |
-| `SuppliersView` | ✅ | Search + pagination + New Supplier CTA |
+| Component        | Status | Notes                                                   |
+| ---------------- | ------ | ------------------------------------------------------- |
+| `PurchasesTable` | ✅     | TanStack DataTable, 7-status badge map (DRAFT→INVOICED) |
+| `PurchasesView`  | ✅     | Search + status filter + pagination + debounce          |
+| `SuppliersTable` | ✅     | Outstanding balance (currency), active/inactive badge   |
+| `SuppliersView`  | ✅     | Search + pagination + New Supplier CTA                  |
 
 ### ✅ Dashboard Pages
 
-| Page | Status | Notes |
-|------|--------|-------|
-| `/purchases` | ✅ | Full list, permission gate, initial SSR data, New PO button |
-| `/purchases/new` | ✅ stub | API ready at `POST /api/purchases` |
-| `/purchases/[id]` | ✅ | Full detail: header, 3 summary cards, items table, GRN button |
-| `/purchases/[id]/receive` | ✅ stub | API ready at `POST /api/purchases/[id]/grn` |
-| `/purchases/returns` | ✅ stub | API ready at `GET/POST /api/purchase-returns` |
-| `/suppliers` | ✅ | Full list, permission gate, initial SSR data |
-| `/suppliers/new` | ✅ stub | API ready at `POST /api/suppliers` |
+| Page                      | Status  | Notes                                                         |
+| ------------------------- | ------- | ------------------------------------------------------------- |
+| `/purchases`              | ✅      | Full list, permission gate, initial SSR data, New PO button   |
+| `/purchases/new`          | ✅ stub | API ready at `POST /api/purchases`                            |
+| `/purchases/[id]`         | ✅      | Full detail: header, 3 summary cards, items table, GRN button |
+| `/purchases/[id]/receive` | ✅ stub | API ready at `POST /api/purchases/[id]/grn`                   |
+| `/purchases/returns`      | ✅ stub | API ready at `GET/POST /api/purchase-returns`                 |
+| `/suppliers`              | ✅      | Full list, permission gate, initial SSR data                  |
+| `/suppliers/new`          | ✅ stub | API ready at `POST /api/suppliers`                            |
 
 ### ✅ Verification
 
-| Check | Result |
-|-------|--------|
-| `npm run type-check` | ✅ 0 errors |
-| `npm run lint` | ✅ 0 errors |
-| `npm run build` | ✅ 90 routes compiled, exit 0 |
-| `git push origin master` | ✅ `3a2e08c..5cf5a83` |
+| Check                      | Result                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------- |
+| `npm run type-check`       | ✅ 0 errors                                                                  |
+| `npm run lint`             | ✅ 0 errors                                                                  |
+| `npm run test`             | ✅ 449 tests passing (395 unit + 54 integration; see Testing Infrastructure) |
+| `npm run test:integration` | ✅ 54 real-Postgres integration tests passing                                |
+| `npm run build`            | ✅ 90 routes compiled, exit 0                                                |
+| `git push origin master`   | ✅ `3a2e08c..5cf5a83`                                                        |
+
+#### Integration-test findings (documented defects, not silently fixed)
+
+- **GRN status returned from `createGrn` is stale mid-transaction** — `result.purchase.status` can read `PARTIALLY_RECEIVED` even when the committed DB state is `RECEIVED`; tests assert committed state via `getPurchase` instead.
+- **Concurrent GRN over-receive is possible** — two concurrent `createGrn` calls for the same PO can both commit (received quantity can exceed ordered): over-receive validation runs pre-transaction against a stale read, and the inventory CAS (`updateMany` on `updatedAt`) does not protect that path. The integration suite exercises a deterministic remaining-quantity guard instead of a flaky race; proposed fix is `SELECT … FOR UPDATE` on the purchase item inside the transaction (or serializable isolation / in-tx recheck).
+- **GRN numbers are not persisted** — GRN is stored on the `Purchase` record; `listGrns` surfaces the PO purchase number as `grnNumber`.
+- **PO line totals default to 0** — `createPurchase` writes item `totalAmount`/`mrp` as 0 (no server-side total computation); three-way-match amount checks compare against `totalAmount`. Tests set `totalAmount` directly to exercise the matching logic.
 
 #### Design Notes (Phase 4)
 
@@ -396,7 +405,6 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 - **Form stubs** — purchase-order and supplier create/edit forms are intentionally stubbed (API-first approach). Full form UI is a Phase 4 polish task that can be wired to the live endpoints.
 
 ---
-
 
 ## ⏳ Phase 5: Prescriptions & Returns — NOT STARTED
 
@@ -422,53 +430,55 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ### Testing Framework Setup
 
-| Task                     | Status | Details                                                 |
-| ------------------------ | ------ | ------------------------------------------------------- |
-| Jest configuration       | ✅     | `jest.config.ts` with Next.js integration, path aliases |
-| Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom          |
-| React Testing Library    | ✅     | Component testing support configured                    |
-| Unit + integration tests | ✅     | 35 test suites, **400 tests passing**                   |
-| TypeScript support       | ✅     | ts-jest with tsconfig.json                              |
-| Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                |
+| Task                     | Status | Details                                                                                                                                                         |
+| ------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Jest configuration       | ✅     | `jest.config.js` — two projects (unit parallel, integration `--runInBand` so real-Postgres suites share the schema serially), Next.js integration, path aliases |
+| Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom                                                                                                                  |
+| React Testing Library    | ✅     | Component testing support configured                                                                                                                            |
+| Unit + integration tests | ✅     | 37 test suites, **449 tests passing**                                                                                                                           |
+| TypeScript support       | ✅     | ts-jest with tsconfig.json                                                                                                                                      |
+| Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                                                                                                                        |
 
 ### Test Files
 
-| File                                                           | Tests | Purpose                                                                       |
-| -------------------------------------------------------------- | ----- | ----------------------------------------------------------------------------- |
-| `src/lib/utils/cn.test.ts`                                     | 4     | Utility function tests                                                        |
-| `src/lib/validations/user.test.ts`                             | 9     | Zod schema validation tests                                                   |
-| `src/components/shared/empty-state.test.tsx`                   | 4     | React component tests                                                         |
-| `src/lib/validations/product.test.ts`                          | 31    | Product/Category/HSN/barcode schema tests                                     |
-| `src/lib/validations/product-import-schema.test.ts`            | 11    | CSV row schema: coercion, defaults, rejections                                |
-| `src/lib/products/product-service.test.ts`                     | 11    | Service CRUD, tree, uniqueness, pagination                                    |
-| `src/lib/products/product-import.test.ts`                      | 34    | CSV service: file/parse/row/duplicate/tx behavior                             |
-| `src/app/api/categories/route.test.ts`                         | 8     | Categories GET/POST auth + validation + conflict                              |
-| `src/app/api/products/route.test.ts`                           | 8     | Products GET/POST auth + validation + conflicts + audit                       |
-| `src/app/api/products/import/route.test.ts`                    | 10    | Import POST auth, file/size, audit, error mapping                             |
-| `src/components/products/product-table.test.tsx`               | 6     | Product table rendering, badges, empty state                                  |
-| `src/components/products/product-import-dialog.test.tsx`       | 5     | Import dialog select/validate/result/error UX                                 |
-| `src/lib/inventory/inventory-service.test.ts`                  | 19    | Inventory list/status, movements, adjustment workflow                         |
-| `src/app/api/inventory/route.test.ts`                          | 5     | Inventory GET auth + branch scope + validation + 500                          |
-| `src/app/api/inventory/movements/route.test.ts`                | 4     | Movements GET auth + filters + validation                                     |
-| `src/app/api/inventory/adjustments/route.test.ts`              | 6     | Adjustments GET/POST auth + validation + audit                                |
-| `src/app/api/inventory/branches/route.test.ts`                 | 2     | Accessible branches GET                                                       |
-| `src/app/api/inventory/adjustments/[id]/approve/route.test.ts` | 4     | Approve POST auth + audit + 404/409 errors                                    |
-| `src/app/api/inventory/adjustments/[id]/reject/route.test.ts`  | 4     | Reject POST auth + audit + 404/409 errors                                     |
-| `src/components/inventory/adjustments-table.test.tsx`          | 6     | Adjustments table rendering, actions, empty state                             |
-| `src/lib/batches/batch-service.test.ts`                        | 22    | Batch lifecycle: create/update/block/dispose/expiry                           |
-| `src/app/api/batches/route.test.ts`                            | 3     | Batches GET auth + validation + branch scope                                  |
-| `src/app/api/batches/[id]/route.test.ts`                       | 7     | Batch GET/PATCH auth + 404 + validation + audit                               |
-| `src/app/api/batches/[id]/block/route.test.ts`                 | 5     | Block POST auth + validation + 404/409 + audit                                |
-| `src/app/api/batches/[id]/dispose/route.test.ts`               | 7     | Dispose POST auth + validation + 404/409/400 + audit                          |
-| `src/lib/batches/fefo.test.ts`                                 | 38    | FEFO eligibility, ordering, allocation, insufficient, product/branch service  |
-| `src/lib/batches/expiry-service.test.ts`                       | 22    | Expiry classification boundaries, expiring/expired views, summary             |
-| `src/app/api/expiry/expiring/route.test.ts`                    | 6     | Expiring GET auth + validation + severity + branch scope                      |
-| `src/app/api/expiry/expired/route.test.ts`                     | 4     | Expired GET auth + validation + branch scope                                  |
-| `src/lib/sales/pricing.test.ts`                                | 30    | Pricing math: GST inclusive/exclusive, discount, exempt, round-off totals     |
-| `src/lib/validations/sale.test.ts`                             | 16    | POS sale create / held-bill / query schemas                                   |
-| `src/lib/sales/sales-service.test.ts`                          | 40    | Sale service: cashReceived, invoice number, held bills, policy gates          |
-| `src/lib/sales/sales-service.integration.test.ts`              | 21    | Real-Postgres transaction: FEFO/CAS, oversell, counter, rollback, concurrency |
-| `src/app/api/pos/__tests__/pos-routes.test.ts`                 | 9     | POS products/config/held-bills routes: auth, branch scope, validation         |
+| File                                                           | Tests | Purpose                                                                                                                                                                                                                                                |
+| -------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/lib/utils/cn.test.ts`                                     | 4     | Utility function tests                                                                                                                                                                                                                                 |
+| `src/lib/validations/user.test.ts`                             | 9     | Zod schema validation tests                                                                                                                                                                                                                            |
+| `src/components/shared/empty-state.test.tsx`                   | 4     | React component tests                                                                                                                                                                                                                                  |
+| `src/lib/validations/product.test.ts`                          | 31    | Product/Category/HSN/barcode schema tests                                                                                                                                                                                                              |
+| `src/lib/validations/product-import-schema.test.ts`            | 11    | CSV row schema: coercion, defaults, rejections                                                                                                                                                                                                         |
+| `src/lib/products/product-service.test.ts`                     | 11    | Service CRUD, tree, uniqueness, pagination                                                                                                                                                                                                             |
+| `src/lib/products/product-import.test.ts`                      | 34    | CSV service: file/parse/row/duplicate/tx behavior                                                                                                                                                                                                      |
+| `src/app/api/categories/route.test.ts`                         | 8     | Categories GET/POST auth + validation + conflict                                                                                                                                                                                                       |
+| `src/app/api/products/route.test.ts`                           | 8     | Products GET/POST auth + validation + conflicts + audit                                                                                                                                                                                                |
+| `src/app/api/products/import/route.test.ts`                    | 10    | Import POST auth, file/size, audit, error mapping                                                                                                                                                                                                      |
+| `src/components/products/product-table.test.tsx`               | 6     | Product table rendering, badges, empty state                                                                                                                                                                                                           |
+| `src/components/products/product-import-dialog.test.tsx`       | 5     | Import dialog select/validate/result/error UX                                                                                                                                                                                                          |
+| `src/lib/inventory/inventory-service.test.ts`                  | 19    | Inventory list/status, movements, adjustment workflow                                                                                                                                                                                                  |
+| `src/app/api/inventory/route.test.ts`                          | 5     | Inventory GET auth + branch scope + validation + 500                                                                                                                                                                                                   |
+| `src/app/api/inventory/movements/route.test.ts`                | 4     | Movements GET auth + filters + validation                                                                                                                                                                                                              |
+| `src/app/api/inventory/adjustments/route.test.ts`              | 6     | Adjustments GET/POST auth + validation + audit                                                                                                                                                                                                         |
+| `src/app/api/inventory/branches/route.test.ts`                 | 2     | Accessible branches GET                                                                                                                                                                                                                                |
+| `src/app/api/inventory/adjustments/[id]/approve/route.test.ts` | 4     | Approve POST auth + audit + 404/409 errors                                                                                                                                                                                                             |
+| `src/app/api/inventory/adjustments/[id]/reject/route.test.ts`  | 4     | Reject POST auth + audit + 404/409 errors                                                                                                                                                                                                              |
+| `src/components/inventory/adjustments-table.test.tsx`          | 6     | Adjustments table rendering, actions, empty state                                                                                                                                                                                                      |
+| `src/lib/batches/batch-service.test.ts`                        | 22    | Batch lifecycle: create/update/block/dispose/expiry                                                                                                                                                                                                    |
+| `src/app/api/batches/route.test.ts`                            | 3     | Batches GET auth + validation + branch scope                                                                                                                                                                                                           |
+| `src/app/api/batches/[id]/route.test.ts`                       | 7     | Batch GET/PATCH auth + 404 + validation + audit                                                                                                                                                                                                        |
+| `src/app/api/batches/[id]/block/route.test.ts`                 | 5     | Block POST auth + validation + 404/409 + audit                                                                                                                                                                                                         |
+| `src/app/api/batches/[id]/dispose/route.test.ts`               | 7     | Dispose POST auth + validation + 404/409/400 + audit                                                                                                                                                                                                   |
+| `src/lib/batches/fefo.test.ts`                                 | 38    | FEFO eligibility, ordering, allocation, insufficient, product/branch service                                                                                                                                                                           |
+| `src/lib/batches/expiry-service.test.ts`                       | 22    | Expiry classification boundaries, expiring/expired views, summary                                                                                                                                                                                      |
+| `src/app/api/expiry/expiring/route.test.ts`                    | 6     | Expiring GET auth + validation + severity + branch scope                                                                                                                                                                                               |
+| `src/app/api/expiry/expired/route.test.ts`                     | 4     | Expired GET auth + validation + branch scope                                                                                                                                                                                                           |
+| `src/lib/sales/pricing.test.ts`                                | 30    | Pricing math: GST inclusive/exclusive, discount, exempt, round-off totals                                                                                                                                                                              |
+| `src/lib/validations/sale.test.ts`                             | 16    | POS sale create / held-bill / query schemas                                                                                                                                                                                                            |
+| `src/lib/sales/sales-service.test.ts`                          | 40    | Sale service: cashReceived, invoice number, held bills, policy gates                                                                                                                                                                                   |
+| `src/lib/sales/sales-service.integration.test.ts`              | 26    | Real-Postgres transaction: FEFO/CAS, oversell, counter, rollback, concurrency                                                                                                                                                                          |
+| `src/app/api/pos/__tests__/pos-routes.test.ts`                 | 9     | POS products/config/held-bills routes: auth, branch scope, validation                                                                                                                                                                                  |
+| `src/lib/purchases/purchase-service.integration.test.ts`       | 28    | Real-Postgres: supplier CRUD/audit, PO lifecycle, GRN (batch/inventory/IN/audit), over-receive + expiry guards, duplicate-batch rollback, ±2% three-way match, supplier payments + ledger, purchase returns + inventory reversal, org/branch isolation |
+| `src/app/api/purchases/__tests__/purchase-routes.test.ts`      | 21    | Purchases/suppliers/GRN/purchase-returns routes: auth, validation, 404/403/400/201/200                                                                                                                                                                 |
 
 ### CI/CD Pipeline
 
@@ -495,7 +505,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 ```bash
 npm run type-check   # ✅ PASS
 npm run lint         # ✅ PASS
-npm run test         # ✅ PASS (400 tests)
+npm run test         # ✅ PASS (449 tests — 395 unit + 54 integration; runs --runInBand for the integration project so the two real-Postgres suites share the schema serially)
 npm run build        # ✅ PASS
 ```
 
@@ -646,4 +656,4 @@ Controlled decision task resolving the five `UNRESOLVED` items in `documentation
 
 ---
 
-_Last updated: September 2026 | Phase 0-2 complete; **Phase 3 POS delivered** (transactional sale service with Serializable CAS consumption, pure server-side pricing, FEFO dispense wiring, credit/discount/prescription gates, held bills, printable receipt, POS billing UI + sales history/detail). 400 tests / 35 suites passing. Commit log for Phase 3: `feat: implement POS sales and billing`. Phase 4 (Purchase Management) is next._
+_Last updated: September 2026 | Phase 0-2 complete; **Phase 3 POS delivered** (transactional sale service with Serializable CAS consumption, pure server-side pricing, FEFO dispense wiring, credit/discount/prescription gates, held bills, printable receipt, POS billing UI + sales history/detail). **Phase 4 Purchase Management delivered** (supplier/PO/GRN service + routes, three-way match, supplier payments/ledger, purchase returns, purchase UI/pages). 449 tests / 37 suites passing. Commit log: Phase 3 `feat: implement POS sales and billing`; Phase 4 `test: add purchase management integration coverage` on `pharmacare-phase2`._

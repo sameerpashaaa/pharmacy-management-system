@@ -30,7 +30,7 @@ subgraph L2["2 • Edge"]
 end
 
 subgraph L3["3 • Server — Next.js App Router"]
-  L3a["API routes /api/... (33 handlers)"]:::backend
+  L3a["API routes /api/... (40 handlers)"]:::backend
   L3b["Server actions: none (all mutations go through API routes)"]:::util
   L3c["Server-side auth gates — getServerSession + requirePermission()"]:::authc
   L3d["Domain services under src/lib — products · inventory · batches (FEFO, expiry) · sales · settings · organization"]:::backend
