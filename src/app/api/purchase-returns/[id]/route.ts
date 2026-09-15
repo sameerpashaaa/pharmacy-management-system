@@ -4,7 +4,7 @@ import { ZodError } from 'zod'
 
 import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
-import { getPurchaseReturn, updatePurchaseReturn } from '@/lib/purchases/purchase-service'
+import { getPurchaseReturnById, updatePurchaseReturn } from '@/lib/purchases/purchase-service'
 import { updatePurchaseReturnSchema } from '@/lib/validations/purchase'
 
 type RouteParams = { params: { id: string } }
@@ -21,7 +21,7 @@ function errStatus(msg: string) {
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const user = await requirePermission(PERMISSIONS.PURCHASES_READ)
-    const purchaseReturn = await getPurchaseReturn(params.id, user)
+    const purchaseReturn = await getPurchaseReturnById(params.id, user)
     if (!purchaseReturn)
       return NextResponse.json(
         { success: false, error: { code: 'ERROR', message: 'Not Found: purchase return' } },

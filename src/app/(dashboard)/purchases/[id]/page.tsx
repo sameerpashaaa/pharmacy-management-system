@@ -1,10 +1,11 @@
-﻿import type { Metadata } from 'next'
+import { RotateCcw } from 'lucide-react'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { can, getSession } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { ROUTES } from '@/lib/constants/routes'
@@ -16,7 +17,13 @@ export const metadata: Metadata = { title: 'Purchase Order Detail' }
 
 type Props = { params: { id: string } }
 
-const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info' }> = {
+const STATUS_LABELS: Record<
+  string,
+  {
+    label: string
+    variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info'
+  }
+> = {
   DRAFT: { label: 'Draft', variant: 'secondary' },
   ORDERED: { label: 'Ordered', variant: 'info' },
   SENT: { label: 'Sent', variant: 'info' },
@@ -27,18 +34,22 @@ const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secon
 }
 
 const CAN_RECEIVE = new Set(['ORDERED', 'SENT', 'PARTIALLY_RECEIVED'])
+const CAN_RETURN = new Set(['RECEIVED', 'INVOICED', 'PARTIALLY_RECEIVED'])
 
 export default async function PurchaseDetailPage({ params }: Props) {
-  const [canRead, canReceive, session] = await Promise.all([
+  const [canRead, canReceive, canReturn, session] = await Promise.all([
     can(PERMISSIONS.PURCHASES_READ),
     can(PERMISSIONS.PURCHASES_RECEIVE),
+    can(PERMISSIONS.RETURNS_CREATE),
     getSession(),
   ])
 
   if (!canRead || !session?.user) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-muted-foreground">You do not have permission to view this purchase order.</p>
+        <p className="text-muted-foreground">
+          You do not have permission to view this purchase order.
+        </p>
       </div>
     )
   }
@@ -46,7 +57,10 @@ export default async function PurchaseDetailPage({ params }: Props) {
   const purchase = await getPurchase(params.id, session.user)
   if (!purchase) notFound()
 
-  const statusMeta = STATUS_LABELS[purchase.status] ?? { label: purchase.status, variant: 'secondary' as const }
+  const statusMeta = STATUS_LABELS[purchase.status] ?? {
+    label: purchase.status,
+    variant: 'secondary' as const,
+  }
 
   return (
     <div className="space-y-6">
@@ -62,15 +76,29 @@ export default async function PurchaseDetailPage({ params }: Props) {
               <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
             </div>
             <p className="text-muted-foreground">
-              {purchase.supplier?.name ?? 'Unknown supplier'} &middot; {formatDateTime(purchase.purchaseDate.toISOString())}
+              {purchase.supplier?.name ?? 'Unknown supplier'} &middot;{' '}
+              {formatDateTime(purchase.purchaseDate.toISOString())}
             </p>
           </div>
         </div>
-        {canReceive && CAN_RECEIVE.has(purchase.status) && (
-          <Button asChild>
-            <Link href={ROUTES.PURCHASE_RECEIVE(purchase.id)}>Receive Goods (GRN)</Link>
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canReturn && CAN_RETURN.has(purchase.status) && (
+            <Button asChild variant="secondary" size="sm">
+              <Link
+                href={`${ROUTES.PURCHASE_RETURNS_NEW}?purchaseId=${purchase.id}`}
+                className="gap-2"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Return to Vendor
+              </Link>
+            </Button>
+          )}
+          {canReceive && CAN_RECEIVE.has(purchase.status) && (
+            <Button asChild size="sm">
+              <Link href={ROUTES.PURCHASE_RECEIVE(purchase.id)}>Receive Goods (GRN)</Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Summary card */}
@@ -85,7 +113,9 @@ export default async function PurchaseDetailPage({ params }: Props) {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Expected Date</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Expected Date
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-semibold">
@@ -95,10 +125,14 @@ export default async function PurchaseDetailPage({ params }: Props) {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Amount</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Amount
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-semibold tabular-nums">{formatCurrency(purchase.totalAmount.toString())}</p>
+            <p className="font-semibold tabular-nums">
+              {formatCurrency(purchase.totalAmount.toString())}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -106,7 +140,7 @@ export default async function PurchaseDetailPage({ params }: Props) {
       {/* Notes */}
       {purchase.notes && (
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-2">
             <CardTitle className="text-sm">Notes</CardTitle>
           </CardHeader>
           <CardContent>
@@ -140,12 +174,22 @@ export default async function PurchaseDetailPage({ params }: Props) {
                     <td className="py-2 text-muted-foreground">{item.product.sku}</td>
                     <td className="py-2 text-right">{item.orderedQuantity}</td>
                     <td className="py-2 text-right">
-                      <span className={item.receivedQuantity >= item.orderedQuantity ? 'text-green-600' : 'text-amber-600'}>
+                      <span
+                        className={
+                          item.receivedQuantity >= item.orderedQuantity
+                            ? 'text-green-600'
+                            : 'text-amber-600'
+                        }
+                      >
                         {item.receivedQuantity}
                       </span>
                     </td>
-                    <td className="py-2 text-right tabular-nums">{formatCurrency(item.unitCost.toString())}</td>
-                    <td className="py-2 text-right tabular-nums">{formatCurrency(item.totalAmount.toString())}</td>
+                    <td className="py-2 text-right tabular-nums">
+                      {formatCurrency(item.unitCost.toString())}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {formatCurrency(item.totalAmount.toString())}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -153,6 +197,48 @@ export default async function PurchaseDetailPage({ params }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Purchase Returns on this order */}
+      {purchase.returns && purchase.returns.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Vendor Returns (RTV)</CardTitle>
+            <CardDescription>
+              {purchase.returns.length} return dispatch(es) recorded for this purchase order
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {purchase.returns.map((ret) => (
+                <div
+                  key={ret.id}
+                  className="flex items-center justify-between border-b pb-2 last:border-0 last:pb-0"
+                >
+                  <div>
+                    <Link
+                      href={ROUTES.PURCHASE_RETURN(ret.id)}
+                      className="font-mono text-sm font-medium text-primary hover:underline"
+                    >
+                      {ret.returnNumber}
+                    </Link>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDateTime(ret.returnDate.toISOString())} &middot; {ret.reason}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold tabular-nums text-destructive">
+                      -{formatCurrency(ret.totalAmount.toString())}
+                    </span>
+                    <Badge variant="outline" className="text-xs">
+                      {ret.status}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

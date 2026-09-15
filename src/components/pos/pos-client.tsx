@@ -155,6 +155,9 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [prescriptionId, setPrescriptionId] = useState('')
+  const [approvedPrescriptions, setApprovedPrescriptions] = useState<
+    { id: string; prescriptionNumber: string | null; patientName: string }[]
+  >([])
 
   // ─── Held bills ────────────────────────────────────────────
   const [heldOpen, setHeldOpen] = useState(false)
@@ -343,6 +346,35 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
     () => cart.some((c) => c.isPrescriptionRequired || RX_SCHEDULES.has(c.drugSchedule)),
     [cart]
   )
+
+  useEffect(() => {
+    if (payOpen && needsPrescription && branchId) {
+      fetch(`/api/prescriptions?status=APPROVED&limit=10&branchId=${branchId}`)
+        .then(
+          (res) =>
+            res.json() as Promise<{
+              success: boolean
+              data?: {
+                id: string
+                prescriptionNumber: string | null
+                patientName: string
+              }[]
+            }>
+        )
+        .then((json) => {
+          if (json.success && Array.isArray(json.data)) {
+            setApprovedPrescriptions(
+              json.data.map((rx) => ({
+                id: rx.id,
+                prescriptionNumber: rx.prescriptionNumber,
+                patientName: rx.patientName,
+              }))
+            )
+          }
+        })
+        .catch(() => {})
+    }
+  }, [payOpen, needsPrescription, branchId])
 
   const needsCreditCustomer = useMemo(
     () =>
@@ -912,8 +944,27 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
             {needsPrescription && (
               <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
                 <p className="text-sm font-medium text-amber-800">
-                  This bill contains prescription-only items — prescription ID is required.
+                  This bill contains prescription-only items — verified prescription required.
                 </p>
+                {approvedPrescriptions.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-xs font-medium text-amber-800">
+                      Select Verified Prescription:
+                    </span>
+                    <select
+                      className="h-8 w-full rounded border border-amber-300 bg-white px-2 text-xs text-foreground"
+                      value={prescriptionId}
+                      onChange={(e) => setPrescriptionId(e.target.value)}
+                    >
+                      <option value="">-- Choose verified prescription or enter ID below --</option>
+                      {approvedPrescriptions.map((rx) => (
+                        <option key={rx.id} value={rx.id}>
+                          {rx.prescriptionNumber ?? rx.id} ({rx.patientName})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <Input
                   value={prescriptionId}
                   onChange={(e) => setPrescriptionId(e.target.value)}

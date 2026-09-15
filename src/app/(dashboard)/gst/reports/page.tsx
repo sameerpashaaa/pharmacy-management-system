@@ -1,17 +1,37 @@
-﻿import type { Metadata } from 'next'
+import type { Metadata } from 'next'
+
+import { GstSummaryView } from '@/components/finance/gst-summary-view'
+import { can, getSession } from '@/lib/auth/auth-helpers'
+import { PERMISSIONS } from '@/lib/constants/permissions'
+import { getGstSummary } from '@/lib/finance/finance-service'
+import { gstReportQuerySchema } from '@/lib/validations/finance'
 
 export const metadata: Metadata = { title: 'GST Reports' }
 
-export default function GSTReportsPage() {
+export default async function GSTReportsPage() {
+  const [canRead, session] = await Promise.all([can(PERMISSIONS.GST_READ), getSession()])
+
+  if (!canRead || !session?.user) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">GST Reports</h1>
+          <p className="text-muted-foreground">GSTR-1 B2B, B2C, HSN summary reports</p>
+        </div>
+        <div className="flex h-64 items-center justify-center rounded-lg border-2 border-dashed border-muted">
+          <p className="text-muted-foreground">You do not have permission to view GST reports.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const summary = await getGstSummary(gstReportQuerySchema.parse({}), session.user)
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">GST Reports</h1>
-        <p className="text-muted-foreground">GSTR-1 B2B, B2C, HSN summary reports</p>
-      </div>
-      <div className="flex h-64 items-center justify-center rounded-lg border-2 border-dashed border-muted">
-        <p className="text-muted-foreground">Coming in Phase 6</p>
-      </div>
-    </div>
+    <GstSummaryView
+      summary={summary}
+      title="GST Reports"
+      description="GSTR-1 B2B, B2C, HSN summary reports."
+      showReportAction={false}
+    />
   )
 }
