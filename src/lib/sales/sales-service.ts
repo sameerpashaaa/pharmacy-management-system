@@ -120,6 +120,17 @@ export const saleDetailInclude = {
     },
   },
   payments: { orderBy: { createdAt: 'asc' } },
+  returns: {
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      returnNumber: true,
+      returnDate: true,
+      totalAmount: true,
+      status: true,
+      refundMethod: true,
+    },
+  },
 } as const
 
 export type SaleListItem = Prisma.SaleGetPayload<{ include: typeof saleListItemInclude }>

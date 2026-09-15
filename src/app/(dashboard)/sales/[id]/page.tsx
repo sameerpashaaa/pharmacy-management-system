@@ -1,3 +1,4 @@
+import { RotateCcw } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -17,7 +18,11 @@ import { formatDateTime } from '@/lib/utils/date'
 export const metadata: Metadata = { title: 'Sale Details' }
 
 export default async function SaleDetailPage({ params }: { params: { id: string } }) {
-  const [canRead, session] = await Promise.all([can(PERMISSIONS.SALES_READ), getSession()])
+  const [canRead, canReturn, session] = await Promise.all([
+    can(PERMISSIONS.SALES_READ),
+    can(PERMISSIONS.RETURNS_CREATE),
+    getSession(),
+  ])
 
   if (!canRead || !session?.user) {
     return (
@@ -40,6 +45,16 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
   const saleMeta = SALE_STATUS_META[sale.status]
   const paymentMeta = PAYMENT_STATUS_META[sale.paymentStatus]
 
+  const remainingToReturn = sale.items.reduce(
+    (sum, item) => sum + (item.quantity - (item.returnedQuantity || 0)),
+    0
+  )
+  const isReturnable =
+    canReturn &&
+    sale.status !== 'CANCELLED' &&
+    sale.status !== 'FULLY_RETURNED' &&
+    remainingToReturn > 0
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -54,9 +69,19 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
             {sale.customer ? ` · ${sale.customer.name}` : ' · Walk-in customer'}
           </p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href={ROUTES.SALES}>Back to sales</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          {isReturnable && (
+            <Button asChild size="sm" variant="default">
+              <Link href={`${ROUTES.SALE_RETURNS_NEW}?saleId=${sale.id}`} className="gap-2">
+                <RotateCcw className="h-4 w-4" />
+                Process Return
+              </Link>
+            </Button>
+          )}
+          <Button asChild variant="outline" size="sm">
+            <Link href={ROUTES.SALES}>Back to sales</Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -71,7 +96,8 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
                 <thead className="border-b text-left text-muted-foreground">
                   <tr>
                     <th className="py-2 pr-4 font-medium">Item</th>
-                    <th className="py-2 pr-4 font-medium">Qty</th>
+                    <th className="py-2 pr-4 text-center font-medium">Qty</th>
+                    <th className="py-2 pr-4 text-center font-medium">Ret</th>
                     <th className="py-2 pr-4 text-right font-medium">Unit</th>
                     <th className="py-2 pr-4 text-right font-medium">Disc</th>
                     <th className="py-2 pr-4 text-right font-medium">Tax</th>
@@ -91,7 +117,16 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
                               .join(', ')}`}
                         </p>
                       </td>
-                      <td className="py-3 pr-4">{item.quantity}</td>
+                      <td className="py-3 pr-4 text-center tabular-nums">{item.quantity}</td>
+                      <td className="py-3 pr-4 text-center tabular-nums text-muted-foreground">
+                        {item.returnedQuantity > 0 ? (
+                          <span className="font-medium text-amber-600">
+                            {item.returnedQuantity}
+                          </span>
+                        ) : (
+                          '0'
+                        )}
+                      </td>
                       <td className="py-3 pr-4 text-right tabular-nums">
                         {formatCurrency(item.unitPrice.toString())}
                       </td>
@@ -112,6 +147,48 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
               </table>
             </CardContent>
           </Card>
+
+          {sale.returns && sale.returns.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Returns on this Invoice</CardTitle>
+                <CardDescription>
+                  {sale.returns.length} return order(s) processed
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {sale.returns.map((ret) => (
+                    <div
+                      key={ret.id}
+                      className="flex items-center justify-between border-b pb-2 last:border-0 last:pb-0"
+                    >
+                      <div>
+                        <Link
+                          href={ROUTES.SALE_RETURN(ret.id)}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {ret.returnNumber}
+                        </Link>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDateTime(ret.returnDate)}
+                          {ret.refundMethod ? ` · ${ret.refundMethod.toLowerCase()}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold tabular-nums">
+                          {formatCurrency(ret.totalAmount.toString())}
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {ret.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

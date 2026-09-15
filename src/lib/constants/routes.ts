@@ -47,6 +47,7 @@ export const ROUTES = {
   // Returns
   SALE_RETURNS: '/returns/sales',
   SALE_RETURNS_NEW: '/returns/sales/new',
+  SALE_RETURN: (id: string) => `/returns/sales/${id}`,
 
   // Prescriptions
   PRESCRIPTIONS: '/prescriptions',

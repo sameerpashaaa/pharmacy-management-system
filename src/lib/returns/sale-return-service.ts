@@ -361,7 +361,7 @@ export async function getSaleReturnById(id: string, actor: ReturnActor) {
 }
 
 export async function listSaleReturns(
-  params: SaleReturnQueryParams,
+  params: Partial<SaleReturnQueryParams> = {},
   actor: ReturnActor
 ) {
   const {
@@ -435,7 +435,7 @@ export async function listSaleReturns(
 }
 
 export async function listCreditNotes(
-  params: CreditNoteQueryParams,
+  params: Partial<CreditNoteQueryParams> = {},
   _actor: ReturnActor
 ) {
   const {
