@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google'
 import { Toaster } from 'sonner'
 
 import { SessionProvider } from '@/components/auth/session-provider'
+import { ConfirmationDialog } from '@/components/shared/confirmation-dialog'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.variable} font-sans antialiased`}>
         <SessionProvider>
           {children}
+          <ConfirmationDialog />
           <Toaster position="top-right" richColors closeButton />
         </SessionProvider>
       </body>

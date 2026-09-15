@@ -14,6 +14,10 @@ export default withAuth(
     return NextResponse.next()
   },
   {
+    pages: {
+      signIn: '/login',
+      error: '/login',
+    },
     callbacks: {
       authorized({ token }) {
         // Token exists = authenticated

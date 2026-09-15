@@ -60,7 +60,6 @@ export default async function InventoryMovementsPage() {
         code: m.inventory.branch.code,
       },
     },
-    createdBy: m.createdBy,
   }))
 
   return (

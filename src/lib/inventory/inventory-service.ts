@@ -62,7 +62,6 @@ export interface MovementRow {
     product: { id: string; name: string; sku: string; unitOfMeasure: string }
     branch: { id: string; name: string; code: string | null }
   }
-  createdBy: { id: string; name: string } | null
 }
 
 export interface AdjustmentRow {
@@ -245,7 +244,6 @@ export async function getMovements(
         branch: { select: { id: true, name: true, code: true } },
       },
     },
-    createdBy: { select: { id: true, name: true } },
   }
 
   const skip = (page - 1) * limit

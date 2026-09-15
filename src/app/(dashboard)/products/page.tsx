@@ -9,11 +9,10 @@ import { getProducts } from '@/lib/products/product-service'
 export const metadata: Metadata = { title: 'Product Catalog' }
 
 export default async function ProductCatalogPage() {
-  const [canRead, canCreate, canUpdate, canDelete, canImport] = await Promise.all([
+  const [canRead, canCreate, canUpdate, canImport] = await Promise.all([
     can(PERMISSIONS.PRODUCTS_READ),
     can(PERMISSIONS.PRODUCTS_CREATE),
     can(PERMISSIONS.PRODUCTS_UPDATE),
-    can(PERMISSIONS.PRODUCTS_DELETE),
     can(PERMISSIONS.PRODUCTS_IMPORT),
   ])
 
@@ -65,7 +64,6 @@ export default async function ProductCatalogPage() {
         initialPagination={firstPage.pagination}
         canCreate={canCreate}
         canUpdate={canUpdate}
-        canDelete={canDelete}
         canImport={canImport}
       />
     </div>

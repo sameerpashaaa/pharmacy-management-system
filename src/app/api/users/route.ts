@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs'
 import type { NextRequest} from 'next/server';
 import { NextResponse } from 'next/server'
 
-import { requirePermission } from '@/lib/auth/auth-helpers'
+import { requirePermission, assertAssignableRoles } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import prisma from '@/lib/db/prisma'
 import { createUserSchema } from '@/lib/validations/user'
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
 
     const body: unknown = await req.json()
     const data = createUserSchema.parse(body)
+    await assertAssignableRoles(data.roleIds)
 
     // Check email uniqueness
     const existing = await prisma.user.findUnique({ where: { email: data.email } })

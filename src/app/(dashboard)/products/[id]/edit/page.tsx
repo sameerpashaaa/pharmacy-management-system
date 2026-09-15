@@ -37,6 +37,7 @@ export default async function EditProductPage({ params }: { params: { id: string
       </div>
       <div className="rounded-lg border bg-card p-6">
         <ProductForm
+          successHref={ROUTES.PRODUCT(params.id)}
           initialData={{
             id: product.id,
             name: product.name,

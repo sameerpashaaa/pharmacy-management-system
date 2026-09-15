@@ -13,6 +13,7 @@
 // at sale time (see sales-service.ts).
 // ─────────────────────────────────────────────────────────────
 import {
+  ArrowLeft,
   Calculator,
   CheckCircle2,
   Loader2,
@@ -24,6 +25,7 @@ import {
   ShoppingCart,
   Trash2,
 } from 'lucide-react'
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
@@ -45,6 +47,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { ROUTES } from '@/lib/constants/routes'
 import { useToast } from '@/lib/hooks/use-toast'
 import { computeItemPricing, computeSaleTotals } from '@/lib/sales/pricing'
 import type { PosSettings } from '@/lib/settings/settings-service'
@@ -578,6 +581,14 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       {/* ─── Left: search + catalog ─────────────────────────── */}
       <div className="flex min-h-0 flex-1 flex-col border-b lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-2 border-b p-3">
+          <Link
+            href={ROUTES.DASHBOARD}
+            title="Back to Dashboard"
+            className="flex items-center gap-1 rounded-md border bg-card px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Dashboard
+          </Link>
           <div className="relative flex-1 basis-52">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input

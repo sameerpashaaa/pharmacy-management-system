@@ -27,6 +27,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { signOut } from 'next-auth/react'
+import { useMemo } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -48,61 +49,66 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: ROUTES.DASHBOARD, icon: LayoutDashboard },
-  { label: 'POS / Billing', href: ROUTES.POS, icon: ShoppingCart },
+  { label: 'POS / Billing', href: ROUTES.POS, icon: ShoppingCart, permission: 'sales:create' },
   {
     label: 'Products',
     icon: Pill,
+    permission: 'products:read',
     children: [
-      { label: 'All Products', href: ROUTES.PRODUCTS, icon: Package },
-      { label: 'Categories', href: ROUTES.CATEGORIES, icon: ClipboardList },
+      { label: 'All Products', href: ROUTES.PRODUCTS, icon: Package, permission: 'products:read' },
+      { label: 'Categories', href: ROUTES.CATEGORIES, icon: ClipboardList, permission: 'categories:manage' },
     ],
   },
   {
     label: 'Inventory',
     icon: BarChart3,
+    permission: 'inventory:read',
     children: [
-      { label: 'Stock Overview', href: ROUTES.INVENTORY, icon: BarChart3 },
-      { label: 'Adjustments', href: ROUTES.INVENTORY_ADJUSTMENTS, icon: ScrollText },
-      { label: 'Movements', href: ROUTES.INVENTORY_MOVEMENTS, icon: TrendingDown },
-      { label: 'Batches', href: ROUTES.BATCHES, icon: Package },
+      { label: 'Stock Overview', href: ROUTES.INVENTORY, icon: BarChart3, permission: 'inventory:read' },
+      { label: 'Adjustments', href: ROUTES.INVENTORY_ADJUSTMENTS, icon: ScrollText, permission: 'inventory:read' },
+      { label: 'Movements', href: ROUTES.INVENTORY_MOVEMENTS, icon: TrendingDown, permission: 'inventory:read' },
+      { label: 'Batches', href: ROUTES.BATCHES, icon: Package, permission: 'batches:read' },
     ],
   },
   {
     label: 'Purchases',
     icon: Truck,
+    permission: 'purchases:read',
     children: [
-      { label: 'All Purchases', href: ROUTES.PURCHASES, icon: ClipboardList },
-      { label: 'Suppliers', href: ROUTES.SUPPLIERS, icon: Building2 },
+      { label: 'All Purchases', href: ROUTES.PURCHASES, icon: ClipboardList, permission: 'purchases:read' },
+      { label: 'Suppliers', href: ROUTES.SUPPLIERS, icon: Building2, permission: 'suppliers:read' },
     ],
   },
   {
     label: 'Sales',
     icon: Receipt,
+    permission: 'sales:read',
     children: [
-      { label: 'Sales History', href: ROUTES.SALES, icon: Receipt },
-      { label: 'Prescriptions', href: ROUTES.PRESCRIPTIONS, icon: FileText },
-      { label: 'Customers', href: ROUTES.CUSTOMERS, icon: UserCheck },
+      { label: 'Sales History', href: ROUTES.SALES, icon: Receipt, permission: 'sales:read' },
+      { label: 'Prescriptions', href: ROUTES.PRESCRIPTIONS, icon: FileText, permission: 'prescriptions:read' },
+      { label: 'Customers', href: ROUTES.CUSTOMERS, icon: UserCheck, permission: 'customers:read' },
     ],
   },
-  { label: 'Returns', href: ROUTES.SALE_RETURNS, icon: RotateCcw },
-  { label: 'Expiry', href: ROUTES.EXPIRY, icon: AlertTriangle },
+  { label: 'Returns', href: ROUTES.SALE_RETURNS, icon: RotateCcw, permission: 'returns:read' },
+  { label: 'Expiry', href: ROUTES.EXPIRY, icon: AlertTriangle, permission: 'batches:read' },
   {
     label: 'Finance',
     icon: BadgeDollarSign,
+    permission: 'finance:read',
     children: [
-      { label: 'Overview', href: ROUTES.FINANCE, icon: BadgeDollarSign },
-      { label: 'GST Reports', href: ROUTES.GST, icon: FileText },
+      { label: 'Overview', href: ROUTES.FINANCE, icon: BadgeDollarSign, permission: 'finance:read' },
+      { label: 'GST Reports', href: ROUTES.GST, icon: FileText, permission: 'gst:read' },
     ],
   },
-  { label: 'Reports', href: ROUTES.REPORTS, icon: BarChart3 },
+  { label: 'Reports', href: ROUTES.REPORTS, icon: BarChart3, permission: 'reports:sales' },
   {
     label: 'Admin',
     icon: Shield,
     children: [
-      { label: 'Users', href: ROUTES.USERS, icon: Users },
-      { label: 'Roles', href: ROUTES.ROLES, icon: Shield },
-      { label: 'Audit Logs', href: ROUTES.AUDIT, icon: ScrollText },
-      { label: 'Settings', href: ROUTES.SETTINGS, icon: Settings },
+      { label: 'Users', href: ROUTES.USERS, icon: Users, permission: 'users:read' },
+      { label: 'Roles', href: ROUTES.ROLES, icon: Shield, permission: 'roles:manage' },
+      { label: 'Audit Logs', href: ROUTES.AUDIT, icon: ScrollText, permission: 'audit:read' },
+      { label: 'Settings', href: ROUTES.SETTINGS, icon: Settings, permission: 'settings:read' },
     ],
   },
 ]
@@ -154,6 +160,26 @@ function NavItemComponent({ item, depth = 0 }: { item: NavItem; depth?: number }
 export function Sidebar() {
   const { data: session } = useSession()
 
+  const visibleNavItems = useMemo(() => {
+    const permissions = session?.user?.permissions ?? []
+    const isAllowed = (item: NavItem) => (item.permission ? permissions.includes(item.permission) : true)
+    const filterChildren = (children?: Omit<NavItem, 'children'>[]) =>
+      children?.filter((child) => isAllowed(child)) ?? []
+
+    return NAV_ITEMS.filter((item) => {
+      if (!isAllowed(item)) return false
+      if (item.children) return filterChildren(item.children).length > 0
+      return true
+    }).map((item) =>
+      item.children
+        ? {
+            ...item,
+            children: filterChildren(item.children),
+          }
+        : item
+    )
+  }, [session])
+
   const handleLogout = async () => {
     await signOut({ callbackUrl: ROUTES.LOGIN })
     toast.success('Signed out successfully')
@@ -174,7 +200,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {NAV_ITEMS.map((item) => (
+        {visibleNavItems.map((item) => (
           <NavItemComponent key={item.label} item={item} />
         ))}
       </nav>
