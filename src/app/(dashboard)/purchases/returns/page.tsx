@@ -125,6 +125,7 @@ export default function PurchaseReturnsPage() {
 
   useEffect(() => {
     void load({ reset: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, statusFilter, branchFilter, supplierFilter, sortBy, sortOrder])
 
   if (loading && returns.length === 0) {

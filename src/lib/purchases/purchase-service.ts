@@ -1,4 +1,11 @@
-import type { Purchase, PurchaseItem, Supplier, Payment, PurchaseReturn } from '@prisma/client'
+import type {
+  Purchase,
+  PurchaseItem,
+  PurchaseReturn,
+  PurchaseReturnItem,
+  Supplier,
+  Payment,
+} from '@prisma/client'
 import { Prisma } from '@prisma/client'
 import type { z } from 'zod'
 
@@ -13,6 +20,7 @@ import {
   type threeWayMatchSchema,
   type supplierPaymentSchema,
   type createPurchaseReturnSchema,
+  type updatePurchaseReturnSchema,
   type CreateSupplierInput,
   type UpdateSupplierInput,
 } from '@/lib/validations/purchase'
@@ -41,6 +49,15 @@ export interface PurchaseWithItems extends Purchase {
   items: (PurchaseItem & { product: { id: string; name: string; sku: string } })[]
   supplier: { id: string; name: string }
   createdBy: { id: string; name: string }
+}
+
+export interface PurchaseReturnWithDetails extends PurchaseReturn {
+  supplier: { id: string; name: string }
+  purchase: { id: string; purchaseNumber: string }
+  items: (PurchaseReturnItem & {
+    product: { id: string; name: string; sku: string }
+    batch: { id: string; batchNumber: string } | null
+  })[]
 }
 
 export interface GrnWithItems {
@@ -618,7 +635,18 @@ export async function createGrn(
         action: 'GRN_CREATE',
         entity: 'Purchase',
         entityId: command.purchaseId,
-        metadata: { grnNumber: command.grnNumber, purchaseId: command.purchaseId },
+        metadata: {
+          grnNumber: command.grnNumber,
+          purchaseId: command.purchaseId,
+          items: command.items.map((i) => ({
+            purchaseItemId: i.purchaseItemId,
+            batchNumber: i.batchNumber,
+            receivedQuantity: i.receivedQuantity,
+            qualityCheckPassed: i.qualityCheckPassed,
+            qualityCheckNotes: i.qualityCheckNotes,
+            coldChainTempLog: i.coldChainTempLog,
+          })),
+        },
       },
     })
 
@@ -1080,4 +1108,103 @@ export async function listPurchaseReturns(
   ])
 
   return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }
+}
+
+// ─── Get Purchase Return ─────────────────────────────────────────
+
+export async function getPurchaseReturn(
+  id: string,
+  actor: AuthUser
+): Promise<PurchaseReturnWithDetails | null> {
+  await assertBranchAccess(actor, '')
+
+  const purchaseReturn = await prisma.purchaseReturn.findUnique({
+    where: { id },
+    include: {
+      supplier: { select: { id: true, name: true } },
+      purchase: { select: { id: true, purchaseNumber: true } },
+    },
+  })
+
+  if (!purchaseReturn) return null
+
+  const items = await prisma.purchaseReturnItem.findMany({
+    where: { purchaseReturnId: id },
+  })
+
+  const productIds = items.map((i) => i.productId)
+  const batchIds = items.map((i) => i.batchId).filter(Boolean) as string[]
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { id: true, name: true, sku: true },
+  })
+
+  const batches = await prisma.batch.findMany({
+    where: { id: { in: batchIds } },
+    select: { id: true, batchNumber: true },
+  })
+
+  const productMap = new Map(products.map((p) => [p.id, p]))
+  const batchMap = new Map(batches.map((b) => [b.id, b]))
+
+  const itemsWithDetails = items.map((item) => ({
+    ...item,
+    product: productMap.get(item.productId)!,
+    batch: item.batchId ? batchMap.get(item.batchId)! : null,
+  }))
+
+  return {
+    ...purchaseReturn,
+    items: itemsWithDetails,
+  }
+}
+
+// ─── Update Purchase Return ──────────────────────────────────────
+
+export async function updatePurchaseReturn(
+  id: string,
+  data: z.infer<typeof updatePurchaseReturnSchema>,
+  actor: AuthUser
+): Promise<PurchaseReturn> {
+  const existing = await prisma.purchaseReturn.findUnique({ where: { id } })
+  if (!existing) throw new Error('Not Found: purchase return')
+
+  await assertBranchAccess(actor, '')
+
+  const validTransitions: Record<string, string[]> = {
+    PENDING: ['APPROVED', 'CANCELLED'],
+    APPROVED: ['DISPATCHED', 'CANCELLED'],
+    DISPATCHED: ['COMPLETED', 'CANCELLED'],
+    COMPLETED: [],
+    CANCELLED: [],
+  }
+
+  if (data.status && existing.status !== data.status) {
+    const allowed = validTransitions[existing.status] || []
+    if (!allowed.includes(data.status)) {
+      throw new Error(`Invalid status transition: ${existing.status} → ${data.status}`)
+    }
+  }
+
+  const purchaseReturn = await prisma.purchaseReturn.update({
+    where: { id },
+    data,
+    include: {
+      supplier: { select: { id: true, name: true } },
+      purchase: { select: { id: true, purchaseNumber: true } },
+    },
+  })
+
+  await prisma.auditLog.create({
+    data: {
+      userId: actor.id,
+      action: 'PURCHASE_RETURN_UPDATE',
+      entity: 'PurchaseReturn',
+      entityId: id,
+      metadata: { changes: data },
+    },
+  })
+
+  return purchaseReturn
 }
