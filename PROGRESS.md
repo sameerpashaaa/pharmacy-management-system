@@ -15,7 +15,7 @@ Phase 1: Core Infrastructure  ████████████████�
 Phase 2: Product & Inventory  ████████████████████ 100% ✅
 Phase 3: Point of Sale        ████████████████████ 100% ✅
 Phase 4: Purchase Management  ████████████████████ 100% ✅
-Phase 5: Prescriptions/Returns░░░░░░░░░░░░░░░░░░░░   0% ⏳
+Phase 5: Prescriptions/Returns████████████████████ 100% ✅
 Phase 6: Financial & GST      ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 7: Reporting & Analytics░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 8: Testing & Refinement ████░░░░░░░░░░░░░░░░  15% 🔧
@@ -398,9 +398,110 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 ---
 
 
-## ⏳ Phase 5: Prescriptions & Returns — NOT STARTED
+## ✅ Phase 5: Prescriptions & Returns — COMPLETE
 
-**Target:** Weeks 14–15 | **Modules:** 8 (enhanced), 10, 11
+**Target:** Weeks 14–15 | **Modules:** 8 (Prescription Management), 10 (Sales Returns & Credit Notes), 11 (Purchase Returns & Vendor Debits)
+
+### 📋 Overview of Deliverables
+
+Phase 5 introduces complete lifecycle control over regulated medication dispensing, customer sales returns with inventory restock decisions, credit note issuance, and vendor returns (RTV) with supplier ledger debit memos.
+
+---
+
+### Module 8: Prescription Management
+
+#### Services & Validations
+- `src/lib/validations/prescription.ts`: Comprehensive Zod schemas for patient information, prescribing doctor, registration numbers, prescription date, and status queries.
+- `src/lib/prescriptions/prescription-service.ts`: Full service managing prescription statuses (`PENDING`, `APPROVED`, `REJECTED`, `DISPENSED`, `EXPIRED`), branch-scoped operations, image upload attachment, dispensing history tracking, and summary statistics.
+
+#### API Endpoints
+| Route | Method(s) | Permission | Description |
+|-------|-----------|------------|-------------|
+| `/api/prescriptions` | GET, POST | `prescriptions:read`, `prescriptions:create` | List & register prescriptions |
+| `/api/prescriptions/[id]` | GET, PATCH | `prescriptions:read`, `prescriptions:create` | View & update prescription details |
+| `/api/prescriptions/[id]/approve` | POST | `prescriptions:approve` | Approve prescription by licensed pharmacist |
+| `/api/prescriptions/[id]/reject` | POST | `prescriptions:approve` | Reject prescription with reason |
+| `/api/prescriptions/[id]/images` | POST | `prescriptions:create` | Upload scanned prescription images |
+| `/api/prescriptions/stats` | GET | `prescriptions:read` | Counts by status (pending, approved, dispensed) |
+
+#### UI Components & Pages
+- `src/components/prescriptions/prescriptions-table.tsx`: TanStack DataTable with status badges and quick view actions.
+- `src/components/prescriptions/prescriptions-view.tsx`: KPI summary cards, filter tabs, and new prescription CTA.
+- `src/components/prescriptions/prescription-form.tsx`: Registration form for patient/doctor details, prescription date, and image upload.
+- `src/components/prescriptions/prescription-detail-actions.tsx`: Pharmacist approval/rejection dialogs with notes.
+- `/prescriptions`: Main prescription management overview with stat cards.
+- `/prescriptions/pending`: Priority pharmacist review queue.
+- `/prescriptions/new`: Prescription registration page.
+- `/prescriptions/[id]`: Full prescription detail view with scanned images and dispensing history.
+- `src/components/pos/pos-client.tsx`: Direct POS integration — automatically detects Schedule H/X medications, fetches active approved prescriptions for the branch, and enables one-click association.
+
+---
+
+### Module 10: Sales Returns & Credit Notes
+
+#### Services & Validations
+- `src/lib/validations/sale-return.ts`: Validations for returned items, quantities, restock disposition (`RESTOCK`, `QUARANTINE`, `DAMAGE_WRITE_OFF`), and refund methods (`CASH`, `CARD`, `UPI`, `CREDIT`).
+- `src/lib/returns/sale-return-service.ts`:
+  - Enforces return quantity capping against remaining unreturned units (`saleItem.quantity - saleItem.returnedQuantity`).
+  - Restock engine: updates inventory totals/available stock, restores batch quantities for `RESTOCK`, records `InventoryMovement` with `RETURN_IN` or `WRITE_OFF`.
+  - Automatic status updates on parent sale (`PARTIALLY_RETURNED` or `FULLY_RETURNED`).
+  - Credit Note engine: generates unique formatted credit notes (`CN-YYYYMMDD-XXXX`) valid for 365 days and logs `CREDIT` entries into `CustomerLedger`.
+  - Service query methods: `createSaleReturn`, `getSaleReturnById`, `listSaleReturns`, `listCreditNotes`, `getCreditNoteById`.
+
+#### API Endpoints
+| Route | Method(s) | Permission | Description |
+|-------|-----------|------------|-------------|
+| `/api/returns/sales` | GET, POST | `returns:read`, `returns:create` | List & process customer sales returns |
+| `/api/returns/sales/[id]` | GET | `returns:read` | View return details and restock disposition |
+| `/api/credit-notes` | GET | `returns:read` | List credit notes and balances |
+| `/api/credit-notes/[id]` | GET | `returns:read` | Get specific credit note details |
+
+#### UI Components & Pages
+- `src/components/returns/sale-returns-table.tsx`: List of customer returns with invoice links and refund badges.
+- `src/components/returns/credit-notes-table.tsx`: Customer credit note tracker with remaining balances and status.
+- `src/components/returns/sale-returns-view.tsx`: Returns & Credit Notes dashboard with tabs and financial KPI cards.
+- `src/components/returns/sale-return-form.tsx`: Return creation wizard with invoice lookup, line-item quantity limits, item restock dropdowns, and refund method selection.
+- `/returns/sales`: Main dashboard for sales returns and credit notes.
+- `/returns/sales/new`: Return creation page (supports `?saleId=` prefill).
+- `/returns/sales/[id]`: Return detail view showing returned items, restock decisions, and linked credit note.
+- `/sales/[id]`: Enhanced with "Process Return" CTA for eligible sales, returned quantity columns, and returns history.
+
+---
+
+### Module 11: Purchase Returns (RTV) & Vendor Debits
+
+#### Services & Validations
+- `src/lib/validations/purchase.ts`: Flexible return number, return date, and item return schemas.
+- `src/lib/purchases/purchase-service.ts`:
+  - `createPurchaseReturn`: Validates return quantities against received PO items, deducts branch inventory with CAS concurrency checks, creates `OUT` inventory movements, reduces batch quantities, and issues `DEBIT` entries on `SupplierLedger`.
+  - `getPurchaseReturnById`: Fetches return details, items, and resolved product details.
+  - `listPurchaseReturns`: Lists vendor returns with pagination and search.
+
+#### API Endpoints
+| Route | Method(s) | Permission | Description |
+|-------|-----------|------------|-------------|
+| `/api/purchase-returns` | GET, POST | `purchases:read`, `returns:create` | List & create purchase returns |
+| `/api/purchase-returns/[id]` | GET | `purchases:read` | View purchase return details |
+
+#### UI Components & Pages
+- `src/components/purchases/purchase-returns-table.tsx`: Table of vendor returns with PO links and debit amounts.
+- `src/components/purchases/purchase-returns-view.tsx`: Summary cards for vendor returns, debit values, and pending dispatch.
+- `src/components/purchases/purchase-return-form.tsx`: RTV wizard with PO search, item quantity caps, unit costs, and debit memo summary.
+- `/purchases/returns`: Vendor returns dashboard.
+- `/purchases/returns/new`: Purchase return creation page with `?purchaseId=` prefill.
+- `/purchases/returns/[id]`: Purchase return detail view with supplier and debit memo breakdown.
+- `/purchases/[id]`: Enhanced with "Return to Vendor" CTA button and vendor returns history.
+
+---
+
+### ✅ Verification
+| Check | Result |
+|-------|--------|
+| `npm run type-check` | ✅ 0 errors |
+| `npx eslint` | ✅ 0 errors, 0 warnings |
+| `npx jest --testPathIgnorePatterns=integration` | ✅ 40 suites, 421 tests passed |
+| `npm run build` | ✅ Complete production build passing |
+
 
 ---
 
