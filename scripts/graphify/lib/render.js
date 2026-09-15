@@ -172,7 +172,7 @@ ${graphRows.join('\n')}
 | Sales / POS flow | \`src/lib/sales/sales-service.ts\`, \`src/lib/sales/pricing.ts\`, \`src/lib/batches/fefo-service.ts\`, \`src/app/api/pos/**\`, \`src/components/pos/**\` |
 | Purchase flow | \`prisma/schema.prisma\` (schema-only — Phase 4 not started) |
 | Reporting flow | \`src/app/(dashboard)/page.tsx\`, \`src/app/(dashboard)/reports/**\`, \`src/lib/constants/permissions.ts\` |
-| Testing architecture | \`jest.config.ts\`, \`playwright.config.ts\`, \`e2e/**\`, \`src/**/*.test.ts(x)\`, \`.github/workflows/ci.yml\` |
+| Testing architecture | \`jest.config.js\`, \`playwright.config.ts\`, \`e2e/**\`, \`src/**/*.test.ts(x)\`, \`.github/workflows/ci.yml\` |
 
 The generator itself is deterministic: it parses files (no guessing), so the
 diagrams stay accurate as long as the code changes.

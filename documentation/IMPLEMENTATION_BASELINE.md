@@ -98,20 +98,20 @@ Browser ──> Next.js 14 App Router (SSR + Route Handlers /api/**)
 
 ## 5. Completed Feature Baseline (verified)
 
-| Module                                                                       | Status (PROGRESS.md) | Key evidence                                                                                     |
-| ---------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
-| Foundation (Next.js, TS, Tailwind, Shadcn)                                   | ✅ COMPLETE          | `package.json`, configs                                                                          |
-| DB schema — all 20 modules of tables                                         | ✅ COMPLETE          | `prisma/schema.prisma` (69 model/enum defs)                                                      |
-| Seed data (60 permissions, 6 roles, org, branches, HSN, categories, users)   | ✅ COMPLETE          | `prisma/seeds/*.ts`                                                                              |
-| Auth + users/roles + org/branches APIs + UI                                  | ✅ COMPLETE          | `src/lib/auth/auth-config.ts`, `src/app/api/users                                                | roles | organization | branches` |
-| Product Master (CRUD, categories, HSN, barcodes)                             | ✅ COMPLETE          | `src/lib/products/*`, products APIs + pages                                                      |
-| Inventory (list, movements, adjustments, approve/reject)                     | ✅ COMPLETE          | `src/lib/inventory/*`, inventory APIs + pages                                                    |
-| Product CSV Import                                                           | ✅ COMPLETE          | `src/lib/products/product-import.ts`, `src/app/api/products/import/route.ts`                     |
-| Batch Management (list/detail/update/block/dispose, status logs, disposals)  | ✅ COMPLETE          | `src/lib/batches/batch-service.ts`, `src/app/api/batches/**`, `/batches` pages                   |
-| FEFO selection (domain/service, reusable allocation)                         | ✅ COMPLETE          | `src/lib/batches/fefo.ts` (pure), `src/lib/batches/fefo-service.ts` (DB)                         |
-| Expiry Detection (expiring/expired views, hub, severity classification)      | ✅ COMPLETE          | `src/lib/batches/expiry-service.ts`, `src/app/api/expiry/**`, `/expiry` pages                    |
-| POS / Sales / Billing (serve, payments, discount/credit/Rx gates, stock CAS) | ✅ COMPLETE          | `src/lib/sales/{sales-service,pricing}.ts`, `/api/pos/*`, `/api/sales/*`, `/pos`, `/sales` pages |
-| Testing + CI                                                                 | ✅ FOUNDATION        | 35 suites / 400 tests; `.github/workflows/ci.yml`; Husky + lint-staged                           |
+| Module                                                                       | Status (PROGRESS.md) | Key evidence                                                                                                                        |
+| ---------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Foundation (Next.js, TS, Tailwind, Shadcn)                                   | ✅ COMPLETE          | `package.json`, configs                                                                                                             |
+| DB schema — all 20 modules of tables                                         | ✅ COMPLETE          | `prisma/schema.prisma` (69 model/enum defs)                                                                                         |
+| Seed data (60 permissions, 6 roles, org, branches, HSN, categories, users)   | ✅ COMPLETE          | `prisma/seeds/*.ts`                                                                                                                 |
+| Auth + users/roles + org/branches APIs + UI                                  | ✅ COMPLETE          | `src/lib/auth/auth-config.ts`, `src/app/api/users                                                                                   | roles | organization | branches` |
+| Product Master (CRUD, categories, HSN, barcodes)                             | ✅ COMPLETE          | `src/lib/products/*`, products APIs + pages                                                                                         |
+| Inventory (list, movements, adjustments, approve/reject)                     | ✅ COMPLETE          | `src/lib/inventory/*`, inventory APIs + pages                                                                                       |
+| Product CSV Import                                                           | ✅ COMPLETE          | `src/lib/products/product-import.ts`, `src/app/api/products/import/route.ts`                                                        |
+| Batch Management (list/detail/update/block/dispose, status logs, disposals)  | ✅ COMPLETE          | `src/lib/batches/batch-service.ts`, `src/app/api/batches/**`, `/batches` pages                                                      |
+| FEFO selection (domain/service, reusable allocation)                         | ✅ COMPLETE          | `src/lib/batches/fefo.ts` (pure), `src/lib/batches/fefo-service.ts` (DB)                                                            |
+| Expiry Detection (expiring/expired views, hub, severity classification)      | ✅ COMPLETE          | `src/lib/batches/expiry-service.ts`, `src/app/api/expiry/**`, `/expiry` pages                                                       |
+| POS / Sales / Billing (serve, payments, discount/credit/Rx gates, stock CAS) | ✅ COMPLETE          | `src/lib/sales/{sales-service,pricing}.ts`, `/api/pos/*`, `/api/sales/*`, `/pos`, `/sales` pages                                    |
+| Testing + CI                                                                 | ✅ FOUNDATION        | 37 suites / 449 tests (unit runs parallel; integration project runs `--runInBand`); `.github/workflows/ci.yml`; Husky + lint-staged |
 
 ## 6. Future / Not Implemented Features (documented, consistent with `PROGRESS.md`)
 
@@ -319,7 +319,7 @@ Only **D2** remains `UNRESOLVED` (owner decision). D1/D5 are documentation corre
 - **Server authority on money:** the client sends only `{productId/barcode, quantity, discountPercent}`; every amount is recomputed server-side from DB rows + `getPosSettings`. This matches the standing `Stock_Management_Module.md` dispensing/costing rules (docs say client sends product + qty; totals computed at terminal).
 - **FEFO wiring (was §7.1 row 4 / §8 row 6 FUTURE):** now implemented — `allocateFefo(filterEligibleBatches(...), qty)` when `fefo_enabled`, otherwise `allocateByCreationDate`; only `ACTIVE` + `expiryDate >= now` batches are dispense-eligible, so expired stock is blocked at POS exactly as the docs require. Optional **batch override with justification** remains future.
 - **Documented limitations:** intra-state GST only (tax split `cgst+sgst` from stored rates; IGST needs branch/org state resolution — noted in `pricing.ts`); receipt prints via browser print (no A4/thermal PDF generator yet); customer capture is credit-only by design; returns/refunds + credit-note application are Phase 5; no notifications/recall.
-- **Delivery record:** pricing 30, sale-schema 16, sales-service 40, integration (real Postgres: FEFO/CAS, oversell, counter, rollback, concurrency) 21, POS routes 9 → suite 35 / 400 tests, `tsc`/`lint`/`next build` clean.
+- **Delivery record:** pricing 30, sale-schema 16, sales-service 40, integration (real Postgres: FEFO/CAS, oversell, counter, rollback, concurrency) 26, POS routes 9, purchase integration (real Postgres: suppliers, PO/GRN, three-way match, payments, returns, isolation) 28, purchase routes 21 → suite 37 / 449 tests, `tsc`/`lint`/`next build` clean.
 
 ---
 

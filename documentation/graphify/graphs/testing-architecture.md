@@ -12,8 +12,8 @@ classDef int fill:#dcfce7,stroke:#16a34a,color:#14532d
 classDef ci fill:#f1f5f9,stroke:#64748b,color:#334155
 
 subgraph T1["Jest — unit & integration (jsdom, ts-jest, next/jest)"]
-  J1["jest.config.ts — roots src/ · @ alias mapping · setupFilesAfterEach jest.setup.ts"]:::jest
-  J2["testMatch **/*.test.ts(x) — 35 test files scanned"]:::jest
+  J1["jest.config.js — roots src/ · @ alias mapping · setupFilesAfterEach jest.setup.ts"]:::jest
+  J2["testMatch **/*.test.ts(x) — 37 test files scanned"]:::jest
   J3["Validations — product, sale, user, batch, expiry (Zod)"]:::jest
   J4["Services — product-service, product-import, inventory-service, batch-service, fefo (38), expiry-service, pricing (30), sales-service (40)"]:::jest
   J5["API routes — categories, products, inventory, batches, expiry, pos (auth + validation + audit)"]:::jest
@@ -61,7 +61,7 @@ Three test layers (Jest unit/component, Prisma-backed integration, Playwright E2
 
 ## Source files
 
-- `jest.config.ts`
+- `jest.config.js`
 - `jest.setup.ts`
 - `src/**/*.test.ts(x)`
 - `src/lib/sales/sales-service.integration.test.ts`
