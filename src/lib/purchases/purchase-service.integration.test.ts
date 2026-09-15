@@ -337,7 +337,10 @@ describeDb('Purchase management integration (real Postgres)', () => {
     expect(purchase.items).toHaveLength(1)
     expect(purchase.items[0].orderedQuantity).toBe(100)
     expect(purchase.items[0].receivedQuantity).toBe(0)
-    expect(purchase.items[0].totalAmount.toNumber()).toBe(0)
+    // Server-side calculated: 100 * 10 * (1 - 0/100) * (1 + 0/100) = 1000
+    expect(purchase.items[0].totalAmount.toNumber()).toBe(1000)
+    // MRP derived from product master
+    expect(purchase.items[0].mrp.toNumber()).toBe(100)
 
     const audit = await prisma.auditLog.findFirst({
       where: { action: 'PURCHASE_CREATE', entity: 'Purchase' },
@@ -423,9 +426,9 @@ describeDb('Purchase management integration (real Postgres)', () => {
       fx.branchAUser
     )
 
-    // Note: the returned `result.purchase` reflects the mid-transaction
-    // PARTIALLY_RECEIVED write; the committed state is RECEIVED.
-    expect(result.purchase.status).toBe('PARTIALLY_RECEIVED')
+    // The returned purchase now reflects the COMMITTED state (RECEIVED)
+    // not the mid-transaction PARTIALLY_RECEIVED state
+    expect(result.purchase.status).toBe('RECEIVED')
 
     const committed = await getPurchase(purchaseId, fx.globalActor)
     expect(committed?.status).toBe('RECEIVED')
@@ -808,11 +811,8 @@ describeDb('Purchase management integration (real Postgres)', () => {
       fx.branchAUser
     )
 
-    // Record the PO line amount the way a real PO close-out would.
-    await prisma.purchaseItem.update({
-      where: { id: itemId },
-      data: { totalAmount: 1000, mrp: 100 },
-    })
+    // totalAmount and mrp are now calculated server-side at PO creation
+    // No manual patch needed - threeWayMatch uses the authoritative PO amounts
 
     const result = await threeWayMatch(
       {
@@ -862,10 +862,6 @@ describeDb('Purchase management integration (real Postgres)', () => {
       },
       fx.branchAUser
     )
-    await prisma.purchaseItem.update({
-      where: { id: itemId },
-      data: { totalAmount: 1000, mrp: 100 },
-    })
 
     const result = await threeWayMatch(
       {
@@ -925,10 +921,6 @@ describeDb('Purchase management integration (real Postgres)', () => {
       },
       fx.branchAUser
     )
-    await prisma.purchaseItem.update({
-      where: { id: itemId },
-      data: { totalAmount: 1000, mrp: 100 },
-    })
 
     const atTolerance = await threeWayMatch(
       {
@@ -1301,5 +1293,279 @@ describeDb('Purchase management integration (real Postgres)', () => {
         fx.branchBUser
       )
     ).rejects.toThrow('Forbidden')
+  })
+
+  // ── Regression tests for Phase 4 fixes ────────────────────────
+
+  it('calculates PO line totalAmount and mrp server-side with discount and tax', async () => {
+    const purchase = await createPurchase(
+      poCommand(fx, {
+        items: [
+          {
+            productId: fx.para,
+            orderedQuantity: 50,
+            unitCost: 20,
+            discountPercent: 10, // 10% discount
+            taxPercent: 18, // 18% tax
+          },
+        ],
+      }),
+      fx.branchAUser
+    )
+
+    // lineSubtotal = 50 * 20 = 1000
+    // discountAmount = 1000 * 10% = 100
+    // taxableAmount = 900
+    // taxAmount = 900 * 18% = 162
+    // totalAmount = 900 + 162 = 1062
+    expect(purchase.items[0].totalAmount.toNumber()).toBe(1062)
+    expect(purchase.items[0].taxAmount.toNumber()).toBe(162)
+    expect(purchase.items[0].mrp.toNumber()).toBe(100) // from product master
+  })
+
+  it('three-way matching uses real calculated PO amount (no manual patch needed)', async () => {
+    const { id: purchaseId, itemId } = await orderPurchase(fx)
+    await createGrn(
+      {
+        purchaseId,
+        branchId: fx.branchA,
+        grnNumber: 'GRN-REG1',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: itemId,
+            receivedQuantity: 100,
+            batchNumber: 'BT-REG1',
+            expiryDate: inDays(300),
+            purchasePrice: 10,
+            mrp: 100,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      fx.branchAUser
+    )
+
+    // No manual patch of totalAmount needed - it's calculated at PO creation
+    const poItem = await prisma.purchaseItem.findUnique({ where: { id: itemId } })
+    expect(poItem?.totalAmount.toNumber()).toBe(1000) // 100 * 10 * 1 * 1 = 1000
+
+    const result = await threeWayMatch(
+      {
+        purchaseId,
+        invoiceNumber: 'INV-REG1',
+        items: [
+          {
+            purchaseItemId: itemId,
+            invoiceQuantity: 100,
+            invoiceAmount: 1000,
+            tolerancePercent: 2,
+          },
+        ],
+      },
+      fx.globalActor
+    )
+
+    expect(result.status).toBe('MATCHED')
+    expect(result.mismatches).toHaveLength(0)
+  })
+
+  it('full GRN returns committed RECEIVED status (not stale PARTIALLY_RECEIVED)', async () => {
+    const { id: purchaseId, itemId } = await orderPurchase(fx)
+
+    const result = await createGrn(
+      {
+        purchaseId,
+        branchId: fx.branchA,
+        grnNumber: 'GRN-STATUS1',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: itemId,
+            receivedQuantity: 100,
+            batchNumber: 'BT-STATUS1',
+            expiryDate: inDays(300),
+            purchasePrice: 10,
+            mrp: 100,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      fx.branchAUser
+    )
+
+    // The returned purchase should reflect the COMMITTED state (RECEIVED)
+    // not the mid-transaction PARTIALLY_RECEIVED state
+    expect(result.purchase.status).toBe('RECEIVED')
+
+    // Verify committed state in DB
+    const committed = await getPurchase(purchaseId, fx.globalActor)
+    expect(committed?.status).toBe('RECEIVED')
+  })
+
+  it('partial GRN returns PARTIALLY_RECEIVED, then full GRN returns RECEIVED', async () => {
+    const { id: purchaseId, itemId } = await orderPurchase(fx)
+
+    // First GRN: partial (40 of 100)
+    const r1 = await createGrn(
+      {
+        purchaseId,
+        branchId: fx.branchA,
+        grnNumber: 'GRN-SEQ1',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: itemId,
+            receivedQuantity: 40,
+            batchNumber: 'BT-SEQ1',
+            expiryDate: inDays(300),
+            purchasePrice: 10,
+            mrp: 100,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      fx.branchAUser
+    )
+    expect(r1.purchase.status).toBe('PARTIALLY_RECEIVED')
+
+    // Second GRN: complete the remaining 60
+    const r2 = await createGrn(
+      {
+        purchaseId,
+        branchId: fx.branchA,
+        grnNumber: 'GRN-SEQ2',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: itemId,
+            receivedQuantity: 60,
+            batchNumber: 'BT-SEQ2',
+            expiryDate: inDays(300),
+            purchasePrice: 10,
+            mrp: 100,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      fx.branchAUser
+    )
+    expect(r2.purchase.status).toBe('RECEIVED')
+  })
+
+  it('over-receiving is prevented by validation and CAS on PurchaseItem.receivedQuantity', async () => {
+    const { id: purchaseId, itemId } = await orderPurchase(fx)
+
+    // First GRN receives partial quantity (50 of 100) - should succeed
+    await createGrn(
+      {
+        purchaseId,
+        branchId: fx.branchA,
+        grnNumber: 'GRN-CONC1',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: itemId,
+            receivedQuantity: 50,
+            batchNumber: 'BT-CONC1',
+            expiryDate: inDays(300),
+            purchasePrice: 10,
+            mrp: 100,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      fx.branchAUser
+    )
+
+    // Second GRN attempting to receive more than remaining (60) should fail
+    // because the over-receiving validation catches it (remaining = 50, trying 60)
+    await expect(
+      createGrn(
+        {
+          purchaseId,
+          branchId: fx.branchA,
+          grnNumber: 'GRN-CONC2',
+          grnDate: new Date(),
+          items: [
+            {
+              purchaseItemId: itemId,
+              receivedQuantity: 60, // Exceeds remaining 50
+              batchNumber: 'BT-CONC2',
+              expiryDate: inDays(300),
+              purchasePrice: 10,
+              mrp: 100,
+              qualityCheckPassed: true,
+            },
+          ],
+        },
+        fx.branchAUser
+      )
+    ).rejects.toThrow('Over-receiving')
+
+    // Verify received quantity never exceeds ordered
+    const finalItem = await prisma.purchaseItem.findUnique({ where: { id: itemId } })
+    expect(finalItem?.receivedQuantity).toBe(50)
+  })
+
+  it('PurchaseItem.mrp is derived from Product master at PO creation', async () => {
+    // Create a product with a specific MRP
+    const customProduct = await prisma.product.create({
+      data: {
+        name: 'Custom Drug',
+        sku: 'CUSTOM-001',
+        barcode: '99999999',
+        mrp: 250.75,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        createdById: fx.userAId,
+      },
+    })
+
+    const purchase = await createPurchase(
+      poCommand(fx, {
+        items: [
+          {
+            productId: customProduct.id,
+            orderedQuantity: 10,
+            unitCost: 50,
+            discountPercent: 0,
+            taxPercent: 0,
+          },
+        ],
+      }),
+      fx.branchAUser
+    )
+
+    expect(purchase.items[0].mrp.toNumber()).toBe(250.75)
+  })
+
+  it('PurchaseItem.totalAmount handles discount and tax correctly', async () => {
+    const purchase = await createPurchase(
+      poCommand(fx, {
+        items: [
+          {
+            productId: fx.para,
+            orderedQuantity: 10,
+            unitCost: 100,
+            discountPercent: 20, // 20% discount
+            taxPercent: 12, // 12% tax
+          },
+        ],
+      }),
+      fx.branchAUser
+    )
+
+    // lineSubtotal = 10 * 100 = 1000
+    // discountAmount = 1000 * 20% = 200
+    // taxableAmount = 800
+    // taxAmount = 800 * 12% = 96
+    // totalAmount = 800 + 96 = 896
+    expect(purchase.items[0].totalAmount.toNumber()).toBe(896)
+    expect(purchase.items[0].taxAmount.toNumber()).toBe(96)
+    expect(purchase.items[0].discountPercent.toNumber()).toBe(20)
+    expect(purchase.items[0].taxPercent.toNumber()).toBe(12)
   })
 })

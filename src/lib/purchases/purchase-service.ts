@@ -202,11 +202,11 @@ export async function createPurchase(
   const branch = await prisma.branch.findUnique({ where: { id: command.branchId } })
   if (!branch) throw new Error('Not Found: branch')
 
-  // Validate all products exist and are active
+  // Validate all products exist and are active; fetch MRP for server-side calculation
   const productIds = command.items.map((i) => i.productId)
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
-    select: { id: true, isActive: true, name: true },
+    select: { id: true, isActive: true, name: true, mrp: true, ptr: true },
   })
   if (products.length !== productIds.length) {
     const found = new Set(products.map((p) => p.id))
@@ -217,6 +217,9 @@ export async function createPurchase(
   if (inactive.length > 0) {
     throw new Error(`Product is inactive: ${inactive.map((p) => p.name).join(', ')}`)
   }
+
+  // Build product lookup for MRP
+  const productMap = new Map(products.map((p) => [p.id, p]))
 
   const purchase = await prisma.$transaction(async (tx) => {
     const purchaseNumber = `PO-${Date.now()}`
@@ -230,20 +233,32 @@ export async function createPurchase(
         status: 'DRAFT',
         createdById: actor.id,
         items: {
-          create: command.items.map((item) => ({
-            productId: item.productId,
-            orderedQuantity: item.orderedQuantity,
-            receivedQuantity: 0,
-            freeQuantity: 0,
-            unitCost: item.unitCost,
-            discountPercent: item.discountPercent,
-            taxPercent: item.taxPercent,
-            batchNumber: item.batchNumber ?? null,
-            expiryDate: item.expiryDate ?? null,
-            manufacturingDate: item.manufacturingDate ?? null,
-            mrp: 0,
-            totalAmount: 0,
-          })),
+          create: command.items.map((item) => {
+            const product = productMap.get(item.productId)!
+            // Server-side calculation: never trust client-provided totals
+            const lineSubtotal = item.orderedQuantity * item.unitCost
+            const discountAmount = lineSubtotal * (item.discountPercent / 100)
+            const taxableAmount = lineSubtotal - discountAmount
+            const taxAmount = taxableAmount * (item.taxPercent / 100)
+            const totalAmount = taxableAmount + taxAmount
+
+            return {
+              productId: item.productId,
+              orderedQuantity: item.orderedQuantity,
+              receivedQuantity: 0,
+              freeQuantity: 0,
+              unitCost: item.unitCost,
+              discountPercent: item.discountPercent,
+              taxPercent: item.taxPercent,
+              taxAmount: Math.round(taxAmount * 100) / 100,
+              totalAmount: Math.round(totalAmount * 100) / 100,
+              batchNumber: item.batchNumber ?? null,
+              expiryDate: item.expiryDate ?? null,
+              manufacturingDate: item.manufacturingDate ?? null,
+              mrp: Number(product.mrp),
+              ptr: product.ptr ? Number(product.ptr) : null,
+            }
+          }),
         },
       },
       include: {
@@ -416,6 +431,7 @@ export async function createGrn(
 ): Promise<{ grn: { id: string; grnNumber: string }; purchase: Purchase }> {
   await assertBranchAccess(actor, command.branchId)
 
+  // Basic checks outside transaction (fast fail)
   const purchase = await prisma.purchase.findUnique({
     where: { id: command.purchaseId },
     include: { items: true, supplier: true },
@@ -436,29 +452,13 @@ export async function createGrn(
   })
   if (existingGrn) throw new Error('GRN number already exists')
 
-  // Validate received quantities against PO
-  const itemMap = new Map(purchase.items.map((i) => [i.id, i]))
-  const totalReceived: Record<string, number> = {}
-
+  // Expiry validation: reject if expiry < 6 months from today (fast fail)
+  const sixMonthsFromNow = new Date()
+  sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6)
   for (const item of command.items) {
-    const poItem = itemMap.get(item.purchaseItemId)
-    if (!poItem) throw new Error(`Purchase item not found: ${item.purchaseItemId}`)
-
-    const alreadyReceived = poItem.receivedQuantity
-    const remaining = poItem.orderedQuantity - alreadyReceived
-    if (item.receivedQuantity > remaining) {
-      throw new Error(`Over-receiving: item ${poItem.id} only ${remaining} remaining`)
-    }
-
-    // Expiry validation: reject if expiry < 6 months from today
-    const sixMonthsFromNow = new Date()
-    sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6)
     if (item.expiryDate < sixMonthsFromNow) {
       throw new Error(`Expiry date too soon: must be at least 6 months from today`)
     }
-
-    totalReceived[item.purchaseItemId] =
-      (totalReceived[item.purchaseItemId] || 0) + item.receivedQuantity
   }
 
   // Check for duplicate batch numbers within this GRN
@@ -468,8 +468,31 @@ export async function createGrn(
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    // Lock and re-read purchase items for concurrency-safe over-receiving check
+    const purchaseItems = await tx.purchaseItem.findMany({
+      where: { purchaseId: command.purchaseId },
+      select: { id: true, productId: true, orderedQuantity: true, receivedQuantity: true },
+    })
+    const itemMap = new Map(purchaseItems.map((i) => [i.id, i]))
+
+    // Re-validate received quantities against PO INSIDE transaction (concurrency-safe)
+    const totalReceived: Record<string, number> = {}
+    for (const item of command.items) {
+      const poItem = itemMap.get(item.purchaseItemId)
+      if (!poItem) throw new Error(`Purchase item not found: ${item.purchaseItemId}`)
+
+      const alreadyReceived = poItem.receivedQuantity
+      const remaining = poItem.orderedQuantity - alreadyReceived
+      if (item.receivedQuantity > remaining) {
+        throw new Error(`Over-receiving: item ${poItem.id} only ${remaining} remaining`)
+      }
+
+      totalReceived[item.purchaseItemId] =
+        (totalReceived[item.purchaseItemId] || 0) + item.receivedQuantity
+    }
+
     // Create GRN record (stored on purchase for simplicity)
-    const updatedPurchase = await tx.purchase.update({
+    await tx.purchase.update({
       where: { id: command.purchaseId },
       data: {
         status: 'PARTIALLY_RECEIVED',
@@ -550,11 +573,19 @@ export async function createGrn(
         },
       })
 
-      // Update purchase item received quantity
-      await tx.purchaseItem.update({
-        where: { id: item.purchaseItemId },
+      // Update purchase item received quantity with CAS (concurrency-safe)
+      const piRes = await tx.purchaseItem.updateMany({
+        where: {
+          id: item.purchaseItemId,
+          receivedQuantity: poItem.receivedQuantity, // CAS: only update if still same as read
+        },
         data: { receivedQuantity: { increment: item.receivedQuantity } },
       })
+      if (piRes.count !== 1) {
+        throw new Error(
+          'Conflict: purchase item received quantity changed concurrently, please retry'
+        )
+      }
 
       // Batch status log
       await tx.batchStatusLog.create({
@@ -568,22 +599,17 @@ export async function createGrn(
       })
     }
 
-    // Check if fully received
+    // Check if fully received (re-read after updates)
     const updatedItems = await tx.purchaseItem.findMany({
       where: { purchaseId: command.purchaseId },
     })
     const allReceived = updatedItems.every((i) => i.receivedQuantity >= i.orderedQuantity)
-    if (allReceived) {
-      await tx.purchase.update({
-        where: { id: command.purchaseId },
-        data: { status: 'RECEIVED', receivedAt: command.grnDate },
-      })
-    } else {
-      await tx.purchase.update({
-        where: { id: command.purchaseId },
-        data: { status: 'PARTIALLY_RECEIVED' },
-      })
-    }
+    const finalStatus = allReceived ? 'RECEIVED' : 'PARTIALLY_RECEIVED'
+
+    const finalPurchase = await tx.purchase.update({
+      where: { id: command.purchaseId },
+      data: { status: finalStatus, receivedAt: command.grnDate },
+    })
 
     // Audit log
     await tx.auditLog.create({
@@ -596,7 +622,7 @@ export async function createGrn(
       },
     })
 
-    return { purchase: updatedPurchase }
+    return { purchase: finalPurchase }
   })
 
   return {
