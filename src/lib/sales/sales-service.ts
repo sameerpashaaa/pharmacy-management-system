@@ -26,7 +26,8 @@
 // Rollback and concurrency are exercised against a real Postgres
 // in `sales-service.integration.test.ts`.
 // ─────────────────────────────────────────────────────────────
-import type { PaymentMethod, PaymentStatus, Prisma } from '@prisma/client'
+import type { PaymentMethod, PaymentStatus } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 
 import {
   allocateFefo,
@@ -36,6 +37,7 @@ import {
 } from '@/lib/batches/fefo'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import prisma from '@/lib/db/prisma'
+import { postGstTransactionForSale } from '@/lib/finance/gst-service'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
 import {
   computeItemPricing,
@@ -791,6 +793,31 @@ export async function createSale(
           },
           include: saleDetailInclude,
         })
+
+        if (customerId && balanceDue > 0 && tx.customer?.findUnique && tx.customerLedger?.create) {
+          const customer = await tx.customer.findUnique({ where: { id: customerId } })
+          if (customer) {
+            const newBal = customer.outstandingBalance.add(new Prisma.Decimal(balanceDue))
+            await tx.customer.update({
+              where: { id: customerId },
+              data: { outstandingBalance: newBal },
+            })
+            await tx.customerLedger.create({
+              data: {
+                customerId,
+                type: 'DEBIT',
+                amount: new Prisma.Decimal(balanceDue),
+                balance: newBal,
+                description: `Credit sale invoice ${invoiceNumber}`,
+                referenceType: 'SALE',
+                referenceId: sale.id,
+                entryDate: sale.saleDate,
+              },
+            })
+          }
+        }
+
+        await postGstTransactionForSale(sale.id, tx)
 
         for (const m of movements) {
           await tx.inventoryMovement.create({
