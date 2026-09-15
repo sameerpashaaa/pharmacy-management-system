@@ -203,8 +203,8 @@ export const purchaseReturnItemSchema = z.object({
 export const createPurchaseReturnSchema = z.object({
   purchaseId: z.string().min(1, 'Purchase order is required'),
   supplierId: z.string().min(1, 'Supplier is required'),
-  returnNumber: z.string().min(1, 'Return number is required').max(50),
-  returnDate: z.string().datetime({ offset: true }),
+  returnNumber: z.string().max(50).optional(),
+  returnDate: z.string().min(1, 'Return date is required'),
   reason: z.string().min(1, 'Return reason is required').max(1000),
   notes: z.string().max(1000).optional(),
   items: z.array(purchaseReturnItemSchema).min(1),

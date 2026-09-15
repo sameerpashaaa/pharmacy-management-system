@@ -39,6 +39,8 @@ export const ROUTES = {
   PURCHASE: (id: string) => `/purchases/${id}`,
   PURCHASE_RECEIVE: (id: string) => `/purchases/${id}/receive`,
   PURCHASE_RETURNS: '/purchases/returns',
+  PURCHASE_RETURNS_NEW: '/purchases/returns/new',
+  PURCHASE_RETURN: (id: string) => `/purchases/returns/${id}`,
 
   // Sales
   SALES: '/sales',

@@ -4,6 +4,7 @@ import type {
   Supplier,
   Payment,
   PurchaseReturn,
+  PurchaseReturnItem,
 } from '@prisma/client'
 import { Prisma } from '@prisma/client'
 import type { z } from 'zod'
@@ -49,6 +50,14 @@ export interface PurchaseWithItems extends Purchase {
   items: (PurchaseItem & { product: { id: string; name: string; sku: string } })[]
   supplier: { id: string; name: string }
   createdBy: { id: string; name: string }
+  returns?: {
+    id: string
+    returnNumber: string
+    returnDate: Date
+    totalAmount: Prisma.Decimal
+    status: string
+    reason: string
+  }[]
 }
 
 export interface GrnWithItems {
@@ -290,6 +299,16 @@ export async function getPurchase(id: string, actor: AuthUser): Promise<Purchase
       },
       supplier: { select: { id: true, name: true } },
       createdBy: { select: { id: true, name: true } },
+      returns: {
+        select: {
+          id: true,
+          returnNumber: true,
+          returnDate: true,
+          totalAmount: true,
+          status: true,
+          reason: true,
+        },
+      },
     },
   })
 
@@ -617,7 +636,14 @@ export async function listGrns(
   params: z.infer<typeof grnListQuerySchema>,
   actor: AuthUser
 ): Promise<{
-  data: any[]
+  data: {
+    id: string
+    grnNumber: string
+    grnDate: Date
+    purchaseId: string
+    branchId: string
+    supplier: { id: string; name: string }
+  }[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
   await assertBranchAccess(actor, '')
@@ -1006,7 +1032,7 @@ export async function createPurchaseReturn(
 // ─── List Purchase Returns ─────────────────────────────────────
 
 export async function listPurchaseReturns(
-  params: z.infer<typeof purchaseReturnListQuerySchema>,
+  params: Partial<z.infer<typeof purchaseReturnListQuerySchema>> = {},
   actor: AuthUser
 ): Promise<{
   data: (PurchaseReturn & {
@@ -1056,3 +1082,64 @@ export async function listPurchaseReturns(
 
   return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }
 }
+
+export async function getPurchaseReturnById(
+  id: string,
+  actor: AuthUser
+): Promise<
+  | (PurchaseReturn & {
+      supplier: { id: string; name: string; phone: string | null; email: string | null }
+      purchase: {
+        id: string
+        purchaseNumber: string
+        invoiceNumber: string | null
+        purchaseDate: Date
+      }
+      items: (PurchaseReturnItem & {
+        product: { id: string; name: string; sku: string }
+      })[]
+    })
+  | null
+> {
+  await assertBranchAccess(actor, '')
+
+  const purchaseReturn = await prisma.purchaseReturn.findUnique({
+    where: { id },
+    include: {
+      supplier: { select: { id: true, name: true, phone: true, email: true } },
+      purchase: {
+        select: {
+          id: true,
+          purchaseNumber: true,
+          invoiceNumber: true,
+          purchaseDate: true,
+        },
+      },
+      items: true,
+    },
+  })
+
+  if (!purchaseReturn) return null
+
+  const productIds = purchaseReturn.items.map((i) => i.productId)
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { id: true, name: true, sku: true },
+  })
+  const productMap = new Map(products.map((p) => [p.id, p]))
+
+  const itemsWithProduct = purchaseReturn.items.map((item) => ({
+    ...item,
+    product: productMap.get(item.productId) ?? {
+      id: item.productId,
+      name: 'Unknown Product',
+      sku: 'N/A',
+    },
+  }))
+
+  return {
+    ...purchaseReturn,
+    items: itemsWithProduct,
+  }
+}
+
