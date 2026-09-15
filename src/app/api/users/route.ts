@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import type { NextRequest} from 'next/server';
+import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 
 import { requirePermission, assertAssignableRoles } from '@/lib/auth/auth-helpers'
