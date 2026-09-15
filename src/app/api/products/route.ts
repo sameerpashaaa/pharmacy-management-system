@@ -24,6 +24,15 @@ export async function GET(req: NextRequest) {
     const result = await getProducts(query)
     return NextResponse.json({ success: true, ...result })
   } catch (err) {
+    if (err instanceof ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'VALIDATION', message: err.errors[0]?.message ?? 'Invalid input' },
+        },
+        { status: 400 }
+      )
+    }
     const message = err instanceof Error ? err.message : 'Unknown error'
     const status = message === 'Unauthorized' ? 401 : message.startsWith('Forbidden') ? 403 : 500
     return NextResponse.json({ success: false, error: { code: 'ERROR', message } }, { status })
@@ -119,6 +128,7 @@ export async function POST(req: NextRequest) {
     // Audit
     await prisma.auditLog.create({
       data: {
+        userId,
         action: 'CREATE',
         entity: 'Product',
         entityId: product.id,

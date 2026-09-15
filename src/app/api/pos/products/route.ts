@@ -11,7 +11,7 @@ import { posProductsQuerySchema } from '@/lib/validations/sale'
 // GET /api/pos/products?search=&branchId=&limit=
 export async function GET(req: NextRequest) {
   try {
-    const user = await requirePermission(PERMISSIONS.PRODUCTS_READ)
+    const user = await requirePermission(PERMISSIONS.SALES_CREATE)
     const query = posProductsQuerySchema.parse(Object.fromEntries(new URL(req.url).searchParams))
 
     const scope = await resolveBranchScope(user, query.branchId)

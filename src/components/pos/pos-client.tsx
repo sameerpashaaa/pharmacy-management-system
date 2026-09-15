@@ -51,6 +51,7 @@ import { ROUTES } from '@/lib/constants/routes'
 import { useToast } from '@/lib/hooks/use-toast'
 import { computeItemPricing, computeSaleTotals } from '@/lib/sales/pricing'
 import type { PosSettings } from '@/lib/settings/settings-service'
+import { useUiStore } from '@/lib/stores/ui-store'
 import { formatCurrency } from '@/lib/utils/currency'
 
 interface PosUser {
@@ -133,6 +134,7 @@ interface PosClientProps {
 
 export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   const toast = useToast()
+  const { openConfirmDialog } = useUiStore()
   const searchRef = useRef<HTMLInputElement>(null)
 
   const [config] = useState<PosSettings>(initialConfig)
@@ -1001,7 +1003,14 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-muted-foreground"
-                  onClick={() => deleteHeldBill(b.id)}
+                  onClick={() =>
+                    openConfirmDialog({
+                      title: 'Delete Held Bill',
+                      description: `Delete held bill "${b.label || 'Unlabelled bill'}"? This cannot be undone.`,
+                      variant: 'destructive',
+                      onConfirm: () => deleteHeldBill(b.id),
+                    })
+                  }
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

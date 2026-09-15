@@ -40,7 +40,7 @@ async function getDashboardStats(permissions: {
             status: 'COMPLETED',
           },
           _sum: { totalAmount: true },
-          _count: true,
+          _count: { _all: true },
         })
       : Promise.resolve(null),
     prisma.product.count({ where: { isActive: true } }),
@@ -107,7 +107,7 @@ export default async function DashboardPage() {
       ? {
           title: "Today's Sales",
           value: formatCurrency(Number(stats.todaySales?._sum.totalAmount ?? 0)),
-          description: `${stats.todaySales?._count ?? 0} transactions`,
+          description: `${stats.todaySales?._count?._all ?? 0} transactions`,
           icon: TrendingUp,
           color: 'text-green-600',
           bg: 'bg-green-50',
@@ -155,7 +155,6 @@ export default async function DashboardPage() {
 
   const quickActions = [
     canSales ? { label: '🛒 New Sale', href: '/pos' } : null,
-    { label: '👤 Add Customer', href: '/customers/new' },
     canInventory ? { label: '⚠️ Check Expiry', href: '/expiry' } : null,
   ].filter((a): a is NonNullable<typeof a> => a !== null)
 

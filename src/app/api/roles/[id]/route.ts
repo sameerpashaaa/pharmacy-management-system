@@ -39,7 +39,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 // PUT /api/roles/:id
 export async function PUT(req: NextRequest, { params }: RouteParams) {
   try {
-    await requirePermission(PERMISSIONS.ROLES_MANAGE)
+    const user = await requirePermission(PERMISSIONS.ROLES_MANAGE)
 
     const existing = await prisma.role.findUnique({
       where: { id: params.id },
@@ -96,6 +96,16 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       return result
     })
 
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'UPDATE',
+        entity: 'Role',
+        entityId: params.id,
+        newData: data,
+      },
+    })
+
     return NextResponse.json({ success: true, data: updated, message: 'Role updated successfully' })
   } catch (err) {
     if (err instanceof ZodError) {
@@ -113,7 +123,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 // DELETE /api/roles/:id
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {
-    await requirePermission(PERMISSIONS.ROLES_MANAGE)
+    const user = await requirePermission(PERMISSIONS.ROLES_MANAGE)
 
     const existing = await prisma.role.findUnique({
       where: { id: params.id },
@@ -147,6 +157,15 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
       prisma.rolePermission.deleteMany({ where: { roleId: params.id } }),
       prisma.role.delete({ where: { id: params.id } }),
     ])
+
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'DELETE',
+        entity: 'Role',
+        entityId: params.id,
+      },
+    })
 
     return NextResponse.json({ success: true, message: 'Role deleted successfully' })
   } catch (err) {

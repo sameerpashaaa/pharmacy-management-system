@@ -40,7 +40,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 // PUT /api/products/:id
 export async function PUT(req: NextRequest, { params }: RouteParams) {
   try {
-    await requirePermission(PERMISSIONS.PRODUCTS_UPDATE)
+    const user = await requirePermission(PERMISSIONS.PRODUCTS_UPDATE)
 
     const existing = await getProductById(params.id)
     if (!existing) {
@@ -135,7 +135,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     // Audit
     await prisma.auditLog.create({
-      data: { action: 'UPDATE', entity: 'Product', entityId: params.id },
+      data: { userId: user.id, action: 'UPDATE', entity: 'Product', entityId: params.id },
     })
 
     return NextResponse.json({
@@ -166,7 +166,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 // DELETE /api/products/:id (soft delete — deactivate)
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {
-    await requirePermission(PERMISSIONS.PRODUCTS_DELETE)
+    const user = await requirePermission(PERMISSIONS.PRODUCTS_DELETE)
 
     const existing = await getProductById(params.id)
     if (!existing) {
@@ -180,7 +180,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
     // Audit
     await prisma.auditLog.create({
-      data: { action: 'DELETE', entity: 'Product', entityId: params.id },
+      data: { userId: user.id, action: 'DELETE', entity: 'Product', entityId: params.id },
     })
 
     return NextResponse.json({

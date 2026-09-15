@@ -46,7 +46,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 // PUT /api/users/:id
 export async function PUT(req: NextRequest, { params }: RouteParams) {
   try {
-    await requirePermission(PERMISSIONS.USERS_UPDATE)
+    const actor = await requirePermission(PERMISSIONS.USERS_UPDATE)
 
     const body: unknown = await req.json()
     const data = updateUserSchema.parse(body)
@@ -117,7 +117,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     })
 
     await prisma.auditLog.create({
-      data: { action: 'UPDATE', entity: 'User', entityId: params.id },
+      data: { userId: actor.id, action: 'UPDATE', entity: 'User', entityId: params.id },
     })
 
     return NextResponse.json({ success: true, data: updated, message: 'User updated successfully' })
@@ -130,7 +130,37 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 // DELETE /api/users/:id
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {
-    await requirePermission(PERMISSIONS.USERS_DELETE)
+    const actor = await requirePermission(PERMISSIONS.USERS_DELETE)
+
+    const user = await prisma.user.findUnique({
+      where: { id: params.id },
+      select: { id: true, isActive: true },
+    })
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'User not found' } },
+        { status: 404 }
+      )
+    }
+
+    // Prevent deactivating the last active owner account.
+    const ownerRole = await prisma.role.findUnique({ where: { name: 'owner' }, select: { id: true } })
+    if (ownerRole && user.isActive) {
+      const isOwner = await prisma.userRole.findFirst({
+        where: { userId: params.id, roleId: ownerRole.id },
+      })
+      if (isOwner) {
+        const ownerCount = await prisma.user.count({
+          where: { isActive: true, userRoles: { some: { roleId: ownerRole.id } } },
+        })
+        if (ownerCount <= 1) {
+          return NextResponse.json(
+            { success: false, error: { code: 'CONFLICT', message: 'Cannot deactivate the last owner account' } },
+            { status: 409 }
+          )
+        }
+      }
+    }
 
     await prisma.user.update({
       where: { id: params.id },
@@ -138,7 +168,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     })
 
     await prisma.auditLog.create({
-      data: { action: 'DELETE', entity: 'User', entityId: params.id },
+      data: { userId: actor.id, action: 'DELETE', entity: 'User', entityId: params.id },
     })
 
     return NextResponse.json({ success: true, message: 'User deactivated successfully' })
