@@ -134,7 +134,9 @@ export async function getFinanceSummary(
           ...(Object.keys(dateRangeWhere(query)).length
             ? { paymentDate: dateRangeWhere(query) }
             : {}),
-          saleId: { not: null },
+          method: { not: 'CREDIT' },
+          supplierId: null,
+          purchaseId: null,
         },
         _sum: { amount: true },
       }),
@@ -150,7 +152,7 @@ export async function getFinanceSummary(
     purchases,
     customerReceivables: toNumber(customerTotals._sum.outstandingBalance),
     supplierPayables: toNumber(supplierTotals._sum.outstandingBalance),
-    cashCollected: toNumber(paymentTotals._sum.amount) || toNumber(saleTotals._sum.amountPaid),
+    cashCollected: toNumber(paymentTotals._sum.amount),
     taxCollected,
     taxPaid,
     netGstPayable: Math.round((taxCollected - taxPaid) * 100) / 100,

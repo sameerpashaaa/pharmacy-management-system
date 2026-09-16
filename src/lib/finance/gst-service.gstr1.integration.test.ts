@@ -1,7 +1,7 @@
-/* eslint-disable */
 /**
  * @jest-environment node
  */
+/* eslint-disable */
 import { describe, expect, it, beforeAll, afterAll } from '@jest/globals'
 
 import prisma from '@/lib/db/prisma'
