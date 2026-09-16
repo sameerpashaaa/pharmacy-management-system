@@ -504,7 +504,7 @@ describeDb('POS sales integration (real Postgres)', () => {
 
   it('rolls back the whole sale when a later line is short', async () => {
     const rx = await prisma.prescription.create({
-      data: { patientName: 'P1', branchId: fx.branchA },
+      data: { patientName: 'P1', branchId: fx.branchA, status: 'APPROVED' },
     })
 
     await expect(
@@ -778,7 +778,7 @@ describeDb('POS sales integration (real Postgres)', () => {
     ).rejects.toThrow('Prescription required for Amoxiclav 625')
 
     const rxA = await prisma.prescription.create({
-      data: { patientName: 'P2', branchId: fx.branchA },
+      data: { patientName: 'P2', branchId: fx.branchA, status: 'APPROVED' },
     })
     const ok = await createSale(
       saleCommand(fx, {

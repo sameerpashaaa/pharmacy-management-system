@@ -566,12 +566,17 @@ export async function createSale(
         if (command.prescriptionId) {
           const rx = await tx.prescription.findUnique({
             where: { id: command.prescriptionId },
-            select: { branchId: true },
+            select: { branchId: true, status: true },
           })
           if (!rx) throw new Error('Not Found: prescription')
           if (rx.branchId !== command.branchId) {
             throw new Error(
               `Forbidden: prescription does not belong to branch '${command.branchId}'`
+            )
+          }
+          if (rx.status !== 'APPROVED') {
+            throw new Error(
+              `Prescription '${command.prescriptionId}' is not approved for dispensing (status: ${rx.status})`
             )
           }
         }

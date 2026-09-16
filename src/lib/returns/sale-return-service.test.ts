@@ -323,7 +323,11 @@ describe('Sale Return Service', () => {
     })
 
     it('fetches a credit note by ID', async () => {
-      const mockCN = { id: 'cn-1', amount: 100 }
+      const mockCN = {
+        id: 'cn-1',
+        amount: 100,
+        saleReturn: { sale: { branchId: 'branch-1' } },
+      }
       prismaMock.creditNote.findUnique.mockResolvedValue(mockCN)
 
       const res = await getCreditNoteById('cn-1', mockActor)
