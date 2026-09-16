@@ -27,22 +27,28 @@ interface SalesData {
   totalRevenue: number
   totalTax: number
   totalDiscount: number
+  excludedSalesCount?: number
   dailyBreakdown: DailyBreakdown[]
 }
 
 export default function SalesReportsPage() {
   const [data, setData] = useState<SalesData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/reports/sales')
       .then((res) => res.json())
       .then((res) => {
-        if ((res as { success: boolean; data: SalesData }).success)
-          setData((res as { success: boolean; data: SalesData }).data)
-        setLoading(false)
+        const body = res as { success: boolean; data: SalesData }
+        if (!body.success) {
+          setError('Failed to load sales report. Please try again.')
+          return
+        }
+        setData(body.data)
       })
-      .catch(console.error)
+      .catch(() => setError('Failed to load sales report. Please try again.'))
+      .finally(() => setLoading(false))
   }, [])
 
   const exportCSV = () => {
@@ -60,6 +66,14 @@ export default function SalesReportsPage() {
   }
 
   if (loading) return <div>Loading...</div>
+
+  if (error)
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight">Sales &amp; Financial Report</h1>
+        <p className="text-red-500">{error}</p>
+      </div>
+    )
 
   return (
     <div className="space-y-4">

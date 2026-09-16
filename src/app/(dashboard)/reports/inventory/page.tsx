@@ -47,7 +47,11 @@ export default function InventoryReportsPage() {
   const [stockData, setStockData] = useState<StockRow[]>([])
   const [expiryData, setExpiryData] = useState<ExpiryRow[]>([])
   const [consumptionData, setConsumptionData] = useState<ConsumptionRow[]>([])
+  const [stockTotal, setStockTotal] = useState(0)
+  const [expiryTotal, setExpiryTotal] = useState(0)
+  const [consumptionTotal, setConsumptionTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('stock')
 
   useEffect(() => {
@@ -57,15 +61,34 @@ export default function InventoryReportsPage() {
       fetch('/api/reports/consumption').then((res) => res.json()),
     ])
       .then(([stock, expiry, cons]) => {
-        if ((stock as { success: boolean; data: StockRow[] }).success)
-          setStockData((stock as { success: boolean; data: StockRow[] }).data)
-        if ((expiry as { success: boolean; data: ExpiryRow[] }).success)
-          setExpiryData((expiry as { success: boolean; data: ExpiryRow[] }).data)
-        if ((cons as { success: boolean; data: ConsumptionRow[] }).success)
-          setConsumptionData((cons as { success: boolean; data: ConsumptionRow[] }).data)
-        setLoading(false)
+        const stockRes = stock as {
+          success: boolean
+          data: StockRow[]
+          pagination?: { total: number }
+        }
+        const expiryRes = expiry as {
+          success: boolean
+          data: ExpiryRow[]
+          pagination?: { total: number }
+        }
+        const consRes = cons as {
+          success: boolean
+          data: ConsumptionRow[]
+          pagination?: { total: number }
+        }
+        if (!stockRes.success || !expiryRes.success || !consRes.success) {
+          setError('Failed to load inventory reports. Please try again.')
+          return
+        }
+        setStockData(stockRes.data)
+        setExpiryData(expiryRes.data)
+        setConsumptionData(consRes.data)
+        setStockTotal(stockRes.pagination?.total ?? stockRes.data.length)
+        setExpiryTotal(expiryRes.pagination?.total ?? expiryRes.data.length)
+        setConsumptionTotal(consRes.pagination?.total ?? consRes.data.length)
       })
-      .catch(console.error)
+      .catch(() => setError('Failed to load inventory reports. Please try again.'))
+      .finally(() => setLoading(false))
   }, [])
 
   const exportCSV = () => {
@@ -96,6 +119,23 @@ export default function InventoryReportsPage() {
 
   if (loading) return <div>Loading...</div>
 
+  if (error)
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight">Inventory &amp; Stock Reports</h1>
+        <p className="text-red-500">{error}</p>
+      </div>
+    )
+
+  const activeTotal =
+    activeTab === 'stock' ? stockTotal : activeTab === 'expiry' ? expiryTotal : consumptionTotal
+  const activeCount =
+    activeTab === 'stock'
+      ? stockData.length
+      : activeTab === 'expiry'
+        ? expiryData.length
+        : consumptionData.length
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -107,6 +147,9 @@ export default function InventoryReportsPage() {
         </div>
         <Button onClick={exportCSV}>Export CSV</Button>
       </div>
+      <p className="text-sm text-muted-foreground">
+        Showing {activeCount} of {activeTotal} records
+      </p>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
