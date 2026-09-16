@@ -2,14 +2,26 @@ import { GstTxType, Prisma } from '@prisma/client'
 
 import prisma from '@/lib/db/prisma'
 import { assertBranchAccess, type AuthUser } from '@/lib/inventory/branch-access'
-import {
-  fileGstPeriodSchema,
-  gstReportQuerySchema,
-  gstSyncSchema,
-  type FileGstPeriodInput,
-  type GstReportQuery,
-  type GstSyncInput,
-} from '@/lib/validations/finance'
+
+export interface GstSyncInput {
+  branchId?: string
+  from?: string
+  to?: string
+}
+
+export interface GstReportQuery {
+  branchId?: string
+  from?: string
+  to?: string
+  type?: GstTxType
+  returnPeriod?: string
+  filed?: boolean
+}
+
+export interface FileGstPeriodInput {
+  returnPeriod: string
+  branchId?: string
+}
 
 function formatReturnPeriod(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -141,7 +153,7 @@ export async function syncMissingGstTransactions(
   params: Partial<GstSyncInput>,
   actor: AuthUser
 ) {
-  const query = gstSyncSchema.parse(params)
+  const query = params
   if (query.branchId) await assertBranchAccess(actor, query.branchId)
   const branchId = query.branchId ?? actor.branchId ?? undefined
 
@@ -219,7 +231,7 @@ export async function getGstr1Report(
   params: Partial<GstReportQuery>,
   actor: AuthUser
 ) {
-  const query = gstReportQuerySchema.parse(params)
+  const query = params
   if (query.branchId) await assertBranchAccess(actor, query.branchId)
   const branchId = query.branchId ?? actor.branchId ?? undefined
 
@@ -335,7 +347,7 @@ export async function getGstr3bReport(
   params: Partial<GstReportQuery>,
   actor: AuthUser
 ) {
-  const query = gstReportQuerySchema.parse(params)
+  const query = params
   if (query.branchId) await assertBranchAccess(actor, query.branchId)
   const branchId = query.branchId ?? actor.branchId ?? undefined
 
@@ -431,7 +443,7 @@ export async function fileGstReturnPeriod(
   params: FileGstPeriodInput,
   actor: AuthUser
 ) {
-  const input = fileGstPeriodSchema.parse(params)
+  const input = params
   if (input.branchId) await assertBranchAccess(actor, input.branchId)
   const branchId = input.branchId ?? actor.branchId ?? undefined
 
