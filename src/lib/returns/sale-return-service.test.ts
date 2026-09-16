@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client'
+
 import prisma from '@/lib/db/prisma'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
 import {
@@ -13,6 +15,7 @@ import {
 jest.mock('@/lib/db/prisma', () => ({
   __esModule: true,
   default: {
+    $transaction: jest.fn(),
     sale: {
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -27,6 +30,23 @@ jest.mock('@/lib/db/prisma', () => ({
       findMany: jest.fn(),
       count: jest.fn(),
     },
+    ledger: { count: jest.fn().mockResolvedValue(1) },
+    customer: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    customerLedger: {
+      create: jest.fn(),
+    },
+    creditNote: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+    },
+    auditLog: {
+      create: jest.fn(),
+    },
     inventory: {
       upsert: jest.fn(),
     },
@@ -37,19 +57,6 @@ jest.mock('@/lib/db/prisma', () => ({
       findUnique: jest.fn(),
       update: jest.fn(),
     },
-    creditNote: {
-      create: jest.fn(),
-      findUnique: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
-    },
-    customerLedger: {
-      create: jest.fn(),
-    },
-    auditLog: {
-      create: jest.fn(),
-    },
-    $transaction: jest.fn(),
   },
 }))
 
@@ -90,6 +97,10 @@ const prismaMock = prisma as unknown as {
   }
   customerLedger: {
     create: jest.Mock
+  }
+  customer: {
+    findUnique: jest.Mock
+    update: jest.Mock
   }
   auditLog: {
     create: jest.Mock
@@ -199,6 +210,9 @@ describe('Sale Return Service', () => {
       prismaMock.inventory.upsert.mockResolvedValue({ id: 'inv-1', totalQuantity: 10 })
       prismaMock.creditNote.create.mockResolvedValue({ id: 'cn-1' })
       prismaMock.customerLedger.create.mockResolvedValue({ id: 'ledger-1' })
+      prismaMock.customer.findUnique.mockResolvedValue({
+        outstandingBalance: new Prisma.Decimal(100),
+      })
       prismaMock.saleItem.findMany.mockResolvedValue([
         { id: 'item-1', quantity: 10, returnedQuantity: 10 },
       ])

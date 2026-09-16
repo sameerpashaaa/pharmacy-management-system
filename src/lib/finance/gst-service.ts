@@ -24,7 +24,7 @@ function toNumber(value: Prisma.Decimal | number | null | undefined): number {
 export async function postGstTransactionForSale(
   saleId: string,
   txClient?: Prisma.TransactionClient
-) {
+): Promise<any> {
   const client = txClient ?? prisma
   if (!client.sale?.findUnique || !client.gstTransaction?.create) return []
   const sale = await client.sale.findUnique({
@@ -89,7 +89,7 @@ export async function postGstTransactionForSale(
 export async function postGstTransactionForPurchase(
   purchaseId: string,
   txClient?: Prisma.TransactionClient
-) {
+): Promise<any> {
   const client = txClient ?? prisma
   if (!client.purchase?.findUnique || !client.gstTransaction?.create) return []
   const purchase = await client.purchase.findUnique({
