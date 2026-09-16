@@ -105,9 +105,23 @@ export async function postGstTransactionForPurchase(
   const returnPeriod = formatReturnPeriod(purchase.createdAt)
   const createdTransactions = []
 
+  const branchState = purchase.branch.state?.trim().toLowerCase()
+  const supplierState = purchase.supplier.state?.trim().toLowerCase()
+  const isInterstate = Boolean(branchState && supplierState && branchState !== supplierState)
+
   for (const item of purchase.items) {
     const taxableAmount = item.totalAmount.sub(item.taxAmount)
-    const halfTax = item.taxAmount.div(2)
+
+    let cgstAmount = new Prisma.Decimal(0)
+    let sgstAmount = new Prisma.Decimal(0)
+    let igstAmount = new Prisma.Decimal(0)
+
+    if (isInterstate) {
+      igstAmount = item.taxAmount
+    } else {
+      cgstAmount = item.taxAmount.div(2)
+      sgstAmount = item.taxAmount.div(2)
+    }
 
     const gstTx = await client.gstTransaction.create({
       data: {
@@ -122,9 +136,9 @@ export async function postGstTransactionForPurchase(
         partyState: purchase.supplier.state ?? purchase.branch.state ?? null,
         hsnCode: null,
         taxableAmount,
-        cgstAmount: halfTax,
-        sgstAmount: halfTax,
-        igstAmount: 0,
+        cgstAmount,
+        sgstAmount,
+        igstAmount,
         totalTax: item.taxAmount,
         totalAmount: item.totalAmount,
         returnPeriod,

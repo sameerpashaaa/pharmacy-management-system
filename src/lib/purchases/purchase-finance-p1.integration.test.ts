@@ -67,7 +67,13 @@ interface Fixtures {
 async function seedFixtures(): Promise<Fixtures> {
   const org = await prisma.organization.create({ data: { name: 'Purchase Fin Org' } })
   const branchA = await prisma.branch.create({
-    data: { organizationId: org.id, name: 'Purchase Fin Branch', code: 'PF', invoicePrefix: 'INV' },
+    data: {
+      organizationId: org.id,
+      name: 'Purchase Fin Branch',
+      code: 'PF',
+      invoicePrefix: 'INV',
+      state: 'DL',
+    },
   })
 
   const userA = await prisma.user.create({
@@ -358,6 +364,54 @@ describeDb('Phase 6 P1 purchase-side finance remediation (real Postgres)', () =>
     expect(row.partyName).toBe('Purchase Fin Supplier')
     expect(row.invoiceNumber).toBe(purchase?.purchaseNumber)
     expect(row.returnPeriod).toMatch(/^\d{2}-\d{4}$/)
+  })
+
+  it('posts purchase IGST when supplier state differs from branch state', async () => {
+    const outOfStateSupplier = await prisma.supplier.create({
+      data: {
+        name: 'Interstate Supplier',
+        state: 'MH',
+        creditDays: 30,
+        outstandingBalance: 0,
+        isActive: true,
+      },
+    })
+
+    const purchaseCreate = await createPurchase(
+      {
+        branchId: fx.branchA,
+        supplierId: outOfStateSupplier.id,
+        items: [
+          {
+            productId: fx.para,
+            orderedQuantity: 100,
+            unitCost: 10,
+            taxPercent: 12,
+            discountPercent: 0,
+          },
+        ],
+      },
+      fx.branchAUser
+    )
+    await updatePurchase(purchaseCreate.id, { status: 'ORDERED' }, fx.branchAUser)
+    const id = purchaseCreate.id
+    const itemIds = purchaseCreate.items.map((i) => i.id)
+
+    await receive(fx, id, 'GRN-P1-IGST', [
+      { purchaseItemId: itemIds[0], receivedQuantity: 100, batchNumber: 'BT-IGST' },
+    ])
+
+    const rows = await prisma.gstTransaction.findMany({
+      where: { referenceType: 'PURCHASE', referenceId: id },
+    })
+    expect(rows).toHaveLength(1)
+    const row = rows[0]
+    expect(row.taxableAmount.toNumber()).toBe(1000)
+    expect(row.cgstAmount.toNumber()).toBe(0)
+    expect(row.sgstAmount.toNumber()).toBe(0)
+    expect(row.igstAmount.toNumber()).toBe(120)
+    expect(row.totalTax.toNumber()).toBe(120)
+    expect(row.totalAmount.toNumber()).toBe(1120)
   })
 
   it('keeps purchase GST idempotent across partial GRNs (delete-and-recreate)', async () => {

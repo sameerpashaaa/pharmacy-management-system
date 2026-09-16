@@ -735,6 +735,10 @@ export async function createGrn(
       where: { referenceType: 'PURCHASE', referenceId: command.purchaseId },
     })
 
+    const branchState = purchase.branch.state?.trim().toLowerCase()
+    const supplierState = purchase.supplier.state?.trim().toLowerCase()
+    const isInterstate = Boolean(branchState && supplierState && branchState !== supplierState)
+
     for (const item of updatedItems) {
       if (item.receivedQuantity <= 0) continue
       const lineSubtotal = item.receivedQuantity * Number(item.unitCost)
@@ -742,7 +746,16 @@ export async function createGrn(
       const taxableAmount = lineSubtotal - discountAmount
       const taxAmount = Math.round(taxableAmount * (Number(item.taxPercent) / 100) * 100) / 100
       const totalAmount = Math.round((taxableAmount + taxAmount) * 100) / 100
-      const halfTax = taxAmount / 2
+
+      let cgstAmount = 0
+      let sgstAmount = 0
+      let igstAmount = 0
+      if (isInterstate) {
+        igstAmount = taxAmount
+      } else {
+        cgstAmount = taxAmount / 2
+        sgstAmount = taxAmount / 2
+      }
 
       await tx.gstTransaction.create({
         data: {
@@ -757,9 +770,9 @@ export async function createGrn(
           partyState: purchase.supplier.state ?? purchase.branch.state ?? null,
           hsnCode: null,
           taxableAmount: Math.round(taxableAmount * 100) / 100,
-          cgstAmount: Math.round(halfTax * 100) / 100,
-          sgstAmount: Math.round(halfTax * 100) / 100,
-          igstAmount: 0,
+          cgstAmount: Math.round(cgstAmount * 100) / 100,
+          sgstAmount: Math.round(sgstAmount * 100) / 100,
+          igstAmount: Math.round(igstAmount * 100) / 100,
           totalTax: taxAmount,
           totalAmount,
           returnPeriod: formatReturnPeriod(purchase.createdAt),
