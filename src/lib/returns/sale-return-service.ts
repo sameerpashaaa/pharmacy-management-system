@@ -299,18 +299,31 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
 
       // If customer profile exists, update ledger
       if (sale.customerId) {
-        await tx.customerLedger.create({
-          data: {
-            customerId: sale.customerId,
-            type: 'CREDIT',
-            entryDate: new Date(),
-            description: `Credit note ${noteNumber} for return ${returnNumber}`,
-            amount: returnTotalAmount,
-            balance: returnTotalAmount,
-            referenceType: 'SALE_RETURN',
-            referenceId: saleReturn.id,
-          },
+        const customer = await tx.customer.findUnique({
+          where: { id: sale.customerId },
+          select: { outstandingBalance: true },
         })
+        if (customer) {
+          const newBalance = customer.outstandingBalance.sub(returnTotalAmount)
+
+          await tx.customer.update({
+            where: { id: sale.customerId },
+            data: { outstandingBalance: newBalance },
+          })
+
+          await tx.customerLedger.create({
+            data: {
+              customerId: sale.customerId,
+              type: 'CREDIT',
+              entryDate: new Date(),
+              description: `Credit note ${noteNumber} for return ${returnNumber}`,
+              amount: returnTotalAmount,
+              balance: newBalance,
+              referenceType: 'SALE_RETURN',
+              referenceId: saleReturn.id,
+            },
+          })
+        }
       }
     }
 
