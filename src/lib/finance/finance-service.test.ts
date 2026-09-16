@@ -283,7 +283,7 @@ describe('Finance Service', () => {
       expect(res.supplier.outstandingBalance).toBe(8500)
     })
 
-    it('recordSupplierPayment reduces supplier balance and records DEBIT entry', async () => {
+    it('recordSupplierPayment reduces supplier balance and records CREDIT entry', async () => {
       ;(prisma.supplier.findUnique as jest.Mock).mockResolvedValueOnce({
         id: 'sup-1',
         name: 'Pharma Dist Ltd',
@@ -298,7 +298,7 @@ describe('Finance Service', () => {
       })
       ;(prisma.supplierLedger.create as jest.Mock).mockResolvedValueOnce({
         id: 'sle-1',
-        type: 'DEBIT',
+        type: 'CREDIT',
         amount: new Prisma.Decimal(3500),
         balance: new Prisma.Decimal(5000),
         entryDate: new Date(),
@@ -316,6 +316,14 @@ describe('Finance Service', () => {
         where: { id: 'sup-1' },
         data: { outstandingBalance: new Prisma.Decimal(5000) },
       })
+      // Supplier payments follow the established supplier-ledger convention:
+      // payments are CREDIT entries and the Payment row links the supplier.
+      expect(prismaMock.supplierLedger.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ type: 'CREDIT' }) })
+      )
+      expect(prismaMock.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ supplierId: 'sup-1' }) })
+      )
     })
   })
 })
