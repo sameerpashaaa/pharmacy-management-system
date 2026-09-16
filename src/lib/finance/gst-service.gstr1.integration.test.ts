@@ -6,7 +6,7 @@ import { describe, expect, it, beforeAll, afterAll } from '@jest/globals'
 
 import prisma from '@/lib/db/prisma'
 import { getGstr1Report } from './gst-service'
-import type { AuthUser } from '@/lib/auth/auth-helpers'
+import type { AuthUser } from '@/lib/inventory/branch-access'
 
 describe('GSTR-1 Report (Real Postgres)', () => {
   let actor: AuthUser

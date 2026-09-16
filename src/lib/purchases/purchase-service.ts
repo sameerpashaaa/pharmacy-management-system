@@ -10,6 +10,7 @@ import { GstTxType, Prisma } from '@prisma/client'
 import type { z } from 'zod'
 
 import prisma from '@/lib/db/prisma'
+import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
 import { assertBranchAccess, type AuthUser } from '@/lib/inventory/branch-access'
 import {
   supplierListQuerySchema,
@@ -226,6 +227,7 @@ export async function createPurchase(
   command: CreatePurchaseCommand,
   actor: AuthUser
 ): Promise<PurchaseWithItems> {
+  await ensureDefaultLedgers()
   await assertBranchAccess(actor, command.branchId)
 
   const supplier = await prisma.supplier.findUnique({ where: { id: command.supplierId } })
@@ -1041,6 +1043,7 @@ export async function createPurchaseReturn(
   data: z.infer<typeof createPurchaseReturnSchema>,
   actor: AuthUser
 ): Promise<PurchaseReturn> {
+  await ensureDefaultLedgers()
   await assertBranchAccess(actor, '')
 
   const purchase = await prisma.purchase.findUnique({

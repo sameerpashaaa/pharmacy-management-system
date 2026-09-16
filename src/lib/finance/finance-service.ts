@@ -280,6 +280,7 @@ export async function createLedgerEntry(
   data: CreateLedgerEntryInput,
   actor: AuthUser
 ): Promise<LedgerEntry> {
+  await ensureDefaultLedgers()
   const amount = new Prisma.Decimal(data.amount)
 
   return prisma.$transaction(async (tx) => {
@@ -469,6 +470,7 @@ export async function recordCustomerPayment(
   params: RecordPartyPaymentInput,
   actor: AuthUser
 ) {
+  await ensureDefaultLedgers()
   const input = recordPartyPaymentSchema.parse(params)
   const amount = new Prisma.Decimal(input.amount)
 
@@ -660,6 +662,7 @@ export async function recordSupplierPayment(
   params: RecordPartyPaymentInput,
   actor: AuthUser
 ) {
+  await ensureDefaultLedgers()
   const input = recordPartyPaymentSchema.parse(params)
   const amount = new Prisma.Decimal(input.amount)
 

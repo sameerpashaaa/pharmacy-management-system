@@ -37,6 +37,7 @@ import {
 } from '@/lib/batches/fefo'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import prisma from '@/lib/db/prisma'
+import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
 import { postGstTransactionForSale } from '@/lib/finance/gst-service'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
 import {
@@ -506,6 +507,7 @@ export async function createSale(
   command: CreateSaleCommand,
   actor: SaleActor
 ): Promise<SaleDetail> {
+  await ensureDefaultLedgers()
   const settings = await getPosSettings()
   const permissions = actor.permissions ?? []
 

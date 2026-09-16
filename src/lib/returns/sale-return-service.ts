@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 
 import prisma from '@/lib/db/prisma'
+import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
 import type {
   CreateSaleReturnInput,
@@ -67,6 +68,7 @@ const saleReturnInclude = {
 } satisfies Prisma.SaleReturnInclude
 
 export async function createSaleReturn(input: CreateSaleReturnInput, actor: ReturnActor) {
+  await ensureDefaultLedgers()
   const sale = await prisma.sale.findUnique({
     where: { id: input.saleId },
     include: {
