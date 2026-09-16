@@ -1082,12 +1082,23 @@ describeDb('Purchase management integration (real Postgres)', () => {
     expect(movement?.quantityBefore).toBe(100)
     expect(movement?.quantityAfter).toBe(90)
 
-    const ledger = await prisma.supplierLedger.findFirst({ where: { type: 'DEBIT' } })
+    // GRN accrual (P1-2) then return: the payable moves 1000 -> 900,
+    // and the return's own DEBIT entry is identified by reference.
+    const grnLedger = await prisma.supplierLedger.findFirst({
+      where: { referenceType: 'PURCHASE' },
+    })
+    expect(grnLedger?.type).toBe('DEBIT')
+    expect(grnLedger?.balance.toNumber()).toBe(1000)
+
+    const ledger = await prisma.supplierLedger.findFirst({
+      where: { referenceType: 'PURCHASE_RETURN' },
+    })
+    expect(ledger?.type).toBe('DEBIT')
     expect(ledger?.amount.toNumber()).toBe(100)
-    expect(ledger?.referenceType).toBe('PURCHASE_RETURN')
+    expect(ledger?.balance.toNumber()).toBe(900)
 
     const supplier = await prisma.supplier.findUnique({ where: { id: fx.supplierId } })
-    expect(supplier?.outstandingBalance.toNumber()).toBe(-100)
+    expect(supplier?.outstandingBalance.toNumber()).toBe(900)
 
     const audit = await prisma.auditLog.findFirst({
       where: { action: 'PURCHASE_RETURN_CREATE', entity: 'PurchaseReturn' },

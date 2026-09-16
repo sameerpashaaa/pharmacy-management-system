@@ -6,7 +6,7 @@ import type {
   Supplier,
   Payment,
 } from '@prisma/client'
-import { Prisma } from '@prisma/client'
+import { GstTxType, Prisma } from '@prisma/client'
 import type { z } from 'zod'
 
 import prisma from '@/lib/db/prisma'
@@ -31,6 +31,14 @@ import {
 // Server-side authority: client never sends trusted money/qty.
 // All amounts derived from DB; CAS for inventory; audit on mutations.
 // ─────────────────────────────────────────────────────────────
+
+// ─── Utilities ─────────────────────────────────────────────────
+
+/** GST return period "MM-YYYY" for the given date (mirrors finance/gst-service). */
+function formatReturnPeriod(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  return `${month}-${date.getFullYear()}`
+}
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -246,6 +254,48 @@ export async function createPurchase(
   // Build product lookup for MRP
   const productMap = new Map(products.map((p) => [p.id, p]))
 
+  // P1-1: server-side line + header financials. The same line-item
+  // formula persists to items AND is summed for the Purchase header, so
+  // the header is guaranteed to reconcile with its own items.
+  const itemRows = command.items.map((item) => {
+    const product = productMap.get(item.productId)!
+    // Server-side calculation: never trust client-provided totals
+    const lineSubtotal = item.orderedQuantity * item.unitCost
+    const discountAmount = lineSubtotal * (item.discountPercent / 100)
+    const taxableAmount = lineSubtotal - discountAmount
+    const taxAmount = taxableAmount * (item.taxPercent / 100)
+    const totalAmount = taxableAmount + taxAmount
+
+    return {
+      create: {
+        productId: item.productId,
+        orderedQuantity: item.orderedQuantity,
+        receivedQuantity: 0,
+        freeQuantity: 0,
+        unitCost: item.unitCost,
+        discountPercent: item.discountPercent,
+        taxPercent: item.taxPercent,
+        taxAmount: Math.round(taxAmount * 100) / 100,
+        totalAmount: Math.round(totalAmount * 100) / 100,
+        batchNumber: item.batchNumber ?? null,
+        expiryDate: item.expiryDate ?? null,
+        manufacturingDate: item.manufacturingDate ?? null,
+        mrp: Number(product.mrp),
+        ptr: product.ptr ? Number(product.ptr) : null,
+      },
+      lineSubtotal,
+      discountAmount,
+      taxAmount: Math.round(taxAmount * 100) / 100,
+      totalAmount: Math.round(totalAmount * 100) / 100,
+    }
+  })
+  const header = {
+    subtotal: Math.round(itemRows.reduce((sum, r) => sum + r.lineSubtotal, 0) * 100) / 100,
+    discountAmount: Math.round(itemRows.reduce((sum, r) => sum + r.discountAmount, 0) * 100) / 100,
+    taxAmount: Math.round(itemRows.reduce((sum, r) => sum + r.taxAmount, 0) * 100) / 100,
+    totalAmount: Math.round(itemRows.reduce((sum, r) => sum + r.totalAmount, 0) * 100) / 100,
+  }
+
   const purchase = await prisma.$transaction(async (tx) => {
     const purchaseNumber = `PO-${Date.now()}`
     const purchase = await tx.purchase.create({
@@ -253,37 +303,17 @@ export async function createPurchase(
         purchaseNumber,
         branchId: command.branchId,
         supplierId: command.supplierId,
+        subtotal: header.subtotal,
+        discountAmount: header.discountAmount,
+        taxAmount: header.taxAmount,
+        totalAmount: header.totalAmount,
+        balanceDue: header.totalAmount,
         expectedDate: command.expectedDate,
         notes: command.notes ?? null,
         status: 'DRAFT',
         createdById: actor.id,
         items: {
-          create: command.items.map((item) => {
-            const product = productMap.get(item.productId)!
-            // Server-side calculation: never trust client-provided totals
-            const lineSubtotal = item.orderedQuantity * item.unitCost
-            const discountAmount = lineSubtotal * (item.discountPercent / 100)
-            const taxableAmount = lineSubtotal - discountAmount
-            const taxAmount = taxableAmount * (item.taxPercent / 100)
-            const totalAmount = taxableAmount + taxAmount
-
-            return {
-              productId: item.productId,
-              orderedQuantity: item.orderedQuantity,
-              receivedQuantity: 0,
-              freeQuantity: 0,
-              unitCost: item.unitCost,
-              discountPercent: item.discountPercent,
-              taxPercent: item.taxPercent,
-              taxAmount: Math.round(taxAmount * 100) / 100,
-              totalAmount: Math.round(totalAmount * 100) / 100,
-              batchNumber: item.batchNumber ?? null,
-              expiryDate: item.expiryDate ?? null,
-              manufacturingDate: item.manufacturingDate ?? null,
-              mrp: Number(product.mrp),
-              ptr: product.ptr ? Number(product.ptr) : null,
-            }
-          }),
+          create: itemRows.map((r) => r.create),
         },
       },
       include: {
@@ -469,7 +499,7 @@ export async function createGrn(
   // Basic checks outside transaction (fast fail)
   const purchase = await prisma.purchase.findUnique({
     where: { id: command.purchaseId },
-    include: { items: true, supplier: true },
+    include: { items: true, supplier: true, branch: true },
   })
   if (!purchase) throw new Error('Not Found: purchase order')
 
@@ -506,7 +536,15 @@ export async function createGrn(
     // Lock and re-read purchase items for concurrency-safe over-receiving check
     const purchaseItems = await tx.purchaseItem.findMany({
       where: { purchaseId: command.purchaseId },
-      select: { id: true, productId: true, orderedQuantity: true, receivedQuantity: true },
+      select: {
+        id: true,
+        productId: true,
+        orderedQuantity: true,
+        receivedQuantity: true,
+        unitCost: true,
+        discountPercent: true,
+        taxPercent: true,
+      },
     })
     const itemMap = new Map(purchaseItems.map((i) => [i.id, i]))
 
@@ -645,6 +683,88 @@ export async function createGrn(
       where: { id: command.purchaseId },
       data: { status: finalStatus, receivedAt: command.grnDate },
     })
+
+    // P1-2: recognize the supplier payable at GRN time, priced at the
+    // PO line-item cost formula for THIS GRN's received delta only.
+    // A PO is not a liability until goods land; each partial receipt
+    // accrues only its own share.
+    let grnTotalAmount = 0
+    for (const received of command.items) {
+      const poItem = itemMap.get(received.purchaseItemId)!
+      const lineSubtotal = received.receivedQuantity * Number(poItem.unitCost)
+      const discountAmount = lineSubtotal * (Number(poItem.discountPercent) / 100)
+      const taxableAmount = lineSubtotal - discountAmount
+      const taxAmount = taxableAmount * (Number(poItem.taxPercent) / 100)
+      const totalAmount = taxableAmount + taxAmount
+
+      grnTotalAmount += totalAmount
+    }
+    const grnTotal = Math.round(grnTotalAmount * 100) / 100
+
+    const currentSupplier = await tx.supplier.findUnique({
+      where: { id: purchase.supplierId },
+    })
+    if (currentSupplier) {
+      const newOutstanding = currentSupplier.outstandingBalance.add(grnTotal)
+      await tx.supplierLedger.create({
+        data: {
+          supplierId: currentSupplier.id,
+          type: 'DEBIT',
+          amount: grnTotal,
+          balance: newOutstanding,
+          description: `GRN ${command.grnNumber} received for PO ${purchase.purchaseNumber}`,
+          referenceType: 'PURCHASE',
+          referenceId: command.purchaseId,
+          entryDate: command.grnDate,
+        },
+      })
+      await tx.supplier.update({
+        where: { id: currentSupplier.id },
+        data: { outstandingBalance: newOutstanding },
+      })
+    }
+
+    // P1-3: post purchase GST on receipt. Delete-and-recreate inside the
+    // same transaction so partial receipts stay idempotent — the GST rows
+    // always reflect the CURRENT accumulated received quantities (no
+    // unique constraint exists; multiple rows per purchase are legitimate,
+    // one per received line item).
+    await tx.gstTransaction.deleteMany({
+      where: { referenceType: 'PURCHASE', referenceId: command.purchaseId },
+    })
+
+    for (const item of updatedItems) {
+      if (item.receivedQuantity <= 0) continue
+      const lineSubtotal = item.receivedQuantity * Number(item.unitCost)
+      const discountAmount = lineSubtotal * (Number(item.discountPercent) / 100)
+      const taxableAmount = lineSubtotal - discountAmount
+      const taxAmount = Math.round(taxableAmount * (Number(item.taxPercent) / 100) * 100) / 100
+      const totalAmount = Math.round((taxableAmount + taxAmount) * 100) / 100
+      const halfTax = taxAmount / 2
+
+      await tx.gstTransaction.create({
+        data: {
+          branchId: purchase.branchId,
+          type: GstTxType.B2B,
+          referenceType: 'PURCHASE',
+          referenceId: purchase.id,
+          invoiceNumber: purchase.invoiceNumber ?? purchase.purchaseNumber,
+          invoiceDate: purchase.invoiceDate ?? purchase.createdAt,
+          partyGstin: purchase.supplier.gstin ?? null,
+          partyName: purchase.supplier.name,
+          partyState: purchase.supplier.state ?? purchase.branch.state ?? null,
+          hsnCode: null,
+          taxableAmount: Math.round(taxableAmount * 100) / 100,
+          cgstAmount: Math.round(halfTax * 100) / 100,
+          sgstAmount: Math.round(halfTax * 100) / 100,
+          igstAmount: 0,
+          totalTax: taxAmount,
+          totalAmount,
+          returnPeriod: formatReturnPeriod(purchase.createdAt),
+          isFiled: false,
+        },
+      })
+    }
 
     // Audit log
     await tx.auditLog.create({
