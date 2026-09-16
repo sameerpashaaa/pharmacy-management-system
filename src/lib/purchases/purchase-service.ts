@@ -9,9 +9,12 @@ import type {
 import { Prisma } from '@prisma/client'
 import type { z } from 'zod'
 
-
 import prisma from '@/lib/db/prisma'
-import { assertBranchAccess, type AuthUser } from '@/lib/inventory/branch-access'
+import {
+  assertBranchAccess,
+  resolveBranchScope,
+  type AuthUser,
+} from '@/lib/inventory/branch-access'
 import {
   supplierListQuerySchema,
   purchaseListQuerySchema,
@@ -24,7 +27,6 @@ import {
   type CreateSupplierInput,
   type UpdateSupplierInput,
 } from '@/lib/validations/purchase'
-
 
 // ─────────────────────────────────────────────────────────────
 // Purchase Service — Supplier & Purchase Order Management
@@ -90,8 +92,6 @@ export async function createSupplier(
   data: CreateSupplierInput,
   actor: AuthUser
 ): Promise<Supplier> {
-  await assertBranchAccess(actor, '')
-
   const supplier = await prisma.supplier.create({
     data: {
       ...data,
@@ -115,8 +115,6 @@ export async function createSupplier(
 }
 
 export async function getSupplier(id: string, actor: AuthUser): Promise<Supplier | null> {
-  await assertBranchAccess(actor, '') // Global check for read
-
   return prisma.supplier.findUnique({ where: { id } })
 }
 
@@ -127,8 +125,6 @@ export async function updateSupplier(
 ): Promise<Supplier> {
   const existing = await prisma.supplier.findUnique({ where: { id } })
   if (!existing) throw new Error('Not Found: supplier')
-
-  await assertBranchAccess(actor, '')
 
   const supplier = await prisma.supplier.update({
     where: { id },
@@ -155,8 +151,6 @@ export async function listSuppliers(
   data: Supplier[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
-  await assertBranchAccess(actor, '')
-
   const {
     page = 1,
     limit = 20,
@@ -289,8 +283,6 @@ export async function createPurchase(
 }
 
 export async function getPurchase(id: string, actor: AuthUser): Promise<PurchaseWithItems | null> {
-  await assertBranchAccess(actor, '')
-
   const purchase = await prisma.purchase.findUnique({
     where: { id },
     include: {
@@ -312,6 +304,10 @@ export async function getPurchase(id: string, actor: AuthUser): Promise<Purchase
     },
   })
 
+  if (purchase) {
+    await assertBranchAccess(actor, purchase.branchId)
+  }
+
   return purchase
 }
 
@@ -322,8 +318,6 @@ export async function listPurchases(
   data: PurchaseWithItems[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
-  await assertBranchAccess(actor, '')
-
   const {
     page = 1,
     limit = 20,
@@ -646,8 +640,6 @@ export async function listGrns(
   }[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
-  await assertBranchAccess(actor, '')
-
   const {
     page = 1,
     limit = 20,
@@ -722,13 +714,12 @@ export async function threeWayMatch(
   data: z.infer<typeof threeWayMatchSchema>,
   actor: AuthUser
 ): Promise<ThreeWayMatchResult> {
-  await assertBranchAccess(actor, '')
-
   const purchase = await prisma.purchase.findUnique({
     where: { id: data.purchaseId },
     include: { items: true },
   })
   if (!purchase) throw new Error('Not Found: purchase order')
+  await assertBranchAccess(actor, purchase.branchId)
 
   const mismatches: ThreeWayMatchResult['mismatches'] = []
   const itemMap = new Map(purchase.items.map((i) => [i.id, i]))
@@ -807,8 +798,6 @@ export async function recordSupplierPayment(
   data: z.infer<typeof supplierPaymentSchema>,
   actor: AuthUser
 ): Promise<{ payment: Payment; ledgerEntry: { id: string; balance: Prisma.Decimal } }> {
-  await assertBranchAccess(actor, '')
-
   const supplier = await prisma.supplier.findUnique({ where: { id: data.supplierId } })
   if (!supplier) throw new Error('Not Found: supplier')
 
@@ -876,13 +865,12 @@ export async function createPurchaseReturn(
   data: z.infer<typeof createPurchaseReturnSchema>,
   actor: AuthUser
 ): Promise<PurchaseReturn> {
-  await assertBranchAccess(actor, '')
-
   const purchase = await prisma.purchase.findUnique({
     where: { id: data.purchaseId },
     include: { items: true, supplier: true },
   })
   if (!purchase) throw new Error('Not Found: purchase order')
+  await assertBranchAccess(actor, purchase.branchId)
   if (!['RECEIVED', 'INVOICED', 'PARTIALLY_RECEIVED'].includes(purchase.status)) {
     throw new Error('Purchase must be received before creating a return')
   }
@@ -1041,8 +1029,6 @@ export async function listPurchaseReturns(
   })[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
-  await assertBranchAccess(actor, '')
-
   const {
     page = 1,
     limit = 20,
@@ -1101,8 +1087,6 @@ export async function getPurchaseReturnById(
     })
   | null
 > {
-  await assertBranchAccess(actor, '')
-
   const purchaseReturn = await prisma.purchaseReturn.findUnique({
     where: { id },
     include: {
@@ -1118,6 +1102,13 @@ export async function getPurchaseReturnById(
       items: true,
     },
   })
+  if (purchaseReturn) {
+    const p = await prisma.purchase.findUnique({
+      where: { id: purchaseReturn.purchaseId },
+      select: { branchId: true },
+    })
+    if (p) await assertBranchAccess(actor, p.branchId)
+  }
 
   if (!purchaseReturn) return null
 
@@ -1142,4 +1133,3 @@ export async function getPurchaseReturnById(
     items: itemsWithProduct,
   }
 }
-
