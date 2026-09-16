@@ -64,6 +64,7 @@ export async function postGstTransactionForSale(
         type: finalType,
         referenceType: 'SALE',
         referenceId: sale.id,
+        referenceLineId: item.id,
         invoiceNumber: sale.invoiceNumber,
         invoiceDate: sale.saleDate,
         partyGstin: sale.customer?.gstin ?? null,
@@ -129,6 +130,7 @@ export async function postGstTransactionForPurchase(
         type: GstTxType.B2B,
         referenceType: 'PURCHASE',
         referenceId: purchase.id,
+        referenceLineId: item.id,
         invoiceNumber: purchase.invoiceNumber ?? purchase.purchaseNumber,
         invoiceDate: purchase.invoiceDate ?? purchase.createdAt,
         partyGstin: purchase.supplier.gstin ?? null,
@@ -169,17 +171,20 @@ export async function syncMissingGstTransactions(params: Partial<GstSyncInput>, 
           }
         : {}),
     },
-    select: { id: true },
+    include: { items: { select: { id: true } } },
   })
 
   let syncedSales = 0
   for (const s of sales) {
-    const existing = await prisma.gstTransaction.count({
-      where: { referenceType: 'SALE', referenceId: s.id },
-    })
-    if (existing === 0) {
-      await postGstTransactionForSale(s.id)
-      syncedSales++
+    for (const item of s.items) {
+      const existing = await prisma.gstTransaction.count({
+        where: { referenceType: 'SALE', referenceId: s.id, referenceLineId: item.id },
+      })
+      if (existing === 0) {
+        await postGstTransactionForSale(s.id)
+        syncedSales++
+        break // postGstTransactionForSale creates all lines for the sale
+      }
     }
   }
 
@@ -196,17 +201,20 @@ export async function syncMissingGstTransactions(params: Partial<GstSyncInput>, 
           }
         : {}),
     },
-    select: { id: true },
+    include: { items: { select: { id: true } } },
   })
 
   let syncedPurchases = 0
   for (const p of purchases) {
-    const existing = await prisma.gstTransaction.count({
-      where: { referenceType: 'PURCHASE', referenceId: p.id },
-    })
-    if (existing === 0) {
-      await postGstTransactionForPurchase(p.id)
-      syncedPurchases++
+    for (const item of p.items) {
+      const existing = await prisma.gstTransaction.count({
+        where: { referenceType: 'PURCHASE', referenceId: p.id, referenceLineId: item.id },
+      })
+      if (existing === 0) {
+        await postGstTransactionForPurchase(p.id)
+        syncedPurchases++
+        break // postGstTransactionForPurchase creates all lines for the purchase
+      }
     }
   }
 

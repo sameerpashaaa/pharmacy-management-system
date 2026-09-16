@@ -1100,6 +1100,7 @@ model GstTransaction {
   type            GstTxType
   referenceType   String      // "SALE" or "PURCHASE"
   referenceId     String
+  referenceLineId String      // SaleItem.id or PurchaseItem.id — line-level identity for uniqueness
   invoiceNumber   String
   invoiceDate     DateTime
   partyGstin      String?
@@ -1118,6 +1119,7 @@ model GstTransaction {
 
   @@index([branchId, invoiceDate])
   @@index([returnPeriod])
+  @@unique([referenceType, referenceId, referenceLineId])
   @@map("gst_transactions")
 }
 
