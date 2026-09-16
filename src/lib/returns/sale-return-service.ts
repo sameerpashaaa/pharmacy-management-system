@@ -430,7 +430,7 @@ export async function listSaleReturns(
 
 export async function listCreditNotes(
   params: Partial<CreditNoteQueryParams> = {},
-  _actor: ReturnActor
+  actor: ReturnActor
 ) {
   const {
     page = 1,
@@ -443,6 +443,13 @@ export async function listCreditNotes(
   } = params
 
   const where: Prisma.CreditNoteWhereInput = {}
+
+  // Branch isolation: credit notes belong to the branch of their sale.
+  // Branch-bound actors only see their own branch; branchless (global)
+  // actors retain cross-branch visibility per the documented access model.
+  if (actor.branchId) {
+    where.saleReturn = { sale: { branchId: actor.branchId } }
+  }
 
   if (status) {
     where.status = status
@@ -495,7 +502,7 @@ export async function listCreditNotes(
   }
 }
 
-export async function getCreditNoteById(id: string, _actor: ReturnActor) {
+export async function getCreditNoteById(id: string, actor: ReturnActor) {
   const note = await prisma.creditNote.findUnique({
     where: { id },
     include: {
@@ -512,5 +519,6 @@ export async function getCreditNoteById(id: string, _actor: ReturnActor) {
     throw new Error('Not Found: credit note')
   }
 
+  await assertBranchAccess(actor, note.saleReturn.sale.branchId)
   return note
 }
