@@ -13,9 +13,9 @@ type RouteParams = { params: { id: string } }
 // GET /api/batches/:id
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
-    await requirePermission(PERMISSIONS.BATCHES_READ)
+    const user = await requirePermission(PERMISSIONS.BATCHES_READ)
 
-    const batch = await getBatchById(params.id)
+    const batch = await getBatchById(params.id, user)
     if (!batch) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Batch not found' } },
@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   try {
     const user = await requirePermission(PERMISSIONS.BATCHES_UPDATE)
 
-    const existing = await getBatchById(params.id)
+    const existing = await getBatchById(params.id, user)
     if (!existing) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Batch not found' } },

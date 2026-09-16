@@ -38,7 +38,7 @@ export default async function AddNewProductPage() {
         </Button>
       </div>
       <div className="rounded-lg border bg-card p-6">
-        <ProductForm />
+        <ProductForm successHref={ROUTES.PRODUCTS} />
       </div>
     </div>
   )

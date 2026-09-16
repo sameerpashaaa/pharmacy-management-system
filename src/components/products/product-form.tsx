@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useFieldArray, useForm } from 'react-hook-form'
 import type { z } from 'zod'
@@ -76,6 +77,7 @@ interface ProductFormProps {
   initialData?: ProductFormInit
   onSuccess?: () => void
   onCancel?: () => void
+  successHref?: string
 }
 
 function toNumber(v: string | number | null | undefined): number {
@@ -83,7 +85,8 @@ function toNumber(v: string | number | null | undefined): number {
   return typeof v === 'number' ? v : Number(v)
 }
 
-export function ProductForm({ initialData, onSuccess, onCancel }: ProductFormProps) {
+export function ProductForm({ initialData, onSuccess, onCancel, successHref }: ProductFormProps) {
+  const router = useRouter()
   const toast = useToast()
   const isEditing = Boolean(initialData?.id)
 
@@ -205,6 +208,10 @@ export function ProductForm({ initialData, onSuccess, onCancel }: ProductFormPro
     if (res.ok) {
       toast.success(isEditing ? 'Product updated successfully' : 'Product created successfully')
       onSuccess?.()
+      if (successHref) {
+        router.push(successHref)
+        router.refresh()
+      }
     } else {
       const json = (await res.json()) as { error?: { message?: string; code?: string } }
       toast.error(json.error?.message ?? 'Something went wrong')

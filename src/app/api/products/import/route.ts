@@ -17,7 +17,21 @@ export async function POST(req: NextRequest) {
     const user = await requirePermission(PERMISSIONS.PRODUCTS_IMPORT)
 
     // --- File extraction ---
-    const formData = await req.formData()
+    let formData: FormData
+    try {
+      formData = await req.formData()
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION',
+            message: 'Expected multipart/form-data with a "file" field',
+          },
+        },
+        { status: 400 }
+      )
+    }
     const file = formData.get('file')
 
     if (!file || !(file instanceof File)) {

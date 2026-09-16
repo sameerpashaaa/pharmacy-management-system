@@ -64,6 +64,8 @@ const prismaMock = prisma as unknown as {
 const txMock = {
   inventory: { findUnique: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
   inventoryMovement: { create: jest.fn() },
+  batch: { findMany: jest.fn(), updateMany: jest.fn() },
+  batchStatusLog: { create: jest.fn() },
   stockAdjustment: {
     create: jest.fn(),
     findUnique: jest.fn(),
@@ -131,6 +133,9 @@ describe('inventory-service', () => {
     txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' })
     txMock.stockAdjustment.updateMany.mockResolvedValue({ count: 1 })
     txMock.stockAdjustment.findUniqueOrThrow.mockResolvedValue(summaryFixture)
+    txMock.batch.findMany.mockResolvedValue([])
+    txMock.batch.updateMany.mockResolvedValue({ count: 1 })
+    txMock.batchStatusLog.create.mockResolvedValue({ id: 'bsl-1' })
   })
 
   describe('getInventory', () => {
@@ -350,6 +355,96 @@ describe('inventory-service', () => {
       await expect(createAdjustment({ ...input, quantity: 5 }, user)).rejects.toThrow(
         'Product is inactive'
       )
+    })
+
+    it('reconciles batch quantities FEFO for negative adjustments', async () => {
+      txMock.inventory.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        totalQuantity: 30,
+        availableQuantity: 25,
+        updatedAt: new Date('2026-01-02'),
+      })
+      const batchFixture = {
+        id: 'batch-1',
+        batchNumber: 'B-001',
+        productId: 'prod-1',
+        quantity: 20,
+        reservedQuantity: 0,
+        soldQuantity: 0,
+        status: 'ACTIVE',
+        expiryDate: new Date('2027-06-01'),
+        branchId: 'br-1',
+      }
+      txMock.batch.findMany.mockResolvedValue([batchFixture])
+      txMock.stockAdjustment.create.mockResolvedValue({ ...adjustmentFixture, quantity: -5 })
+      const result = await createAdjustment({ ...input, quantity: -5 }, user)
+      expect(txMock.batch.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            productId: 'prod-1',
+            branchId: 'br-1',
+            status: 'ACTIVE',
+          }),
+        })
+      )
+      expect(txMock.batch.updateMany).toHaveBeenCalledWith({
+        where: { id: 'batch-1', quantity: 20 },
+        data: { quantity: 15 },
+      })
+      expect(result.status).toBe('APPROVED')
+    })
+
+    it('disposes fully depleted batch after negative adjustment', async () => {
+      txMock.inventory.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        totalQuantity: 30,
+        availableQuantity: 25,
+        updatedAt: new Date('2026-01-02'),
+      })
+      const batchFixture = {
+        id: 'batch-1',
+        batchNumber: 'B-001',
+        productId: 'prod-1',
+        quantity: 10,
+        reservedQuantity: 0,
+        soldQuantity: 0,
+        status: 'ACTIVE',
+        expiryDate: new Date('2027-06-01'),
+        branchId: 'br-1',
+      }
+      txMock.batch.findMany.mockResolvedValue([batchFixture])
+      txMock.stockAdjustment.create.mockResolvedValue({ ...adjustmentFixture, quantity: -10 })
+      await createAdjustment({ ...input, quantity: -10 }, user)
+      expect(txMock.batch.updateMany).toHaveBeenCalledWith({
+        where: { id: 'batch-1', quantity: 10 },
+        data: { quantity: 0 },
+      })
+      expect(txMock.batch.updateMany).toHaveBeenCalledWith({
+        where: { id: 'batch-1', quantity: 0, status: 'ACTIVE' },
+        data: { status: 'DISPOSED' },
+      })
+      expect(txMock.batchStatusLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          batchId: 'batch-1',
+          fromStatus: 'ACTIVE',
+          toStatus: 'DISPOSED',
+        }),
+      })
+    })
+
+    it('skips batch reconciliation when no eligible batches exist', async () => {
+      prismaMock.inventory.findUnique.mockResolvedValue({ availableQuantity: 25 })
+      txMock.inventory.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        totalQuantity: 30,
+        availableQuantity: 25,
+        updatedAt: new Date('2026-01-02'),
+      })
+      txMock.batch.findMany.mockResolvedValue([])
+      txMock.stockAdjustment.create.mockResolvedValue({ ...adjustmentFixture, quantity: -3 })
+      const result = await createAdjustment({ ...input, quantity: -3 }, user)
+      expect(txMock.batch.updateMany).not.toHaveBeenCalled()
+      expect(result.status).toBe('APPROVED')
     })
   })
 

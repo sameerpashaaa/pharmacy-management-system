@@ -19,7 +19,9 @@ subgraph G_live_0["IMPLEMENTED — real pages, API routes & services"]
   mod_Inventory["Inventory · 6 api · 2 svc · 3 models · 3 pages"]:::s_live
   mod_POS___Billing["POS / Billing · 4 api · 1 models · 1 page"]:::s_live
   mod_Products["Products · 3 api · 2 svc · 4 models · 5 pages"]:::s_live
+  mod_Purchases["Purchases · 3 api · 1 svc · 4 models · 5 pages"]:::s_live
   mod_Sales["Sales · 2 api · 2 svc · 4 models · 2 pages"]:::s_live
+  mod_Suppliers["Suppliers · 2 api · 2 models · 2 pages"]:::s_live
 end
 
 subgraph G_partial_1["PARTIAL — services / API exist, pages are placeholders"]
@@ -41,9 +43,7 @@ subgraph G_design_2["DESIGNED — Prisma schema models exist, application code i
   mod_GST___Tax["GST / Tax · 3 models · 2 pages"]:::s_design
   mod_Notifications["Notifications · 2 models"]:::s_design
   mod_Prescriptions["Prescriptions · 2 models · 2 pages"]:::s_design
-  mod_Purchases["Purchases · 4 models · 3 pages"]:::s_design
   mod_Returns["Returns · 3 models · 2 pages"]:::s_design
-  mod_Suppliers["Suppliers · 2 models · 2 pages"]:::s_design
 end
 
 subgraph G_misc_3["SUPPORT — constants, hooks, utilities"]
@@ -54,7 +54,9 @@ class mod_Expiry_Tracking s_live
 class mod_Inventory s_live
 class mod_POS___Billing s_live
 class mod_Products s_live
+class mod_Purchases s_live
 class mod_Sales s_live
+class mod_Suppliers s_live
 class mod_Audit s_partial
 class mod_Authentication s_partial
 class mod_Batches s_partial
@@ -70,9 +72,7 @@ class mod_Finance s_design
 class mod_GST___Tax s_design
 class mod_Notifications s_design
 class mod_Prescriptions s_design
-class mod_Purchases s_design
 class mod_Returns s_design
-class mod_Suppliers s_design
 class mod_Reports s_misc
 
 subgraph LEG["Legend"]

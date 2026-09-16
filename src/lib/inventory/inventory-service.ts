@@ -3,6 +3,8 @@
 // ─────────────────────────────────────────────────────────────
 import type { InventoryMovement, Prisma, StockAdjustment } from '@prisma/client'
 
+import { allocateFefo, filterEligibleBatches } from '@/lib/batches/fefo'
+import type { FefoBatchCandidate } from '@/lib/batches/fefo'
 import prisma from '@/lib/db/prisma'
 
 import type { AuthUser } from './branch-access'
@@ -62,7 +64,6 @@ export interface MovementRow {
     product: { id: string; name: string; sku: string; unitOfMeasure: string }
     branch: { id: string; name: string; code: string | null }
   }
-  createdBy: { id: string; name: string } | null
 }
 
 export interface AdjustmentRow {
@@ -245,7 +246,6 @@ export async function getMovements(
         branch: { select: { id: true, name: true, code: true } },
       },
     },
-    createdBy: { select: { id: true, name: true } },
   }
 
   const skip = (page - 1) * limit
@@ -340,6 +340,111 @@ export async function getAdjustments(
   }
 }
 
+// ─── Batch Reconciliation (internal, transactional) ───────────
+
+/**
+ * Reconcile batch quantities for a negative stock adjustment using FEFO.
+ * Called within an existing transaction. Reduces batch.quantity for the
+ * adjusted product+branch, picking the earliest-expiring batches first.
+ *
+ * If no eligible batches exist (aggregate-only stock from a prior positive
+ * adjustment or direct inventory creation), the function returns silently —
+ * the inventory-level movement is still valid.
+ *
+ * CAS: each batch update uses `where { id, quantity }` to detect concurrent
+ * modification, consistent with disposeBatch and POS sale patterns.
+ */
+async function reconcileBatchesForNegativeAdjustment(
+  tx: Prisma.TransactionClient,
+  adjustment: StockAdjustment,
+  actorId: string
+): Promise<void> {
+  if (adjustment.quantity >= 0) return
+
+  const targetQty = Math.abs(adjustment.quantity)
+
+  // Fetch eligible batches (ACTIVE, not expired, with availability) in FEFO order
+  const batchRows = await tx.batch.findMany({
+    where: {
+      productId: adjustment.productId,
+      branchId: adjustment.branchId,
+      status: 'ACTIVE',
+      expiryDate: { gte: new Date() },
+    },
+    select: {
+      id: true,
+      batchNumber: true,
+      productId: true,
+      quantity: true,
+      reservedQuantity: true,
+      soldQuantity: true,
+      status: true,
+      expiryDate: true,
+      branchId: true,
+    },
+    orderBy: [{ expiryDate: 'asc' }, { id: 'asc' }],
+  })
+
+  const eligible = filterEligibleBatches(batchRows as FefoBatchCandidate[])
+  const totalAvailable = eligible.reduce((sum, b) => sum + b.availableQuantity, 0)
+
+  // No eligible batches — aggregate-only stock, nothing to reconcile
+  if (eligible.length === 0 || totalAvailable === 0) return
+
+  if (targetQty > totalAvailable) {
+    throw new Error(
+      `Conflict: requested adjustment of ${targetQty} exceeds batch availability of ${totalAvailable} — possible diverged inventory`
+    )
+  }
+
+  const allocation = allocateFefo(eligible, targetQty)
+  if (allocation.status !== 'success') {
+    throw new Error('Conflict: FEFO allocation failed during batch reconciliation')
+  }
+
+  for (const a of allocation.allocations) {
+    const batchRow = batchRows.find((b) => b.id === a.batchId)
+    if (!batchRow) {
+      throw new Error('Conflict: batch changed concurrently during allocation')
+    }
+
+    const nextQuantity = batchRow.quantity - a.allocatedQuantity
+
+    // CAS: update batch quantity
+    const result = await tx.batch.updateMany({
+      where: {
+        id: batchRow.id,
+        quantity: batchRow.quantity,
+      },
+      data: { quantity: nextQuantity },
+    })
+    if (result.count !== 1) {
+      throw new Error('Conflict: batch changed concurrently, please retry')
+    }
+
+    // If batch is now fully depleted, mark DISPOSED with status log
+    if (nextQuantity === 0) {
+      const disposeResult = await tx.batch.updateMany({
+        where: { id: batchRow.id, quantity: 0, status: 'ACTIVE' },
+        data: { status: 'DISPOSED' },
+      })
+      if (disposeResult.count !== 1) {
+        throw new Error('Conflict: batch state changed concurrently during disposal')
+      }
+
+      await tx.batchStatusLog.create({
+        data: {
+          batchId: batchRow.id,
+          fromStatus: 'ACTIVE',
+          toStatus: 'DISPOSED',
+          reason: `Stock adjustment (${adjustment.adjustmentType}): ${adjustment.reason}`,
+          changedById: actorId,
+        },
+      })
+    }
+  }
+}
+
 // ─── Stock Apply (internal, transactional) ────────────────────
 
 /**
@@ -414,6 +519,9 @@ async function applyStockAdjustment(
       createdById: actorId,
     },
   })
+
+  // Reconcile batch quantities for negative adjustments (FEFO)
+  await reconcileBatchesForNegativeAdjustment(tx, adjustment, actorId)
 
   const adjRes = await tx.stockAdjustment.updateMany({
     where: { id: adjustment.id, status: 'PENDING' },

@@ -7,7 +7,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions'
 export const metadata: Metadata = { title: 'Product Categories' }
 
 export default async function ProductCategoriesPage() {
-  const canRead = await can(PERMISSIONS.PRODUCTS_READ)
+  const canRead = await can(PERMISSIONS.CATEGORIES_MANAGE)
 
   return (
     <div className="space-y-4">
