@@ -125,7 +125,7 @@ export default function PurchaseReturnsPage() {
 
   useEffect(() => {
     void load({ reset: true })
-  }, [debouncedSearch, statusFilter, branchFilter, supplierFilter, sortBy, sortOrder])
+  }, [debouncedSearch, statusFilter, branchFilter, supplierFilter, sortBy, sortOrder, load])
 
   if (loading && returns.length === 0) {
     return (

@@ -1568,4 +1568,20 @@ describeDb('Purchase management integration (real Postgres)', () => {
     expect(purchase.items[0].discountPercent.toNumber()).toBe(20)
     expect(purchase.items[0].taxPercent.toNumber()).toBe(12)
   })
+
+  it('Regression test: allows a branch-assigned user to list suppliers and purchases without Not Found error', async () => {
+    // Prior to the fix, this would throw 'Not Found: branch' because the service
+    // incorrectly attempted to validate branchId = ''
+    const suppliers = await listSuppliers({ page: 1, limit: 10, sortBy: 'createdAt', sortOrder: 'desc' }, fx.branchAUser)
+    expect(suppliers.data).toBeInstanceOf(Array)
+
+    const purchases = await listPurchases({ page: 1, limit: 10, sortBy: 'purchaseDate', sortOrder: 'desc' }, fx.branchAUser)
+    expect(purchases.data).toBeInstanceOf(Array)
+    
+    if (purchases.data.length > 0) {
+      const p = await getPurchase(purchases.data[0].id, fx.branchAUser)
+      expect(p).not.toBeNull()
+      expect(p?.branchId).toBe(fx.branchAUser.branchId)
+    }
+  })
 })
