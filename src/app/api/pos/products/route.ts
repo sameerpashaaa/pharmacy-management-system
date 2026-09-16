@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { ZodError } from 'zod'
 
-import { requirePermission } from '@/lib/auth/auth-helpers'
+import { requireAuth } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { resolveBranchScope } from '@/lib/inventory/branch-access'
 import { searchPosProducts } from '@/lib/sales/sales-service'
@@ -11,7 +11,14 @@ import { posProductsQuerySchema } from '@/lib/validations/sale'
 // GET /api/pos/products?search=&branchId=&limit=
 export async function GET(req: NextRequest) {
   try {
-    const user = await requirePermission(PERMISSIONS.PRODUCTS_READ)
+    const user = await requireAuth()
+    const canAccess =
+      user.permissions.includes(PERMISSIONS.PRODUCTS_READ) ||
+      user.permissions.includes(PERMISSIONS.SALES_CREATE) ||
+      user.permissions.includes(PERMISSIONS.SALES_READ)
+    if (!canAccess) {
+      throw new Error(`Forbidden: requires permission '${PERMISSIONS.SALES_CREATE}' or '${PERMISSIONS.PRODUCTS_READ}'`)
+    }
     const query = posProductsQuerySchema.parse(Object.fromEntries(new URL(req.url).searchParams))
 
     const scope = await resolveBranchScope(user, query.branchId)

@@ -260,6 +260,11 @@ export interface PosProductRow {
   isGstExempt: boolean
   additionalBarcodes: string[]
   availableQuantity: number
+  categoryName?: string | null
+  manufacturer?: string | null
+  composition?: string | null
+  packSize?: string | null
+  imageUrl?: string | null
 }
 
 /**
@@ -271,16 +276,19 @@ export interface PosProductRow {
 export async function searchPosProducts(
   search: string | undefined,
   branchId: string,
-  limit = 20
+  limit = 60
 ): Promise<PosProductRow[]> {
   const where: Prisma.ProductWhereInput = { isActive: true }
-  if (search) {
+  const cleanSearch = search?.trim()
+  if (cleanSearch) {
     where.OR = [
-      { name: { contains: search, mode: 'insensitive' } },
-      { genericName: { contains: search, mode: 'insensitive' } },
-      { sku: { contains: search, mode: 'insensitive' } },
-      { barcode: { contains: search, mode: 'insensitive' } },
-      { barcodes: { some: { barcode: { contains: search, mode: 'insensitive' } } } },
+      { name: { contains: cleanSearch, mode: 'insensitive' } },
+      { genericName: { contains: cleanSearch, mode: 'insensitive' } },
+      { sku: { contains: cleanSearch, mode: 'insensitive' } },
+      { barcode: { contains: cleanSearch, mode: 'insensitive' } },
+      { manufacturer: { contains: cleanSearch, mode: 'insensitive' } },
+      { composition: { contains: cleanSearch, mode: 'insensitive' } },
+      { barcodes: { some: { barcode: { contains: cleanSearch, mode: 'insensitive' } } } },
     ]
   }
 
@@ -304,6 +312,16 @@ export async function searchPosProducts(
       drugSchedule: true,
       isPrescriptionRequired: true,
       isGstExempt: true,
+      manufacturer: true,
+      composition: true,
+      packSize: true,
+      imageUrl: true,
+      categories: {
+        take: 1,
+        select: {
+          category: { select: { name: true } },
+        },
+      },
       barcodes: { select: { barcode: true } },
     },
   })
@@ -332,6 +350,11 @@ export async function searchPosProducts(
     isGstExempt: p.isGstExempt,
     additionalBarcodes: p.barcodes.map((b) => b.barcode).filter((b) => b !== p.barcode),
     availableQuantity: availableByProduct.get(p.id) ?? 0,
+    categoryName: p.categories[0]?.category.name ?? null,
+    manufacturer: p.manufacturer ?? null,
+    composition: p.composition ?? null,
+    packSize: p.packSize ?? null,
+    imageUrl: p.imageUrl ?? null,
   }))
 }
 
@@ -852,6 +875,80 @@ export async function createSale(
         })
 
         return sale
+      },
+      { isolationLevel: 'Serializable', maxWait: 5000, timeout: 15000 }
+    )
+  )
+}
+
+
+export async function cancelSale(
+  saleId: string,
+  reason: string,
+  actor: SaleActor
+): Promise<void> {
+  const permissions = actor.permissions ?? []
+  if (!permissions.includes(PERMISSIONS.SALES_VOID)) {
+    throw new Error('Forbidden: requires permission sales:void')
+  }
+
+  await runWithRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        const sale = await tx.sale.findUnique({
+          where: { id: saleId },
+          include: { items: { include: { itemBatches: true } } },
+        })
+        if (!sale) throw new Error('Not Found: sale')
+        if (sale.status === 'CANCELLED') throw new Error('Sale is already cancelled')
+        
+        await assertBranchAccess(actor, sale.branchId)
+
+        await tx.sale.update({
+          where: { id: saleId },
+          data: {
+            status: 'CANCELLED',
+            cancelledAt: new Date(),
+            cancelledReason: reason,
+          },
+        })
+
+        for (const item of sale.items) {
+          const inv = await tx.inventory.findUnique({
+            where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
+          })
+          if (inv) {
+            await tx.inventory.update({
+              where: { id: inv.id },
+              data: {
+                totalQuantity: { increment: item.quantity },
+                availableQuantity: { increment: item.quantity },
+              },
+            })
+
+            await tx.inventoryMovement.create({
+              data: {
+                inventoryId: inv.id,
+                type: 'RETURN_IN',
+                quantity: item.quantity,
+                quantityBefore: inv.availableQuantity,
+                quantityAfter: inv.availableQuantity + item.quantity,
+                referenceType: 'SALE',
+                referenceId: sale.id,
+                createdById: actor.id,
+              },
+            })
+          }
+
+          for (const ib of item.itemBatches) {
+            await tx.batch.update({
+              where: { id: ib.batchId },
+              data: {
+                soldQuantity: { decrement: ib.quantity },
+              },
+            })
+          }
+        }
       },
       { isolationLevel: 'Serializable', maxWait: 5000, timeout: 15000 }
     )
