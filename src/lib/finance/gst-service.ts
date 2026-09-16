@@ -237,12 +237,10 @@ export async function getGstr1Report(params: Partial<GstReportQuery>, actor: Aut
     prisma.gstTransaction.findMany({
       where: { ...where, type: GstTxType.B2B },
       orderBy: { invoiceDate: 'desc' },
-      take: 100,
     }),
     prisma.gstTransaction.findMany({
       where: { ...where, type: GstTxType.B2C },
       orderBy: { invoiceDate: 'desc' },
-      take: 100,
     }),
     prisma.gstTransaction.groupBy({
       by: ['hsnCode'],
