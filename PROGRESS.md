@@ -17,7 +17,7 @@ Phase 3: Point of Sale        ████████████████�
 Phase 4: Purchase Management  ████████████████████ 100% ✅
 Phase 5: Prescriptions/Returns░░░░░░░░░░░░░░░░░░░░   0% ⏳
 Phase 6: Financial & GST      ░░░░░░░░░░░░░░░░░░░░   0% ⏳
-Phase 7: Reporting & Analytics░░░░░░░░░░░░░░░░░░░░   0% ⏳
+Phase 7: Reporting & Analytics████████████████████ 100% ✅ (hardened; PDF/Excel + scheduler deferred)
 Phase 8: Testing & Refinement ████░░░░░░░░░░░░░░░░  15% 🔧
 Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░░░░░   0% ⏳
 ```
@@ -418,9 +418,13 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 
 ---
 
-## ⏳ Phase 7: Reporting & Analytics — NOT STARTED
+## ✅ Phase 7: Reporting & Analytics — IMPLEMENTED (hardened)
 
 **Target:** Weeks 18–19 | **Modules:** 15, 16, 17
+
+Implemented: read-only `ReportService` (stock, near-expiry, narcotics, consumption, supplier performance, sales financials), six `/api/reports/*` routes (auth + `reports:*` permission + branch/org isolation + validated dates/pagination), five dashboard pages with CSV export, real-PostgreSQL integration tests, API route tests.
+
+Deferred (documented, not in scope): PDF/Excel export (CSV only), scheduled auto-dispatch (no cron infra), server-side export permission enforcement (export is client-side CSV), weekly/monthly consumption buckets (flat product list).
 
 ---
 
@@ -435,7 +439,7 @@ Phase 9: Deployment & Launch  ░░░░░░░░░░░░░░░░�
 | Jest configuration       | ✅     | `jest.config.js` — two projects (unit parallel, integration `--runInBand` so real-Postgres suites share the schema serially), Next.js integration, path aliases |
 | Jest setup               | ✅     | `jest.setup.ts` with @testing-library/jest-dom                                                                                                                  |
 | React Testing Library    | ✅     | Component testing support configured                                                                                                                            |
-| Unit + integration tests | ✅     | 37 test suites, **449 tests passing**                                                                                                                           |
+| Unit + integration tests | ✅     | 57 test suites, **591 tests passing** (54 unit / 519 + 3 integration / 72, real PostgreSQL)                                                                     |
 | TypeScript support       | ✅     | ts-jest with tsconfig.json                                                                                                                                      |
 | Coverage thresholds      | ✅     | Configured (0% baseline, ready to raise)                                                                                                                        |
 

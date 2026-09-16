@@ -26,17 +26,28 @@ interface SupplierRow {
 
 export default function SupplierPerformancePage() {
   const [data, setData] = useState<SupplierRow[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/reports/supplier')
       .then((res) => res.json())
       .then((res) => {
-        if ((res as { success: boolean; data: SupplierRow[] }).success)
-          setData((res as { success: boolean; data: SupplierRow[] }).data)
-        setLoading(false)
+        const body = res as {
+          success: boolean
+          data: SupplierRow[]
+          pagination?: { total: number }
+        }
+        if (!body.success) {
+          setError('Failed to load supplier performance. Please try again.')
+          return
+        }
+        setData(body.data)
+        setTotal(body.pagination?.total ?? body.data.length)
       })
-      .catch(console.error)
+      .catch(() => setError('Failed to load supplier performance. Please try again.'))
+      .finally(() => setLoading(false))
   }, [])
 
   const exportCSV = () => {
@@ -54,6 +65,14 @@ export default function SupplierPerformancePage() {
 
   if (loading) return <div>Loading...</div>
 
+  if (error)
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight">Supplier Performance</h1>
+        <p className="text-red-500">{error}</p>
+      </div>
+    )
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -63,6 +82,9 @@ export default function SupplierPerformancePage() {
         </div>
         <Button onClick={exportCSV}>Export CSV</Button>
       </div>
+      <p className="text-sm text-muted-foreground">
+        Showing {data.length} of {total} records
+      </p>
 
       <Card>
         <CardContent className="pt-6">
