@@ -761,6 +761,7 @@ export async function createGrn(
           type: GstTxType.B2B,
           referenceType: 'PURCHASE',
           referenceId: purchase.id,
+          referenceLineId: item.id,
           invoiceNumber: purchase.invoiceNumber ?? purchase.purchaseNumber,
           invoiceDate: purchase.invoiceDate ?? purchase.createdAt,
           partyGstin: purchase.supplier.gstin ?? null,

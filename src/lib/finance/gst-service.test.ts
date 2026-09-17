@@ -170,11 +170,15 @@ describe('GST Service', () => {
 
   describe('syncMissingGstTransactions', () => {
     it('scans sales and purchases and syncs missing transactions', async () => {
-      ;(prisma.sale.findMany as jest.Mock).mockResolvedValueOnce([{ id: 's-1' }])
+      ;(prisma.sale.findMany as jest.Mock).mockResolvedValueOnce([
+        { id: 's-1', items: [{ id: 'si-1' }] },
+      ])
       ;(prisma.gstTransaction.count as jest.Mock)
         .mockResolvedValueOnce(0) // s-1 missing
         .mockResolvedValueOnce(1) // p-1 exists
-      ;(prisma.purchase.findMany as jest.Mock).mockResolvedValueOnce([{ id: 'p-1' }])
+      ;(prisma.purchase.findMany as jest.Mock).mockResolvedValueOnce([
+        { id: 'p-1', items: [{ id: 'pi-1' }] },
+      ])
       ;(prisma.sale.findUnique as jest.Mock).mockResolvedValueOnce({
         id: 's-1',
         invoiceNumber: 'INV-1',
@@ -182,7 +186,19 @@ describe('GST Service', () => {
         branchId: 'br-1',
         customer: null,
         branch: { state: 'KA' },
-        items: [],
+        items: [
+          {
+            id: 'si-1',
+            productId: 'prod-1',
+            totalAmount: new Prisma.Decimal(100),
+            taxAmount: new Prisma.Decimal(18),
+            taxPercent: new Prisma.Decimal(18),
+            igstPercent: new Prisma.Decimal(0),
+            cgstPercent: new Prisma.Decimal(9),
+            sgstPercent: new Prisma.Decimal(9),
+            hsnCode: '3004',
+          },
+        ],
       })
 
       const res = await syncMissingGstTransactions({}, mockActor)
