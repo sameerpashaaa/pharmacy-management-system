@@ -22,6 +22,8 @@ import {
   createPurchaseReturn,
   createSupplier,
   getPurchase,
+  getPurchaseReturn,
+  getSupplier,
   listGrns,
   listPurchaseReturns,
   listPurchases,
@@ -1578,5 +1580,95 @@ describeDb('Purchase management integration (real Postgres)', () => {
     expect(purchase.items[0].taxAmount.toNumber()).toBe(96)
     expect(purchase.items[0].discountPercent.toNumber()).toBe(20)
     expect(purchase.items[0].taxPercent.toNumber()).toBe(12)
+  })
+
+  // ── C1: branch isolation on purchase/return reads ──────────────
+
+  it('scopes purchase lists to the caller branch by default', async () => {
+    const poA = await orderPurchase(fx)
+    const poB = await orderPurchase(fx, { branchId: fx.branchB })
+    const base = { page: 1, limit: 10, sortBy: 'purchaseDate', sortOrder: 'desc' } as const
+
+    const mine = await listPurchases(base, fx.branchAUser)
+    expect(mine.data.map((p) => p.id)).toEqual([poA.id])
+
+    // Explicit same-organization branch filter is allowed.
+    const explicit = await listPurchases({ ...base, branchId: fx.branchB }, fx.branchAUser)
+    expect(explicit.data.map((p) => p.id)).toEqual([poB.id])
+
+    // Explicit cross-organization branch filter is denied.
+    await expect(listPurchases({ ...base, branchId: fx.branchC }, fx.branchAUser)).rejects.toThrow(
+      'Forbidden'
+    )
+
+    const all = await listPurchases(base, fx.globalActor)
+    expect(all.pagination.total).toBe(2)
+  })
+
+  it('enforces record-level branch access on getPurchase', async () => {
+    const { id } = await orderPurchase(fx)
+
+    await expect(getPurchase(id, fx.branchAUser)).resolves.toMatchObject({ id })
+    // Same organization, different branch: readable per branch-access design.
+    await expect(getPurchase(id, fx.branchBUser)).resolves.toMatchObject({ id })
+    await expect(getPurchase(id, fx.otherOrgUser)).rejects.toThrow('Forbidden')
+    await expect(getPurchase(id, fx.globalActor)).resolves.toMatchObject({ id })
+  })
+
+  it('treats suppliers as global for branch-scoped actors', async () => {
+    const all = await listSuppliers(
+      { page: 1, limit: 10, sortBy: 'name', sortOrder: 'asc' },
+      fx.branchAUser
+    )
+    expect(all.pagination.total).toBeGreaterThanOrEqual(2)
+
+    await expect(getSupplier(fx.supplierId, fx.branchAUser)).resolves.toMatchObject({
+      id: fx.supplierId,
+    })
+  })
+
+  it('scopes purchase-return reads through their purchase branch', async () => {
+    const { id: purchaseId, itemId } = await orderPurchase(fx)
+    await createGrn(
+      {
+        purchaseId,
+        branchId: fx.branchA,
+        grnNumber: 'GRN-C1',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: itemId,
+            receivedQuantity: 100,
+            batchNumber: 'BT-C1',
+            expiryDate: inDays(300),
+            purchasePrice: 10,
+            mrp: 100,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      fx.branchAUser
+    )
+    const ret = await createPurchaseReturn(
+      {
+        purchaseId,
+        supplierId: fx.supplierId,
+        returnNumber: 'PR-C1',
+        returnDate: new Date().toISOString(),
+        reason: 'C1 isolation check',
+        items: [{ purchaseItemId: itemId, quantity: 5, unitCost: 10, reason: 'Damaged' }],
+      },
+      fx.globalActor
+    )
+    const base = { page: 1, limit: 10, sortBy: 'returnDate', sortOrder: 'desc' } as const
+
+    const mine = await listPurchaseReturns(base, fx.branchAUser)
+    expect(mine.data.map((r) => r.id)).toEqual([ret.id])
+
+    const other = await listPurchaseReturns(base, fx.otherOrgUser)
+    expect(other.pagination.total).toBe(0)
+
+    await expect(getPurchaseReturn(ret.id, fx.branchAUser)).resolves.toMatchObject({ id: ret.id })
+    await expect(getPurchaseReturn(ret.id, fx.otherOrgUser)).rejects.toThrow('Forbidden')
   })
 })
