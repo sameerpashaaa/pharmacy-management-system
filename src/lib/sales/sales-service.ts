@@ -26,7 +26,12 @@
 // Rollback and concurrency are exercised against a real Postgres
 // in `sales-service.integration.test.ts`.
 // ─────────────────────────────────────────────────────────────
-import type { NarcoticMovementType, PaymentMethod, PaymentStatus } from '@prisma/client'
+import {
+  GstTxType,
+  type NarcoticMovementType,
+  type PaymentMethod,
+  type PaymentStatus,
+} from '@prisma/client'
 import { Prisma } from '@prisma/client'
 
 import {
@@ -1008,12 +1013,7 @@ export async function createSale(
   )
 }
 
-
-export async function cancelSale(
-  saleId: string,
-  reason: string,
-  actor: SaleActor
-): Promise<void> {
+export async function cancelSale(saleId: string, reason: string, actor: SaleActor): Promise<void> {
   const permissions = actor.permissions ?? []
   if (!permissions.includes(PERMISSIONS.SALES_VOID)) {
     throw new Error('Forbidden: requires permission sales:void')
@@ -1024,11 +1024,15 @@ export async function cancelSale(
       async (tx) => {
         const sale = await tx.sale.findUnique({
           where: { id: saleId },
-          include: { items: { include: { itemBatches: true } } },
+          include: {
+            items: { include: { itemBatches: true } },
+            payments: true,
+            customer: true,
+          },
         })
         if (!sale) throw new Error('Not Found: sale')
         if (sale.status === 'CANCELLED') throw new Error('Sale is already cancelled')
-        
+
         await assertBranchAccess(actor, sale.branchId)
 
         await tx.sale.update({
@@ -1040,6 +1044,7 @@ export async function cancelSale(
           },
         })
 
+        // ─── Restore Inventory & Batches ───────────────────────────
         for (const item of sale.items) {
           const inv = await tx.inventory.findUnique({
             where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
@@ -1076,6 +1081,154 @@ export async function cancelSale(
             })
           }
         }
+
+        // ─── Reverse Customer Ledger (credit sales) ────────────────
+        if (sale.customerId && sale.balanceDue.gt(0)) {
+          const customer = await tx.customer.findUnique({
+            where: { id: sale.customerId },
+            select: { outstandingBalance: true },
+          })
+          if (customer) {
+            const newBal = customer.outstandingBalance.sub(new Prisma.Decimal(sale.balanceDue))
+            await tx.customer.update({
+              where: { id: sale.customerId },
+              data: { outstandingBalance: newBal },
+            })
+            await tx.customerLedger.create({
+              data: {
+                customerId: sale.customerId,
+                type: 'CREDIT',
+                amount: new Prisma.Decimal(sale.balanceDue),
+                balance: newBal,
+                description: `Sale cancelled: invoice ${sale.invoiceNumber}`,
+                referenceType: 'SALE_CANCEL',
+                referenceId: sale.id,
+                entryDate: new Date(),
+              },
+            })
+          }
+        }
+
+        // ─── Reverse GST Transactions ──────────────────────────────
+        // Create offsetting NIL_RATED transactions to reverse the original B2B/B2C entries
+        // while preserving the audit trail via the unique constraint on
+        // [referenceType, referenceId, referenceLineId]. We use a distinct
+        // referenceType 'SALE_CANCEL' to avoid uniqueness conflicts.
+        const gstTransactions = await tx.gstTransaction.findMany({
+          where: { referenceType: 'SALE', referenceId: sale.id },
+        })
+        if (gstTransactions.length > 0) {
+          for (const gstTx of gstTransactions) {
+            await tx.gstTransaction.create({
+              data: {
+                branchId: sale.branchId,
+                type: GstTxType.NIL_RATED,
+                referenceType: 'SALE_CANCEL',
+                referenceId: sale.id,
+                referenceLineId: gstTx.referenceLineId,
+                invoiceNumber: sale.invoiceNumber,
+                invoiceDate: sale.saleDate,
+                partyGstin: gstTx.partyGstin,
+                partyName: gstTx.partyName,
+                partyState: gstTx.partyState,
+                hsnCode: gstTx.hsnCode,
+                taxableAmount: gstTx.taxableAmount.neg(),
+                cgstAmount: gstTx.cgstAmount.neg(),
+                sgstAmount: gstTx.sgstAmount.neg(),
+                igstAmount: gstTx.igstAmount.neg(),
+                totalTax: gstTx.totalTax.neg(),
+                totalAmount: gstTx.totalAmount.neg(),
+                returnPeriod: gstTx.returnPeriod,
+                isFiled: false,
+              },
+            })
+          }
+        }
+
+        // ─── Reverse Payments ──────────────────────────────────────
+        // Mark payments as cancelled rather than deleting to preserve audit trail
+        for (const payment of sale.payments) {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: {
+              amount: new Prisma.Decimal(0),
+              reference: `VOIDED: ${payment.reference ?? ''}`.trim(),
+            },
+          })
+        }
+
+        // ─── Reverse Schedule H1 Register ──────────────────────────
+        // Create offsetting entries with negative quantity to maintain
+        // auditable history while correcting the running balance.
+        const h1Registers = await tx.scheduleH1Register.findMany({
+          where: { saleId: sale.id },
+        })
+        if (h1Registers.length > 0) {
+          for (const h1 of h1Registers) {
+            await tx.scheduleH1Register.create({
+              data: {
+                saleId: sale.id,
+                productId: h1.productId,
+                batchId: h1.batchId,
+                patientName: h1.patientName,
+                patientAddress: h1.patientAddress,
+                patientPhone: h1.patientPhone,
+                doctorName: h1.doctorName,
+                doctorRegNo: h1.doctorRegNo,
+                medicineName: h1.medicineName,
+                batchNumber: h1.batchNumber,
+                quantityGiven: -h1.quantityGiven,
+                dispensedDate: new Date(),
+                createdById: actor.id,
+              },
+            })
+          }
+        }
+
+        // ─── Reverse Narcotic Register ─────────────────────────────
+        // Create RETURN_TO_SUPPLIER (credit) entries to restore balance.
+        const narcoticRegisters = await tx.narcoticRegister.findMany({
+          where: { referenceType: 'SALE', referenceId: sale.id },
+        })
+        if (narcoticRegisters.length > 0) {
+          for (const narc of narcoticRegisters) {
+            await tx.narcoticRegister.create({
+              data: {
+                branchId: sale.branchId,
+                productId: narc.productId,
+                batchId: narc.batchId,
+                movementType: 'RETURN_TO_SUPPLIER',
+                quantityIn: narc.quantityOut,
+                quantityOut: 0,
+                balanceQuantity: 0, // Will be computed by report logic
+                referenceType: 'SALE_CANCEL',
+                referenceId: sale.id,
+                patientName: narc.patientName,
+                doctorName: narc.doctorName,
+                doctorRegNo: narc.doctorRegNo,
+                prescriptionNo: narc.prescriptionNo,
+                entryDate: new Date(),
+                enteredById: actor.id,
+              },
+            })
+          }
+        }
+
+        // ─── Audit Log ─────────────────────────────────────────────
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            action: 'SALE_CANCEL',
+            entity: 'Sale',
+            entityId: sale.id,
+            metadata: {
+              invoiceNumber: sale.invoiceNumber,
+              totalAmount: sale.totalAmount,
+              cancelledReason: reason,
+              itemCount: sale.items.length,
+            },
+          },
+        })
       },
       { isolationLevel: 'Serializable', maxWait: 5000, timeout: 15000 }
     )
