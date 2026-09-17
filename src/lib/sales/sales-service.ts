@@ -61,6 +61,7 @@ export interface CreateSaleItemInput {
   barcode?: string
   sku?: string
   quantity: number
+  looseUnits?: number
   discountPercent?: number
 }
 
@@ -75,6 +76,14 @@ export interface CreditCustomerInput {
   phone?: string
 }
 
+export interface ScheduleH1CaptureInput {
+  patientName: string
+  patientAddress: string
+  patientPhone?: string
+  doctorName: string
+  doctorRegNo: string
+}
+
 export interface CreateSaleCommand {
   branchId: string
   items: CreateSaleItemInput[]
@@ -84,6 +93,7 @@ export interface CreateSaleCommand {
   customer?: CreditCustomerInput
   prescriptionId?: string
   notes?: string
+  h1Capture?: ScheduleH1CaptureInput
 }
 
 const saleProductSelect = {
@@ -102,6 +112,7 @@ const saleProductSelect = {
   isGstExempt: true,
   hsnCode: true,
   unitOfMeasure: true,
+  tabsPerStrip: true,
 } as const
 
 type SaleProduct = Prisma.ProductGetPayload<{ select: typeof saleProductSelect }>
@@ -261,6 +272,8 @@ export interface PosProductRow {
   isGstExempt: boolean
   additionalBarcodes: string[]
   availableQuantity: number
+  tabsPerStrip?: number | null
+  rackCode?: string | null
   categoryName?: string | null
   manufacturer?: string | null
   composition?: string | null
@@ -304,6 +317,7 @@ export async function searchPosProducts(
       sku: true,
       barcode: true,
       unitOfMeasure: true,
+      tabsPerStrip: true,
       mrp: true,
       gstRate: true,
       cgstRate: true,
@@ -317,6 +331,7 @@ export async function searchPosProducts(
       composition: true,
       packSize: true,
       imageUrl: true,
+      rack: { select: { code: true, shelfNumber: true } },
       categories: {
         take: 1,
         select: {
@@ -340,6 +355,7 @@ export async function searchPosProducts(
     sku: p.sku,
     barcode: p.barcode,
     unitOfMeasure: p.unitOfMeasure,
+    tabsPerStrip: p.tabsPerStrip ?? null,
     mrp: Number(p.mrp),
     gstRate: Number(p.gstRate),
     cgstRate: Number(p.cgstRate),
@@ -351,6 +367,7 @@ export async function searchPosProducts(
     isGstExempt: p.isGstExempt,
     additionalBarcodes: p.barcodes.map((b) => b.barcode).filter((b) => b !== p.barcode),
     availableQuantity: availableByProduct.get(p.id) ?? 0,
+    rackCode: p.rack ? `${p.rack.code}/${p.rack.shelfNumber}` : null,
     categoryName: p.categories[0]?.category.name ?? null,
     manufacturer: p.manufacturer ?? null,
     composition: p.composition ?? null,
@@ -626,15 +643,31 @@ export async function createSale(
         const pricingLines: ItemPricingRow[] = []
         const saleItemInputs: Prisma.SaleItemCreateWithoutSaleInput[] = []
         const movements: InventoryMovementInput[] = []
+        const h1Registers: any[] = []
+        const narcoticRegisters: any[] = []
+
+        const requiresH1 = resolved.some(
+          (r) => r.product.drugSchedule === 'H1' || r.product.drugSchedule === 'NARCOTIC_NDPS'
+        )
+        if (requiresH1 && !command.h1Capture) {
+          throw new Error('Schedule H1 / Narcotic drugs require patient and doctor details')
+        }
 
         for (const { product, input } of resolved) {
           const quantity = input.quantity
+          const looseUnits = input.looseUnits ?? 0
+          const tabsPerStrip = product.tabsPerStrip ?? 1
+          const totalBaseQty = quantity * tabsPerStrip + looseUnits
+          const billableQuantity = quantity + looseUnits / tabsPerStrip
+          if (totalBaseQty <= 0) {
+            throw new Error(`Quantity must be positive for ${product.name}`)
+          }
           const inventory = await tx.inventory.findUnique({
             where: { productId_branchId: { productId: product.id, branchId: branch.id } },
           })
           if (!inventory)
             throw new Error(`Insufficient available stock: ${product.name} (available 0)`)
-          if (inventory.availableQuantity < quantity) {
+          if (inventory.availableQuantity < totalBaseQty) {
             throw new Error(
               `Insufficient available stock: ${product.name} (available ${inventory.availableQuantity})`
             )
@@ -664,8 +697,8 @@ export async function createSale(
           })
 
           const allocation = settings.fefoEnabled
-            ? allocateFefo(filterEligibleBatches(batchRows as FefoBatchCandidate[]), quantity)
-            : allocateByCreationDate(batchRows, quantity)
+            ? allocateFefo(filterEligibleBatches(batchRows as FefoBatchCandidate[]), totalBaseQty)
+            : allocateByCreationDate(batchRows, totalBaseQty)
 
           if (allocation.status !== 'success') {
             throw new Error(
@@ -717,11 +750,53 @@ export async function createSale(
               quantity: a.allocatedQuantity,
               unitPrice: Number(batch.mrp),
             })
+
+            if (
+              command.h1Capture &&
+              (product.drugSchedule === 'H1' || product.drugSchedule === 'NARCOTIC_NDPS')
+            ) {
+              h1Registers.push({
+                productId: product.id,
+                batchId: batch.id,
+                medicineName: product.name,
+                batchNumber: batch.batchNumber,
+                quantityGiven: a.allocatedQuantity,
+                patientName: command.h1Capture.patientName,
+                patientAddress: command.h1Capture.patientAddress,
+                patientPhone: command.h1Capture.patientPhone,
+                doctorName: command.h1Capture.doctorName,
+                doctorRegNo: command.h1Capture.doctorRegNo,
+                createdById: actor.id,
+              })
+
+              if (product.drugSchedule === 'NARCOTIC_NDPS') {
+                narcoticRegisters.push({
+                  branchId: branch.id,
+                  productId: product.id,
+                  batchId: batch.id,
+                  movementType: 'SALES_DISPENSE',
+                  quantityOut: a.allocatedQuantity,
+                  balanceQuantity: 0,
+                  referenceType: 'SALE',
+                  patientName: command.h1Capture.patientName,
+                  doctorName: command.h1Capture.doctorName,
+                  doctorRegNo: command.h1Capture.doctorRegNo,
+                  enteredById: actor.id,
+                })
+              }
+            }
           }
 
           // Aggregate product-branch inventory deduction (CAS by updatedAt).
-          const afterTotal = inventory.totalQuantity - quantity
-          const afterAvailable = inventory.availableQuantity - quantity
+          const afterTotal = inventory.totalQuantity - totalBaseQty
+          const afterAvailable = inventory.availableQuantity - totalBaseQty
+          let runningNarcoticBalance = inventory.availableQuantity
+          for (let i = narcoticRegisters.length - 1; i >= 0; i -= 1) {
+            const entry = narcoticRegisters[i]
+            if (entry.productId !== product.id) break
+            runningNarcoticBalance -= entry.quantityOut
+            entry.balanceQuantity = runningNarcoticBalance
+          }
           if (afterAvailable < 0) {
             throw new Error('Conflict: stock changed concurrently, please retry')
           }
@@ -736,11 +811,11 @@ export async function createSale(
             inventoryId: inventory.id,
             quantityBefore: inventory.totalQuantity,
             quantityAfter: afterTotal,
-            quantity: -quantity,
+            quantity: -totalBaseQty,
           })
 
           const pricing = computeItemPricing({
-            quantity,
+            quantity: billableQuantity,
             mrp: Number(product.mrp),
             gstRate: Number(product.gstRate),
             cgstRate: Number(product.cgstRate),
@@ -757,6 +832,9 @@ export async function createSale(
             productName: product.name,
             productSku: product.sku,
             quantity,
+            billedUnits: quantity,
+            looseUnits,
+            totalBaseQty,
             unitPrice: pricing.unitPrice,
             discountPercent: pricing.discountPercent,
             discountAmount: pricing.discountAmount,
@@ -845,6 +923,16 @@ export async function createSale(
               },
             })
           }
+        }
+
+        if (h1Registers.length > 0) {
+          const h1Data = h1Registers.map((r) => ({ ...r, saleId: sale.id }))
+          await tx.scheduleH1Register.createMany({ data: h1Data })
+        }
+
+        if (narcoticRegisters.length > 0) {
+          const narcData = narcoticRegisters.map((r) => ({ ...r, referenceId: sale.id }))
+          await tx.narcoticRegister.createMany({ data: narcData })
         }
 
         await postGstTransactionForSale(sale.id, tx)
