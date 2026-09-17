@@ -87,6 +87,8 @@ export interface PosProductRow {
   isGstExempt: boolean
   additionalBarcodes: string[]
   availableQuantity: number
+  tabsPerStrip?: number | null
+  rackCode?: string | null
   categoryName?: string | null
   manufacturer?: string | null
   composition?: string | null
@@ -110,6 +112,8 @@ interface CartLine {
   isPrescriptionRequired: boolean
   isGstExempt: boolean
   quantity: number
+  looseUnits: number
+  tabsPerStrip?: number | null
   discountPercent: number
   availableQuantity: number
   categoryName?: string | null
@@ -156,10 +160,21 @@ function getMedicineIcon(unitOfMeasure: string, categoryName?: string | null) {
   if (u.includes('drop') || c.includes('drop')) {
     return Droplet
   }
-  if (u.includes('cream') || u.includes('ointment') || u.includes('gel') || c.includes('ointment')) {
+  if (
+    u.includes('cream') ||
+    u.includes('ointment') ||
+    u.includes('gel') ||
+    c.includes('ointment')
+  ) {
     return Sparkles
   }
-  if (u.includes('strip') || u.includes('tab') || u.includes('cap') || c.includes('tablet') || c.includes('capsule')) {
+  if (
+    u.includes('strip') ||
+    u.includes('tab') ||
+    u.includes('cap') ||
+    c.includes('tablet') ||
+    c.includes('capsule')
+  ) {
     return Pill
   }
   return Package
@@ -206,6 +221,13 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   const [approvedPrescriptions, setApprovedPrescriptions] = useState<
     { id: string; prescriptionNumber: string | null; patientName: string }[]
   >([])
+
+  const [h1PatientName, setH1PatientName] = useState('')
+  const [h1PatientAddress, setH1PatientAddress] = useState('')
+  const [h1PatientPhone, setH1PatientPhone] = useState('')
+  const [h1DoctorName, setH1DoctorName] = useState('')
+  const [h1DoctorRegNo, setH1DoctorRegNo] = useState('')
+  const [h1ModalOpen, setH1ModalOpen] = useState(false)
 
   // ─── Held bills ────────────────────────────────────────────
   const [heldOpen, setHeldOpen] = useState(false)
@@ -314,9 +336,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
     if (activeFilter === 'IN_STOCK') {
       list = list.filter((p) => p.availableQuantity > 0)
     } else if (activeFilter === 'RX') {
-      list = list.filter(
-        (p) => p.isPrescriptionRequired || RX_SCHEDULES.has(p.drugSchedule)
-      )
+      list = list.filter((p) => p.isPrescriptionRequired || RX_SCHEDULES.has(p.drugSchedule))
     } else if (activeFilter === 'TABLETS') {
       list = list.filter(
         (p) =>
@@ -393,7 +413,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   const cartQuantities = useMemo(() => {
     const map = new Map<string, number>()
     for (const item of cart) {
-      map.set(item.productId, item.quantity)
+      map.set(item.productId, item.quantity + item.looseUnits)
     }
     return map
   }, [cart])
@@ -402,7 +422,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   const pricing = useMemo(() => {
     const lines = cart.map((line) =>
       computeItemPricing({
-        quantity: line.quantity,
+        quantity: line.quantity + line.looseUnits / (line.tabsPerStrip ?? 1),
         mrp: line.mrp,
         gstRate: line.gstRate,
         cgstRate: line.cgstRate,
@@ -437,7 +457,9 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       setCart((prev) => {
         const existing = prev.find((c) => c.productId === p.id)
         if (existing) {
-          if (existing.quantity >= p.availableQuantity) {
+          const tabsPerStrip = existing.tabsPerStrip ?? 1
+          const existingBaseQty = existing.quantity * tabsPerStrip + existing.looseUnits
+          if (existingBaseQty + tabsPerStrip > p.availableQuantity) {
             toast.warning(
               'Stock limit reached',
               `Only ${p.availableQuantity} units of ${p.name} available in stock`
@@ -446,7 +468,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           }
           return prev.map((c) =>
             c.productId === p.id
-              ? { ...c, quantity: Math.min(c.quantity + 1, p.availableQuantity) }
+              ? { ...c, quantity: c.quantity + 1 }
               : c
           )
         }
@@ -469,6 +491,8 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
             isPrescriptionRequired: p.isPrescriptionRequired,
             isGstExempt: p.isGstExempt,
             quantity: 1,
+            looseUnits: 0,
+            tabsPerStrip: p.tabsPerStrip ?? null,
             discountPercent: 0,
             availableQuantity: p.availableQuantity,
             categoryName: p.categoryName,
@@ -485,19 +509,47 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       setCart((prev) =>
         prev.map((c) => {
           if (c.productId !== productId) return c
+          const tabsPerStrip = c.tabsPerStrip ?? 1
+          const requestedBaseQty = requestedQuantity * tabsPerStrip + c.looseUnits
 
-          if (requestedQuantity > c.availableQuantity) {
+          if (requestedBaseQty > c.availableQuantity) {
             toast.warning(
               'Stock limit exceeded',
               `Maximum available stock for ${c.name} is ${c.availableQuantity}`
             )
-            return { ...c, quantity: Math.max(1, c.availableQuantity) }
+            return {
+              ...c,
+              quantity: Math.max(1, Math.floor(c.availableQuantity / tabsPerStrip)),
+              looseUnits: c.availableQuantity % tabsPerStrip,
+            }
           }
 
           return {
             ...c,
-            quantity: Math.max(1, Math.min(requestedQuantity || 1, c.availableQuantity)),
+            quantity: Math.max(1, requestedQuantity || 1),
           }
+        })
+      )
+    },
+    [toast]
+  )
+
+  const setLooseUnits = useCallback(
+    (productId: string, requestedLooseUnits: number) => {
+      setCart((prev) =>
+        prev.map((c) => {
+          if (c.productId !== productId) return c
+          const tabsPerStrip = c.tabsPerStrip ?? 1
+          const looseUnits = Math.max(0, Math.min(requestedLooseUnits || 0, tabsPerStrip - 1))
+          const totalBaseQty = c.quantity * tabsPerStrip + looseUnits
+          if (totalBaseQty > c.availableQuantity) {
+            toast.warning(
+              'Stock limit exceeded',
+              `Maximum available stock for ${c.name} is ${c.availableQuantity}`
+            )
+            return c
+          }
+          return { ...c, looseUnits }
         })
       )
     },
@@ -525,6 +577,11 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
     setCustomerName('')
     setCustomerPhone('')
     setPrescriptionId('')
+    setH1PatientName('')
+    setH1PatientAddress('')
+    setH1PatientPhone('')
+    setH1DoctorName('')
+    setH1DoctorRegNo('')
   }, [])
 
   // ─── Barcode & Enter key handling ───────────────────────────
@@ -585,6 +642,11 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
     [cart]
   )
 
+  const needsH1Capture = useMemo(
+    () => cart.some((c) => c.drugSchedule === 'H1' || c.drugSchedule === 'NARCOTIC_NDPS'),
+    [cart]
+  )
+
   useEffect(() => {
     if (payOpen && needsPrescription && branchId) {
       fetch(`/api/prescriptions?status=APPROVED&limit=10&branchId=${branchId}`)
@@ -623,7 +685,8 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   )
 
   // ─── Charge / payment dialog controls ──────────────────────
-  const openPayment = useCallback(() => {
+  const openPayment = useCallback((preferredMethod?: string) => {
+    const method = typeof preferredMethod === 'string' ? preferredMethod : 'CASH'
     if (cart.length === 0) {
       toast.error('Cart is empty')
       return
@@ -632,12 +695,25 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       toast.error('A branch is required to bill')
       return
     }
-    setPayments([{ method: 'CASH', amount: pricing.totals.totalAmount, reference: '' }])
+    if (needsH1Capture && (!h1PatientName || !h1DoctorName || !h1DoctorRegNo)) {
+      setH1ModalOpen(true)
+      return
+    }
+    setPayments([{ method, amount: pricing.totals.totalAmount, reference: '' }])
     setCustomerName('')
     setCustomerPhone('')
     setPrescriptionId('')
     setPayOpen(true)
-  }, [cart.length, branchId, pricing.totals.totalAmount, toast])
+  }, [
+    cart.length,
+    branchId,
+    pricing.totals.totalAmount,
+    toast,
+    needsH1Capture,
+    h1PatientName,
+    h1DoctorName,
+    h1DoctorRegNo,
+  ])
 
   const updatePayment = useCallback((i: number, patch: Partial<PaymentEntry>) => {
     setPayments((prev) => prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p)))
@@ -704,6 +780,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
         items: cart.map((c) => ({
           productId: c.productId,
           quantity: c.quantity,
+          looseUnits: c.looseUnits,
           discountPercent: c.discountPercent,
         })),
         payments: payments
@@ -718,6 +795,17 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           : {}),
         ...(prescriptionId.trim() ? { prescriptionId: prescriptionId.trim() } : {}),
         ...(notes ? { notes } : {}),
+        ...(needsH1Capture
+          ? {
+              h1Capture: {
+                patientName: h1PatientName,
+                patientAddress: h1PatientAddress,
+                patientPhone: h1PatientPhone,
+                doctorName: h1DoctorName,
+                doctorRegNo: h1DoctorRegNo,
+              },
+            }
+          : {}),
       }
 
       const res = await fetch('/api/sales', {
@@ -843,6 +931,42 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   )
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const active = document.activeElement
+      const tagName = active?.tagName.toLowerCase()
+      const isTyping =
+        tagName === 'input' ||
+        tagName === 'textarea' ||
+        (active instanceof HTMLElement && active.isContentEditable)
+
+      if (event.ctrlKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        searchRef.current?.focus()
+        return
+      }
+      if (isTyping || event.altKey || event.metaKey || event.shiftKey) return
+
+      if (event.key === 'F9') {
+        event.preventDefault()
+        quickCash()
+        openPayment('CASH')
+      } else if (event.key === 'F10') {
+        event.preventDefault()
+        openPayment('UPI')
+      } else if (event.key === 'F11') {
+        event.preventDefault()
+        void saveHeldBill()
+      } else if (event.key === 'F12') {
+        event.preventDefault()
+        openPayment()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [openPayment, quickCash, saveHeldBill])
+
+  useEffect(() => {
     if (heldOpen) void loadHeldBills()
   }, [heldOpen, loadHeldBills])
 
@@ -894,23 +1018,22 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
     {
       id: 'RX',
       label: 'Rx Only',
-      count: products.filter(
-        (p) => p.isPrescriptionRequired || RX_SCHEDULES.has(p.drugSchedule)
-      ).length,
+      count: products.filter((p) => p.isPrescriptionRequired || RX_SCHEDULES.has(p.drugSchedule))
+        .length,
     },
   ]
 
   // ─── Full POS Interface ─────────────────────────────────────
   return (
-    <div className="absolute inset-0 z-40 flex flex-col bg-background lg:flex-row overflow-hidden">
+    <div className="absolute inset-0 z-40 flex flex-col overflow-hidden bg-background lg:flex-row">
       {/* ─── Center / Left: Search & Medicine Grid ──────────── */}
       <div className="flex min-h-0 flex-1 flex-col border-b lg:border-b-0 lg:border-r">
         {/* Top Header & Search Bar */}
         <div className="flex flex-col gap-2.5 border-b bg-card/60 p-3.5 backdrop-blur-sm">
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Search Input */}
-            <div className="relative flex-1 min-w-[240px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <div className="relative min-w-[240px] flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={searchRef}
                 type="text"
@@ -918,7 +1041,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
                 placeholder="Search name, SKU, generic formula or scan barcode…"
-                className="h-10 pl-9 pr-9 text-sm font-normal text-foreground placeholder:text-muted-foreground bg-background border-border/80 shadow-inner focus-visible:ring-primary focus-visible:border-primary"
+                className="h-10 border-border/80 bg-background pl-9 pr-9 text-sm font-normal text-foreground shadow-inner placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary"
                 autoFocus
               />
               {search && (
@@ -939,7 +1062,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
             {/* Branch Selector */}
             {user.branchId === null && branches.length > 1 && (
               <Select value={branchId ?? undefined} onValueChange={(v) => setBranchId(v)}>
-                <SelectTrigger className="w-44 h-10 text-xs font-medium">
+                <SelectTrigger className="h-10 w-44 text-xs font-medium">
                   <SelectValue placeholder="Select branch" />
                 </SelectTrigger>
                 <SelectContent>
@@ -956,7 +1079,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
             <Button
               variant="outline"
               size="sm"
-              className="h-10 px-3 text-xs font-medium gap-1.5"
+              className="h-10 gap-1.5 px-3 text-xs font-medium"
               onClick={() => setHeldOpen(true)}
             >
               <Barcode className="h-4 w-4 text-muted-foreground" />
@@ -970,7 +1093,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           </div>
 
           {/* Quick Category / Status Filter Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+          <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5">
             {FILTER_TABS.map((tab) => {
               const active = activeFilter === tab.id
               return (
@@ -989,9 +1112,9 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                   {tab.count !== undefined && (
                     <span
                       className={cn(
-                        'rounded-full px-1.5 py-0.2 text-[10px]',
+                        'py-0.2 rounded-full px-1.5 text-[10px]',
                         active
-                          ? 'bg-primary-foreground/20 text-primary-foreground font-bold'
+                          ? 'bg-primary-foreground/20 font-bold text-primary-foreground'
                           : 'bg-background/80 text-muted-foreground'
                       )}
                     >
@@ -1008,8 +1131,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
         <div className="flex items-center justify-between border-b bg-muted/20 px-4 py-1.5 text-xs text-muted-foreground">
           <div className="flex items-center gap-2 font-medium">
             <span>
-              Showing{' '}
-              <strong className="text-foreground">{displayedProducts.length}</strong>{' '}
+              Showing <strong className="text-foreground">{displayedProducts.length}</strong>{' '}
               medicines (A-Z)
             </span>
             {search.trim() && (
@@ -1018,9 +1140,16 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               </Badge>
             )}
           </div>
-          <div className="hidden sm:flex items-center gap-3 text-[11px]">
-            <span>💡 Press <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd> to add top match</span>
-            <span><kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">Esc</kbd> to clear</span>
+          <div className="hidden items-center gap-3 text-[11px] sm:flex">
+            <span>
+              💡 Press{' '}
+              <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd>{' '}
+              to add top match
+            </span>
+            <span>
+              <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">Esc</kbd>{' '}
+              to clear
+            </span>
           </div>
         </div>
 
@@ -1032,17 +1161,17 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               {Array.from({ length: 12 }).map((_, i) => (
                 <div
                   key={i}
-                  className="flex flex-col justify-between rounded-xl border border-border/60 bg-card p-3 shadow-sm animate-pulse min-h-[155px]"
+                  className="flex min-h-[155px] animate-pulse flex-col justify-between rounded-xl border border-border/60 bg-card p-3 shadow-sm"
                 >
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center">
+                    <div className="flex items-center justify-between">
                       <div className="h-5 w-12 rounded bg-muted" />
                       <div className="h-4 w-8 rounded bg-muted" />
                     </div>
-                    <div className="h-4 w-3/4 rounded bg-muted mt-2" />
+                    <div className="mt-2 h-4 w-3/4 rounded bg-muted" />
                     <div className="h-3 w-1/2 rounded bg-muted" />
                   </div>
-                  <div className="flex justify-between items-center pt-3 border-t border-border/40">
+                  <div className="flex items-center justify-between border-t border-border/40 pt-3">
                     <div className="h-4 w-12 rounded bg-muted" />
                     <div className="h-4 w-14 rounded bg-muted" />
                   </div>
@@ -1059,12 +1188,12 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               </div>
               <div>
                 <h3 className="text-base font-semibold">{fetchError}</h3>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Please verify database connectivity or select another branch.
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={() => void fetchProducts()}>
-                <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
                 Retry loading
               </Button>
             </div>
@@ -1078,7 +1207,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               </div>
               <div className="max-w-sm">
                 <h3 className="text-base font-semibold">No medicines found</h3>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="mt-1 text-xs text-muted-foreground">
                   {search
                     ? `No products matching "${search}". Try searching by generic formula, brand name, SKU or barcode.`
                     : 'No products available for this filter.'}
@@ -1105,11 +1234,9 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               {displayedProducts.map((p) => {
                 const outOfStock = p.availableQuantity <= 0
                 const inCartQty = cartQuantities.get(p.id) || 0
-                const isRx =
-                  p.isPrescriptionRequired || RX_SCHEDULES.has(p.drugSchedule)
+                const isRx = p.isPrescriptionRequired || RX_SCHEDULES.has(p.drugSchedule)
                 const MedIcon = getMedicineIcon(p.unitOfMeasure, p.categoryName)
-                const isLowStock =
-                  p.availableQuantity > 0 && p.availableQuantity <= 10
+                const isLowStock = p.availableQuantity > 0 && p.availableQuantity <= 10
 
                 return (
                   <button
@@ -1124,7 +1251,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                       inCartQty > 0 &&
                         'border-primary/80 bg-primary/[0.03] shadow-sm ring-1 ring-primary/50',
                       outOfStock &&
-                        'cursor-not-allowed opacity-60 bg-muted/40 hover:border-border hover:shadow-none'
+                        'cursor-not-allowed bg-muted/40 opacity-60 hover:border-border hover:shadow-none'
                     )}
                   >
                     {/* Top Row: Unit Badge, Rx Badge & Cart Count */}
@@ -1133,10 +1260,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                           <MedIcon className="h-3.5 w-3.5" />
                         </div>
-                        <Badge
-                          variant="secondary"
-                          className="px-1.5 py-0 text-[10px] font-medium"
-                        >
+                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-medium">
                           {p.unitOfMeasure}
                         </Badge>
                         {isRx && (
@@ -1160,7 +1284,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
 
                     {/* Middle: Medicine Name & Composition / Generic */}
                     <div className="my-2">
-                      <h4 className="line-clamp-2 text-xs sm:text-sm font-semibold leading-tight text-foreground group-hover:text-primary transition-colors">
+                      <h4 className="line-clamp-2 text-xs font-semibold leading-tight text-foreground transition-colors group-hover:text-primary sm:text-sm">
                         {p.name}
                       </h4>
                       <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
@@ -1169,6 +1293,11 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                       <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">
                         {p.sku}
                       </p>
+                      {p.rackCode && (
+                        <Badge variant="outline" className="mt-1 px-1.5 py-0 text-[10px]">
+                          {p.rackCode}
+                        </Badge>
+                      )}
                     </div>
 
                     {/* Bottom: Price & Stock Status */}
@@ -1203,15 +1332,15 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       </div>
 
       {/* ─── Right: Bill / Cart Panel ───────────────────────── */}
-      <div className="flex w-full flex-col border-t bg-card lg:w-[400px] lg:border-t-0 shadow-sm">
+      <div className="flex w-full flex-col border-t bg-card shadow-sm lg:w-[400px] lg:border-t-0">
         {/* Bill Panel Header */}
-        <div className="flex items-center gap-2 border-b p-3.5 bg-muted/20">
+        <div className="flex items-center gap-2 border-b bg-muted/20 p-3.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <ShoppingCart className="h-4 w-4" />
           </div>
           <div>
             <h2 className="text-sm font-bold leading-none">Active Bill</h2>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
               {cart.length} {cart.length === 1 ? 'line item' : 'line items'}
             </p>
           </div>
@@ -1235,14 +1364,14 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               onClick={clearCart}
               disabled={cart.length === 0}
             >
-              <RotateCcw className="h-3.5 w-3.5 mr-1" />
+              <RotateCcw className="mr-1 h-3.5 w-3.5" />
               Clear
             </Button>
           </div>
         </div>
 
         {/* Cart Items Scroll Area */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-3.5 space-y-2.5">
+        <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3.5">
           {cart.length === 0 && (
             <div className="flex h-56 flex-col items-center justify-center gap-2.5 text-center text-muted-foreground">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/60">
@@ -1250,7 +1379,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               </div>
               <div>
                 <p className="text-sm font-medium">Cart is empty</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   Click any medicine card from the grid to add it to this bill.
                 </p>
               </div>
@@ -1258,23 +1387,25 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           )}
 
           {cart.map((c) => {
-            const over =
-              c.discountPercent > config.maxDiscountPercent && !canDiscountOverride
-            const atMaxStock = c.quantity >= c.availableQuantity
+            const over = c.discountPercent > config.maxDiscountPercent && !canDiscountOverride
+            const tabsPerStrip = c.tabsPerStrip ?? 1
+            const totalBaseQty = c.quantity * tabsPerStrip + c.looseUnits
+            const atMaxStock = totalBaseQty >= c.availableQuantity
+            const billableQuantity = c.quantity + c.looseUnits / tabsPerStrip
 
             return (
               <div
                 key={c.productId}
-                className="rounded-xl border border-border/70 bg-background p-3 shadow-xs transition-colors hover:border-border"
+                className="shadow-xs rounded-xl border border-border/70 bg-background p-3 transition-colors hover:border-border"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="line-clamp-1 text-xs font-semibold text-foreground">
                       {c.name}
                     </div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      <span className="font-mono">{c.sku}</span> ·{' '}
-                      {formatCurrency(c.mrp)}/{c.unitOfMeasure}
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      <span className="font-mono">{c.sku}</span> · {formatCurrency(c.mrp)}/
+                      {c.unitOfMeasure}
                     </div>
                   </div>
                   <Button
@@ -1313,6 +1444,22 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                     </Button>
                   </div>
 
+                  {tabsPerStrip > 1 && (
+                    <div className="flex items-center gap-1 rounded-lg border bg-muted/40 px-1.5 py-0.5">
+                      <span className="text-[10px] font-medium text-muted-foreground">tabs</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={tabsPerStrip - 1}
+                        value={c.looseUnits || ''}
+                        onChange={(e) => setLooseUnits(c.productId, Number(e.target.value))}
+                        placeholder="0"
+                        className="h-6 w-12 bg-background text-right text-xs tabular-nums"
+                        aria-label={`Loose tablets for ${c.name}`}
+                      />
+                    </div>
+                  )}
+
                   {/* Discount Input */}
                   <div className="flex items-center gap-1">
                     <Input
@@ -1333,20 +1480,26 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                   <div className="text-right">
                     <span className="text-xs font-bold tabular-nums text-foreground">
                       {formatCurrency(
-                        c.quantity * c.mrp * (1 - (c.discountPercent || 0) / 100)
+                        billableQuantity * c.mrp * (1 - (c.discountPercent || 0) / 100)
                       )}
                     </span>
                   </div>
                 </div>
 
+                {tabsPerStrip > 1 && c.looseUnits > 0 && (
+                  <p className="mt-1 text-[10px] font-medium text-muted-foreground">
+                    {c.quantity} strips + {c.looseUnits} loose tabs ({totalBaseQty} base units)
+                  </p>
+                )}
+
                 {atMaxStock && (
-                  <p className="mt-1.5 text-[10px] text-amber-600 font-medium">
+                  <p className="mt-1.5 text-[10px] font-medium text-amber-600">
                     Maximum available branch stock reached ({c.availableQuantity})
                   </p>
                 )}
 
                 {over && (
-                  <p className="mt-1 text-[10px] text-destructive font-medium">
+                  <p className="mt-1 text-[10px] font-medium text-destructive">
                     Exceeds {config.maxDiscountPercent}% limit — requires discount override
                   </p>
                 )}
@@ -1356,7 +1509,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
         </div>
 
         {/* Bill Summary & Charge Section */}
-        <div className="border-t bg-muted/10 p-4 space-y-3">
+        <div className="space-y-3 border-t bg-muted/10 p-4">
           <dl className="space-y-1.5 text-xs">
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Subtotal</dt>
@@ -1365,11 +1518,9 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               </dd>
             </div>
             {pricing.totals.discountAmount > 0 && (
-              <div className="flex justify-between text-emerald-600 font-medium">
+              <div className="flex justify-between font-medium text-emerald-600">
                 <dt>Discount</dt>
-                <dd className="tabular-nums">
-                  −{formatCurrency(pricing.totals.discountAmount)}
-                </dd>
+                <dd className="tabular-nums">−{formatCurrency(pricing.totals.discountAmount)}</dd>
               </div>
             )}
             <div className="flex justify-between">
@@ -1403,9 +1554,9 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           />
 
           <Button
-            className="w-full h-11 text-sm font-bold shadow-md gap-2"
+            className="h-11 w-full gap-2 text-sm font-bold shadow-md"
             size="lg"
-            onClick={openPayment}
+            onClick={() => openPayment()}
             disabled={cart.length === 0}
           >
             <Calculator className="h-4 w-4" />
@@ -1429,13 +1580,10 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
 
           <div className="space-y-3">
             {payments.map((p, i) => (
-              <div key={i} className="rounded-lg border p-3 bg-muted/10">
+              <div key={i} className="rounded-lg border bg-muted/10 p-3">
                 <div className="mb-2 flex items-center gap-2">
-                  <Select
-                    value={p.method}
-                    onValueChange={(v) => updatePayment(i, { method: v })}
-                  >
-                    <SelectTrigger className="w-36 h-9 text-xs">
+                  <Select value={p.method} onValueChange={(v) => updatePayment(i, { method: v })}>
+                    <SelectTrigger className="h-9 w-36 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1505,7 +1653,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
             {payments.some((p) => p.method === CREDIT) && config.requireCustomerForCredit && (
               <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-                  <Badge variant="outline" className="text-[10px] bg-primary/10">
+                  <Badge variant="outline" className="bg-primary/10 text-[10px]">
                     Credit Sale — Customer Details Required
                   </Badge>
                 </div>
@@ -1513,29 +1661,30 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="Customer Full Name *"
-                  className="h-8 text-xs bg-background"
+                  className="h-8 bg-background text-xs"
                 />
                 <Input
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   placeholder="Phone Number (optional)"
-                  className="h-8 text-xs bg-background"
+                  className="h-8 bg-background text-xs"
                 />
               </div>
             )}
 
             {needsPrescription && (
-              <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50/80 dark:bg-amber-950/30 p-3">
+              <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50/80 p-3 dark:bg-amber-950/30">
                 <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
-                  This bill contains Schedule H/X or prescription-only items. A verified prescription is required.
+                  This bill contains Schedule H/X or prescription-only items. A verified
+                  prescription is required.
                 </p>
                 {approvedPrescriptions.length > 0 && (
                   <div className="space-y-1">
-                    <span className="text-[11px] text-amber-800 dark:text-amber-300 font-medium">
+                    <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300">
                       Select Verified Prescription:
                     </span>
                     <select
-                      className="w-full h-8 rounded border border-amber-300 bg-background px-2 text-xs text-foreground"
+                      className="h-8 w-full rounded border border-amber-300 bg-background px-2 text-xs text-foreground"
                       value={prescriptionId}
                       onChange={(e) => setPrescriptionId(e.target.value)}
                     >
@@ -1552,7 +1701,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                   value={prescriptionId}
                   onChange={(e) => setPrescriptionId(e.target.value)}
                   placeholder="Prescription ID / Reference"
-                  className="h-8 text-xs bg-background"
+                  className="h-8 bg-background text-xs"
                 />
               </div>
             )}
@@ -1614,7 +1763,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               size="sm"
               onClick={saveHeldBill}
               disabled={cart.length === 0}
-              className="text-xs shrink-0"
+              className="shrink-0 text-xs"
             >
               Hold Current
             </Button>
@@ -1627,7 +1776,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
             {heldBills.map((b) => (
               <div
                 key={b.id}
-                className="flex items-center gap-2 rounded-lg border p-2.5 hover:bg-muted/40 transition-colors"
+                className="flex items-center gap-2 rounded-lg border p-2.5 transition-colors hover:bg-muted/40"
               >
                 <button
                   type="button"
@@ -1669,8 +1818,8 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           </DialogHeader>
 
           {completedSale && (
-            <div className="rounded-lg border p-4 bg-muted/5 font-sans">
-              <div className="mb-3 text-center border-b pb-2">
+            <div className="rounded-lg border bg-muted/5 p-4 font-sans">
+              <div className="mb-3 border-b pb-2 text-center">
                 <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   PharmaCare
                 </div>
@@ -1689,7 +1838,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                     <span className="truncate">
                       {it.productName} × {it.quantity}
                     </span>
-                    <span className="tabular-nums font-medium">
+                    <span className="font-medium tabular-nums">
                       {formatCurrency(it.totalAmount)}
                     </span>
                   </div>
@@ -1699,12 +1848,12 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               <div className="mt-3 space-y-1 border-t border-dashed pt-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span className="tabular-nums font-medium">
+                  <span className="font-medium tabular-nums">
                     {formatCurrency(completedSale.subtotal)}
                   </span>
                 </div>
                 {Number(completedSale.discountAmount) > 0 && (
-                  <div className="flex justify-between text-emerald-600 font-medium">
+                  <div className="flex justify-between font-medium text-emerald-600">
                     <span>Discount</span>
                     <span className="tabular-nums">
                       −{formatCurrency(completedSale.discountAmount)}
@@ -1713,11 +1862,11 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">GST</span>
-                  <span className="tabular-nums font-medium">
+                  <span className="font-medium tabular-nums">
                     {formatCurrency(completedSale.taxAmount)}
                   </span>
                 </div>
-                <div className="flex justify-between text-sm font-bold border-t pt-1">
+                <div className="flex justify-between border-t pt-1 text-sm font-bold">
                   <span>Total Paid</span>
                   <span className="tabular-nums text-primary">
                     {formatCurrency(completedSale.totalAmount)}
@@ -1726,9 +1875,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                 {Number(completedSale.balanceDue) > 0 && (
                   <div className="flex justify-between font-semibold text-destructive">
                     <span>Balance Due</span>
-                    <span className="tabular-nums">
-                      {formatCurrency(completedSale.balanceDue)}
-                    </span>
+                    <span className="tabular-nums">{formatCurrency(completedSale.balanceDue)}</span>
                   </div>
                 )}
               </div>
@@ -1743,6 +1890,92 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               <Printer className="h-4 w-4" /> Print Receipt
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* ─── Schedule H1 Capture Dialog ─────────────────────────────────── */}
+      <Dialog open={h1ModalOpen} onOpenChange={setH1ModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schedule H1 / Narcotic Details</DialogTitle>
+            <DialogDescription>
+              Patient and Prescribing Doctor information is strictly required for Schedule H1 and
+              Narcotic dispensing.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!h1PatientName || !h1DoctorName || !h1DoctorRegNo) {
+                toast.error('Please fill required H1 fields')
+                return
+              }
+              setH1ModalOpen(false)
+              setPayments([{ method: 'CASH', amount: pricing.totals.totalAmount, reference: '' }])
+              setPayOpen(true)
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold">
+                  Patient Name <span className="text-destructive">*</span>
+                </label>
+                <Input
+                  required
+                  value={h1PatientName}
+                  onChange={(e) => setH1PatientName(e.target.value)}
+                  placeholder="Patient full name"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold">Patient Address</label>
+                <Input
+                  value={h1PatientAddress}
+                  onChange={(e) => setH1PatientAddress(e.target.value)}
+                  placeholder="Patient address"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold">Patient Phone</label>
+                <Input
+                  value={h1PatientPhone}
+                  onChange={(e) => setH1PatientPhone(e.target.value)}
+                  placeholder="Patient phone number"
+                />
+              </div>
+              <Separator />
+              <div>
+                <label className="text-xs font-semibold">
+                  Doctor Name <span className="text-destructive">*</span>
+                </label>
+                <Input
+                  required
+                  value={h1DoctorName}
+                  onChange={(e) => setH1DoctorName(e.target.value)}
+                  placeholder="Dr. Name"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold">
+                  Doctor Registration No <span className="text-destructive">*</span>
+                </label>
+                <Input
+                  required
+                  value={h1DoctorRegNo}
+                  onChange={(e) => setH1DoctorRegNo(e.target.value)}
+                  placeholder="Medical Council Registration Number"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setH1ModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Continue to Payment</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

@@ -6,10 +6,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions'
 import { recordSupplierPayment } from '@/lib/finance/finance-service'
 import { recordPartyPaymentSchema } from '@/lib/validations/finance'
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await requirePermission(PERMISSIONS.SUPPLIERS_PAYMENTS)
     const body: unknown = await req.json()

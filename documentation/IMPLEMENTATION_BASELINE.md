@@ -111,7 +111,7 @@ Browser ──> Next.js 14 App Router (SSR + Route Handlers /api/**)
 | FEFO selection (domain/service, reusable allocation)                         | ✅ COMPLETE          | `src/lib/batches/fefo.ts` (pure), `src/lib/batches/fefo-service.ts` (DB)                                                            |
 | Expiry Detection (expiring/expired views, hub, severity classification)      | ✅ COMPLETE          | `src/lib/batches/expiry-service.ts`, `src/app/api/expiry/**`, `/expiry` pages                                                       |
 | POS / Sales / Billing (serve, payments, discount/credit/Rx gates, stock CAS) | ✅ COMPLETE          | `src/lib/sales/{sales-service,pricing}.ts`, `/api/pos/*`, `/api/sales/*`, `/pos`, `/sales` pages                                    |
-| Testing + CI                                                                 | ✅ FOUNDATION        | 37 suites / 449 tests (unit runs parallel; integration project runs `--runInBand`); `.github/workflows/ci.yml`; Husky + lint-staged |
+| Testing + CI                                                                 | ✅ FOUNDATION        | 57 suites / 591 tests (unit runs parallel; integration project runs `--runInBand`); `.github/workflows/ci.yml`; Husky + lint-staged |
 
 ## 6. Future / Not Implemented Features (documented, consistent with `PROGRESS.md`)
 

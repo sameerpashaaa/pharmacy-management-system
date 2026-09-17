@@ -14,20 +14,17 @@ interface NewSalesReturnPageProps {
   }
 }
 
-export default async function NewSalesReturnPage({
-  searchParams,
-}: NewSalesReturnPageProps) {
-  const [canCreate, session] = await Promise.all([
-    can(PERMISSIONS.RETURNS_CREATE),
-    getSession(),
-  ])
+export default async function NewSalesReturnPage({ searchParams }: NewSalesReturnPageProps) {
+  const [canCreate, session] = await Promise.all([can(PERMISSIONS.RETURNS_CREATE), getSession()])
 
   if (!canCreate || !session?.user) {
     return (
       <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Process Sales Return</h1>
-          <p className="text-muted-foreground">You do not have permission to process sales returns.</p>
+          <p className="text-muted-foreground">
+            You do not have permission to process sales returns.
+          </p>
         </div>
       </div>
     )

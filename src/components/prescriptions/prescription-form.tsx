@@ -32,24 +32,17 @@ interface PrescriptionFormProps {
   defaultBranchId?: string
 }
 
-export function PrescriptionForm({
-  branches,
-  defaultBranchId,
-}: PrescriptionFormProps) {
+export function PrescriptionForm({ branches, defaultBranchId }: PrescriptionFormProps) {
   const router = useRouter()
   const toast = useToast()
 
-  const [branchId, setBranchId] = useState(
-    defaultBranchId ?? branches[0]?.id ?? ''
-  )
+  const [branchId, setBranchId] = useState(defaultBranchId ?? branches[0]?.id ?? '')
   const [patientName, setPatientName] = useState('')
   const [patientAge, setPatientAge] = useState('')
   const [patientPhone, setPatientPhone] = useState('')
   const [doctorName, setDoctorName] = useState('')
   const [doctorRegNumber, setDoctorRegNumber] = useState('')
-  const [prescriptionDate, setPrescriptionDate] = useState(
-    new Date().toISOString().split('T')[0]
-  )
+  const [prescriptionDate, setPrescriptionDate] = useState(new Date().toISOString().split('T')[0])
   const [notes, setNotes] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [loading, setLoading] = useState(false)
@@ -121,7 +114,7 @@ export function PrescriptionForm({
 
   return (
     <form onSubmit={handleSubmit}>
-      <Card className="max-w-2xl mx-auto">
+      <Card className="mx-auto max-w-2xl">
         <CardHeader>
           <CardTitle>New Prescription</CardTitle>
           <CardDescription>
@@ -129,12 +122,12 @@ export function PrescriptionForm({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1 sm:col-span-2">
               <Label htmlFor="branch">Branch *</Label>
               <select
                 id="branch"
-                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
                 value={branchId}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setBranchId(e.target.value)}
                 required
@@ -152,7 +145,9 @@ export function PrescriptionForm({
               <Input
                 id="patientName"
                 value={patientName}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientName(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setPatientName(e.target.value)
+                }
                 placeholder="e.g. Rahul Sharma"
                 required
               />
@@ -176,7 +171,9 @@ export function PrescriptionForm({
               <Input
                 id="patientPhone"
                 value={patientPhone}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientPhone(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setPatientPhone(e.target.value)
+                }
                 placeholder="e.g. +919876543210"
               />
             </div>
@@ -187,7 +184,9 @@ export function PrescriptionForm({
                 id="prescriptionDate"
                 type="date"
                 value={prescriptionDate}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrescriptionDate(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setPrescriptionDate(e.target.value)
+                }
               />
             </div>
 
@@ -206,7 +205,9 @@ export function PrescriptionForm({
               <Input
                 id="doctorRegNumber"
                 value={doctorRegNumber}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDoctorRegNumber(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setDoctorRegNumber(e.target.value)
+                }
                 placeholder="e.g. MCI-54321"
               />
             </div>
@@ -237,12 +238,7 @@ export function PrescriptionForm({
           </div>
         </CardContent>
         <CardFooter className="flex justify-between">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.back()}
-            disabled={loading}
-          >
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={loading}>
             Cancel
           </Button>
           <Button type="submit" disabled={loading}>

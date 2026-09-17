@@ -39,10 +39,7 @@ export default async function NewPrescriptionPage() {
         </p>
       </div>
 
-      <PrescriptionForm
-        branches={branches}
-        defaultBranchId={session.user.branchId ?? undefined}
-      />
+      <PrescriptionForm branches={branches} defaultBranchId={session.user.branchId ?? undefined} />
     </div>
   )
 }

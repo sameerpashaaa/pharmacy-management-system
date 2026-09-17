@@ -25,9 +25,7 @@ export default async function SalesReturnsPage() {
           <p className="text-muted-foreground">Manage customer product returns and store credits</p>
         </div>
         <div className="flex h-64 items-center justify-center rounded-lg border-2 border-dashed border-muted">
-          <p className="text-muted-foreground">
-            You do not have permission to view sales returns.
-          </p>
+          <p className="text-muted-foreground">You do not have permission to view sales returns.</p>
         </div>
       </div>
     )
@@ -86,10 +84,7 @@ export default async function SalesReturnsPage() {
     (cn) => cn.status === 'ACTIVE' || cn.status === 'PARTIALLY_USED'
   )
   const activeCreditNotesCount = activeCreditNotes.length
-  const activeCreditBalance = activeCreditNotes.reduce(
-    (sum, cn) => sum + cn.availableBalance,
-    0
-  )
+  const activeCreditBalance = activeCreditNotes.reduce((sum, cn) => sum + cn.availableBalance, 0)
 
   return (
     <SaleReturnsView

@@ -16,6 +16,7 @@ export interface GstReportQuery {
   type?: GstTxType
   returnPeriod?: string
   filed?: boolean
+  limit?: number
 }
 
 export interface FileGstPeriodInput {
@@ -234,6 +235,7 @@ export async function getGstr1Report(
   const query = params
   if (query.branchId) await assertBranchAccess(actor, query.branchId)
   const branchId = query.branchId ?? actor.branchId ?? undefined
+  const limit = query.limit ?? 1000
 
   const where: Prisma.GstTransactionWhereInput = {
     referenceType: 'SALE',
@@ -255,12 +257,12 @@ export async function getGstr1Report(
     prisma.gstTransaction.findMany({
       where: { ...where, type: GstTxType.B2B },
       orderBy: { invoiceDate: 'desc' },
-      take: 100,
+      take: limit,
     }),
     prisma.gstTransaction.findMany({
       where: { ...where, type: GstTxType.B2C },
       orderBy: { invoiceDate: 'desc' },
-      take: 100,
+      take: limit,
     }),
     prisma.gstTransaction.groupBy({
       by: ['hsnCode'],

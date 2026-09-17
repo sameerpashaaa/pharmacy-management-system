@@ -43,10 +43,7 @@ const prescriptionInclude = {
   },
 } satisfies Prisma.PrescriptionInclude
 
-export async function createPrescription(
-  input: CreatePrescriptionInput,
-  actor: PrescriptionActor
-) {
+export async function createPrescription(input: CreatePrescriptionInput, actor: PrescriptionActor) {
   await assertBranchAccess(actor, input.branchId)
 
   const prescriptionNumber = generatePrescriptionNumber()
@@ -60,9 +57,7 @@ export async function createPrescription(
         patientPhone: input.patientPhone ?? null,
         doctorName: input.doctorName ?? null,
         doctorRegNumber: input.doctorRegNumber ?? null,
-        prescriptionDate: input.prescriptionDate
-          ? new Date(input.prescriptionDate)
-          : new Date(),
+        prescriptionDate: input.prescriptionDate ? new Date(input.prescriptionDate) : new Date(),
         notes: input.notes ?? null,
         status: 'PENDING',
         customerId: input.customerId ?? null,
@@ -103,10 +98,7 @@ export async function createPrescription(
   return prescription
 }
 
-export async function getPrescriptionById(
-  id: string,
-  actor: PrescriptionActor
-) {
+export async function getPrescriptionById(id: string, actor: PrescriptionActor) {
   const rx = await prisma.prescription.findUnique({
     where: { id },
     include: prescriptionInclude,
@@ -120,10 +112,7 @@ export async function getPrescriptionById(
   return rx
 }
 
-export async function listPrescriptions(
-  params: PrescriptionQueryParams,
-  actor: PrescriptionActor
-) {
+export async function listPrescriptions(params: PrescriptionQueryParams, actor: PrescriptionActor) {
   const {
     page = 1,
     limit = 20,
@@ -228,9 +217,7 @@ export async function updatePrescription(
         patientPhone: input.patientPhone,
         doctorName: input.doctorName,
         doctorRegNumber: input.doctorRegNumber,
-        prescriptionDate: input.prescriptionDate
-          ? new Date(input.prescriptionDate)
-          : undefined,
+        prescriptionDate: input.prescriptionDate ? new Date(input.prescriptionDate) : undefined,
         notes: input.notes,
         customerId: input.customerId,
       },
@@ -384,18 +371,13 @@ export async function addPrescriptionImage(
   })
 }
 
-export async function getPrescriptionStats(
-  branchId?: string,
-  actor?: PrescriptionActor
-) {
+export async function getPrescriptionStats(branchId?: string, actor?: PrescriptionActor) {
   const targetBranch = actor?.branchId ?? branchId
   if (targetBranch && actor) {
     await assertBranchAccess(actor, targetBranch)
   }
 
-  const where: Prisma.PrescriptionWhereInput = targetBranch
-    ? { branchId: targetBranch }
-    : {}
+  const where: Prisma.PrescriptionWhereInput = targetBranch ? { branchId: targetBranch } : {}
 
   const [total, pending, approved, dispensed, rejected] = await Promise.all([
     prisma.prescription.count({ where }),

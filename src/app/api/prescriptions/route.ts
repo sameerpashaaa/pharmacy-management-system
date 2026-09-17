@@ -4,14 +4,8 @@ import { ZodError } from 'zod'
 
 import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
-import {
-  createPrescription,
-  listPrescriptions,
-} from '@/lib/prescriptions/prescription-service'
-import {
-  createPrescriptionSchema,
-  prescriptionQuerySchema,
-} from '@/lib/validations/prescription'
+import { createPrescription, listPrescriptions } from '@/lib/prescriptions/prescription-service'
+import { createPrescriptionSchema, prescriptionQuerySchema } from '@/lib/validations/prescription'
 
 function errStatus(msg: string) {
   if (msg === 'Unauthorized') return 401
@@ -24,9 +18,7 @@ function errStatus(msg: string) {
 export async function GET(req: NextRequest) {
   try {
     const user = await requirePermission(PERMISSIONS.PRESCRIPTIONS_READ)
-    const query = prescriptionQuerySchema.parse(
-      Object.fromEntries(req.nextUrl.searchParams)
-    )
+    const query = prescriptionQuerySchema.parse(Object.fromEntries(req.nextUrl.searchParams))
     const result = await listPrescriptions(query, user)
     return NextResponse.json({
       success: true,

@@ -168,11 +168,7 @@ describe('Prescription Service', () => {
       prismaMock.prescription.findUnique.mockResolvedValue(existing)
       prismaMock.prescription.update.mockResolvedValue(updated)
 
-      const res = await updatePrescription(
-        'rx-1',
-        { patientName: 'New Name' },
-        mockActor
-      )
+      const res = await updatePrescription('rx-1', { patientName: 'New Name' }, mockActor)
 
       expect(res.patientName).toBe('New Name')
       expect(prismaMock.auditLog.create).toHaveBeenCalledWith(
@@ -239,11 +235,7 @@ describe('Prescription Service', () => {
       prismaMock.prescription.findUnique.mockResolvedValue(existing)
       prismaMock.prescription.update.mockResolvedValue(rejected)
 
-      const res = await rejectPrescription(
-        'rx-1',
-        { rejectionReason: 'Invalid dosage' },
-        mockActor
-      )
+      const res = await rejectPrescription('rx-1', { rejectionReason: 'Invalid dosage' }, mockActor)
       expect(res.status).toBe('REJECTED')
       expect(prismaMock.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({

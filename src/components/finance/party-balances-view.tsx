@@ -295,12 +295,14 @@ export function PartyBalancesView({
                         {row.isActive ? 'Active' : 'Inactive'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-xs">
+                    <TableCell className="text-right text-xs tabular-nums">
                       {row.creditDays} d
                     </TableCell>
                     <TableCell
                       className={`text-right font-medium tabular-nums ${
-                        row.outstandingBalance > 0 ? 'text-destructive font-semibold' : 'text-muted-foreground'
+                        row.outstandingBalance > 0
+                          ? 'font-semibold text-destructive'
+                          : 'text-muted-foreground'
                       }`}
                     >
                       {formatCurrency(row.outstandingBalance)}
@@ -315,11 +317,7 @@ export function PartyBalancesView({
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openPaymentModal(row)}
-                        >
+                        <Button variant="outline" size="sm" onClick={() => openPaymentModal(row)}>
                           <ReceiptIndianRupee className="mr-1 h-3.5 w-3.5" />
                           Settle
                         </Button>
@@ -362,9 +360,7 @@ export function PartyBalancesView({
                 min="0.01"
                 step="0.01"
                 value={paymentForm.amount || ''}
-                onChange={(e) =>
-                  setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })
-                }
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })}
               />
             </div>
 
@@ -393,9 +389,7 @@ export function PartyBalancesView({
                 id="payRef"
                 placeholder="e.g. UPI Ref / Cheque No."
                 value={paymentForm.reference}
-                onChange={(e) =>
-                  setPaymentForm({ ...paymentForm, reference: e.target.value })
-                }
+                onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
               />
             </div>
 
@@ -426,9 +420,7 @@ export function PartyBalancesView({
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Ledger Statement — {statementParty?.name}</DialogTitle>
-            <DialogDescription>
-              Recent transaction history and running balance.
-            </DialogDescription>
+            <DialogDescription>Recent transaction history and running balance.</DialogDescription>
           </DialogHeader>
           <div className="max-h-[400px] overflow-y-auto">
             {statementLoading ? (
@@ -463,10 +455,10 @@ export function PartyBalancesView({
                           {entry.type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums font-medium">
+                      <TableCell className="text-right text-xs font-medium tabular-nums">
                         {formatCurrency(entry.amount)}
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums font-semibold">
+                      <TableCell className="text-right text-xs font-semibold tabular-nums">
                         {formatCurrency(entry.balance)}
                       </TableCell>
                     </TableRow>

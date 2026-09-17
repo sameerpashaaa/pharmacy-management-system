@@ -18,7 +18,9 @@ const mockedRequirePermission = requirePermission as jest.Mock
 const mockedGetLedgerById = getLedgerById as jest.Mock
 
 function makeReq(): NextRequest {
-  return { nextUrl: new URL('http://localhost/api/finance/ledgers/led-1') } as unknown as NextRequest
+  return {
+    nextUrl: new URL('http://localhost/api/finance/ledgers/led-1'),
+  } as unknown as NextRequest
 }
 
 describe('GET /api/finance/ledgers/[id]', () => {

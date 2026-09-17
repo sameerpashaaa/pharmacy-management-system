@@ -75,9 +75,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
   const router = useRouter()
   const toast = useToast()
 
-  const [selectedSale, setSelectedSale] = useState<SaleFormData | null>(
-    initialSale ?? null
-  )
+  const [selectedSale, setSelectedSale] = useState<SaleFormData | null>(initialSale ?? null)
   const [searchInvoice, setSearchInvoice] = useState('')
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
@@ -134,11 +132,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
     }
   }
 
-  const handleLineQtyChange = (
-    saleItemId: string,
-    rawQty: number,
-    maxAllowed: number
-  ) => {
+  const handleLineQtyChange = (saleItemId: string, rawQty: number, maxAllowed: number) => {
     const qty = Math.max(0, Math.min(rawQty, maxAllowed))
     setLines((prev) => ({
       ...prev,
@@ -149,10 +143,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
     }))
   }
 
-  const handleRestockDecisionChange = (
-    saleItemId: string,
-    decision: RestockOption
-  ) => {
+  const handleRestockDecisionChange = (saleItemId: string, decision: RestockOption) => {
     setLines((prev) => ({
       ...prev,
       [saleItemId]: {
@@ -163,34 +154,29 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
   }
 
   // Calculate totals
-  const activeItems = selectedSale?.items
-    .map((item) => {
-      const lineState = lines[item.id]
-      const returnQty = lineState?.quantity ?? 0
-      const unitPrice = Number(item.unitPrice)
-      const lineTotal = returnQty * unitPrice
-      const batchId = item.itemBatches?.[0]?.batchId ?? null
-      return {
-        saleItemId: item.id,
-        productName: item.productName,
-        productSku: item.productSku,
-        quantity: returnQty,
-        unitPrice,
-        lineTotal,
-        restockDecision: lineState?.restockDecision ?? 'RESTOCK',
-        batchId,
-      }
-    })
-    .filter((item) => item.quantity > 0) ?? []
+  const activeItems =
+    selectedSale?.items
+      .map((item) => {
+        const lineState = lines[item.id]
+        const returnQty = lineState?.quantity ?? 0
+        const unitPrice = Number(item.unitPrice)
+        const lineTotal = returnQty * unitPrice
+        const batchId = item.itemBatches?.[0]?.batchId ?? null
+        return {
+          saleItemId: item.id,
+          productName: item.productName,
+          productSku: item.productSku,
+          quantity: returnQty,
+          unitPrice,
+          lineTotal,
+          restockDecision: lineState?.restockDecision ?? 'RESTOCK',
+          batchId,
+        }
+      })
+      .filter((item) => item.quantity > 0) ?? []
 
-  const totalReturnAmount = activeItems.reduce(
-    (sum, item) => sum + item.lineTotal,
-    0
-  )
-  const totalReturnUnits = activeItems.reduce(
-    (sum, item) => sum + item.quantity,
-    0
-  )
+  const totalReturnAmount = activeItems.reduce((sum, item) => sum + item.lineTotal, 0)
+  const totalReturnUnits = activeItems.reduce((sum, item) => sum + item.quantity, 0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -245,9 +231,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
         return
       }
 
-      toast.success(
-        `Sales Return ${json.data?.returnNumber ?? ''} processed successfully!`
-      )
+      toast.success(`Sales Return ${json.data?.returnNumber ?? ''} processed successfully!`)
       if (json.data?.id) {
         router.push(ROUTES.SALE_RETURN(json.data.id))
       } else {
@@ -266,7 +250,8 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Process Sales Return</h1>
           <p className="text-muted-foreground">
-            Return sold items to inventory, log write-offs, and generate customer refunds or credit notes.
+            Return sold items to inventory, log write-offs, and generate customer refunds or credit
+            notes.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -317,9 +302,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
               <div>
-                <CardTitle className="text-lg">
-                  Invoice {selectedSale.invoiceNumber}
-                </CardTitle>
+                <CardTitle className="text-lg">Invoice {selectedSale.invoiceNumber}</CardTitle>
                 <CardDescription>
                   Date: {formatDateTime(selectedSale.saleDate)} · Customer:{' '}
                   {selectedSale.customer ? selectedSale.customer.name : 'Walk-in'}{' '}
@@ -386,13 +369,10 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
                         <td className="py-3 pr-4">
                           <p className="font-medium">{item.productName}</p>
                           <p className="text-xs text-muted-foreground">
-                            {item.productSku} · Unit Price:{' '}
-                            {formatCurrency(unitPrice)}
+                            {item.productSku} · Unit Price: {formatCurrency(unitPrice)}
                           </p>
                         </td>
-                        <td className="py-3 pr-4 text-center tabular-nums">
-                          {item.quantity}
-                        </td>
+                        <td className="py-3 pr-4 text-center tabular-nums">{item.quantity}</td>
                         <td className="py-3 pr-4 text-center tabular-nums">
                           {item.returnedQuantity || 0}
                         </td>
@@ -414,7 +394,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
                               )
                             }
                             placeholder="0"
-                            className="w-20 text-center mx-auto"
+                            className="mx-auto w-20 text-center"
                           />
                         </td>
                         <td className="py-3 pr-4">
@@ -422,10 +402,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
                             value={decision}
                             disabled={isFullyReturned || returnQty === 0 || submitting}
                             onChange={(e) =>
-                              handleRestockDecisionChange(
-                                item.id,
-                                e.target.value as RestockOption
-                              )
+                              handleRestockDecisionChange(item.id, e.target.value as RestockOption)
                             }
                             aria-label={`Restock decision for ${item.productName}`}
                             className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
@@ -477,7 +454,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
                         type="button"
                         variant="secondary"
                         size="sm"
-                        className="text-xs h-7"
+                        className="h-7 text-xs"
                         onClick={() => setReason(preset)}
                       >
                         {preset}
@@ -503,9 +480,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
             <Card>
               <CardHeader>
                 <CardTitle>Refund & Settlement</CardTitle>
-                <CardDescription>
-                  Select how refund is disbursed to the customer.
-                </CardDescription>
+                <CardDescription>Select how refund is disbursed to the customer.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -513,9 +488,7 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
                   <select
                     id="refundMethod"
                     value={refundMethod}
-                    onChange={(e) =>
-                      setRefundMethod(e.target.value as RefundMethodOption)
-                    }
+                    onChange={(e) => setRefundMethod(e.target.value as RefundMethodOption)}
                     disabled={submitting}
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -527,21 +500,19 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
                 </div>
 
                 {refundMethod === 'CREDIT' ? (
-                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm space-y-1">
+                  <div className="space-y-1 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm">
                     <div className="flex items-center gap-2 font-medium text-primary">
                       <CheckCircle2 className="h-4 w-4" />
                       <span>Credit Note will be issued</span>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      An active Credit Note for {formatCurrency(totalReturnAmount)} valid for
-                      365 days will be generated and credited to the customer balance.
+                      An active Credit Note for {formatCurrency(totalReturnAmount)} valid for 365
+                      days will be generated and credited to the customer balance.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <Label htmlFor="refundRef">
-                      Refund Reference / Tx ID (Optional)
-                    </Label>
+                    <Label htmlFor="refundRef">Refund Reference / Tx ID (Optional)</Label>
                     <Input
                       id="refundRef"
                       placeholder="e.g. UPI Ref / Cash voucher number"
@@ -552,14 +523,14 @@ export function SaleReturnForm({ initialSale }: SaleReturnFormProps) {
                   </div>
                 )}
 
-                <div className="rounded-lg bg-muted p-4 space-y-2 text-sm">
+                <div className="space-y-2 rounded-lg bg-muted p-4 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Items to Return:</span>
                     <span className="font-medium">{totalReturnUnits} units</span>
                   </div>
                   <div className="flex justify-between text-base font-bold">
                     <span>Total Refund:</span>
-                    <span className="text-primary tabular-nums">
+                    <span className="tabular-nums text-primary">
                       {formatCurrency(totalReturnAmount)}
                     </span>
                   </div>

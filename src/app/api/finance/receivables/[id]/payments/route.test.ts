@@ -39,10 +39,9 @@ describe('POST /api/finance/receivables/[id]/payments', () => {
       newBalance: 200,
     })
 
-    const res = await POST(
-      makeReq({ amount: 500, paymentMethod: 'UPI', reference: 'REF-1' }),
-      { params: { id: 'cust-1' } }
-    )
+    const res = await POST(makeReq({ amount: 500, paymentMethod: 'UPI', reference: 'REF-1' }), {
+      params: { id: 'cust-1' },
+    })
     const body = await res.json()
 
     expect(res.status).toBe(201)

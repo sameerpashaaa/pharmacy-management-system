@@ -84,7 +84,6 @@ export const ROUTES = {
   // Reports
   REPORTS: '/reports',
   REPORTS_SALES: '/reports/sales',
-  REPORTS_PURCHASES: '/reports/purchases',
   REPORTS_INVENTORY: '/reports/inventory',
 
   // Users & Roles

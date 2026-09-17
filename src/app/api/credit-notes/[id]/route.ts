@@ -17,10 +17,7 @@ interface RouteParams {
   params: { id: string }
 }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: RouteParams
-) {
+export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const user = await requirePermission(PERMISSIONS.RETURNS_READ)
     const note = await getCreditNoteById(params.id, user)

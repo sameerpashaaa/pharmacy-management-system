@@ -101,7 +101,7 @@ export function PrescriptionDetailActions({
       {/* Approve Dialog */}
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
         <DialogTrigger asChild>
-          <Button variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+          <Button variant="default" className="bg-emerald-600 text-white hover:bg-emerald-700">
             Approve Prescription
           </Button>
         </DialogTrigger>
@@ -109,7 +109,8 @@ export function PrescriptionDetailActions({
           <DialogHeader>
             <DialogTitle>Approve Prescription</DialogTitle>
             <DialogDescription>
-              Verify that the prescription is authentic, legible, and meets regulatory standards before approving.
+              Verify that the prescription is authentic, legible, and meets regulatory standards
+              before approving.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
@@ -118,7 +119,9 @@ export function PrescriptionDetailActions({
               id="approveNotes"
               placeholder="e.g. Dosage verified with prescribing physician, valid for 30 days."
               value={approveNotes}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setApproveNotes(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                setApproveNotes(e.target.value)
+              }
               rows={3}
             />
           </div>
@@ -126,7 +129,11 @@ export function PrescriptionDetailActions({
             <Button variant="outline" onClick={() => setApproveOpen(false)} disabled={loading}>
               Cancel
             </Button>
-            <Button onClick={handleApprove} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button
+              onClick={handleApprove}
+              disabled={loading}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
               {loading ? 'Approving...' : 'Confirm Approval'}
             </Button>
           </DialogFooter>
@@ -151,7 +158,9 @@ export function PrescriptionDetailActions({
               id="rejectionReason"
               placeholder="e.g. Expired prescription date, illegible doctor stamp, contra-indicated medication..."
               value={rejectionReason}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRejectionReason(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                setRejectionReason(e.target.value)
+              }
               rows={3}
               required
             />

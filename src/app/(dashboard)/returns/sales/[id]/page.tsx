@@ -6,13 +6,7 @@ import { CREDIT_NOTE_STATUS_META } from '@/components/returns/credit-notes-table
 import { SALE_RETURN_STATUS_META } from '@/components/returns/sale-returns-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { can, getSession } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { ROUTES } from '@/lib/constants/routes'
@@ -33,22 +27,15 @@ const RESTOCK_DECISION_META = {
   DAMAGE_WRITE_OFF: { label: 'Damage Write-Off', variant: 'destructive' as const },
 }
 
-export default async function SaleReturnDetailPage({
-  params,
-}: SaleReturnDetailPageProps) {
-  const [canRead, session] = await Promise.all([
-    can(PERMISSIONS.RETURNS_READ),
-    getSession(),
-  ])
+export default async function SaleReturnDetailPage({ params }: SaleReturnDetailPageProps) {
+  const [canRead, session] = await Promise.all([can(PERMISSIONS.RETURNS_READ), getSession()])
 
   if (!canRead || !session?.user) {
     return (
       <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Return Details</h1>
-          <p className="text-muted-foreground">
-            You do not have permission to view sales returns.
-          </p>
+          <p className="text-muted-foreground">You do not have permission to view sales returns.</p>
         </div>
       </div>
     )
@@ -62,7 +49,10 @@ export default async function SaleReturnDetailPage({
   }
 
   const saleReturn = await getSaleReturnById(params.id, actor).catch((err) => {
-    if (err instanceof Error && (err.message.includes('Not Found') || err.message.includes('Forbidden'))) {
+    if (
+      err instanceof Error &&
+      (err.message.includes('Not Found') || err.message.includes('Forbidden'))
+    ) {
       return null
     }
     throw err
@@ -79,9 +69,7 @@ export default async function SaleReturnDetailPage({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">
-              Return {saleReturn.returnNumber}
-            </h1>
+            <h1 className="text-2xl font-bold tracking-tight">Return {saleReturn.returnNumber}</h1>
             <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
             {saleReturn.refundMethod && (
               <Badge variant="outline" className="capitalize">
@@ -93,7 +81,7 @@ export default async function SaleReturnDetailPage({
             Processed on {formatDateTime(saleReturn.returnDate)} · Original Invoice:{' '}
             <Link
               href={ROUTES.SALE(saleReturn.sale.id)}
-              className="text-primary hover:underline font-mono"
+              className="font-mono text-primary hover:underline"
             >
               {saleReturn.sale.invoiceNumber}
             </Link>
@@ -133,8 +121,7 @@ export default async function SaleReturnDetailPage({
                 <tbody>
                   {saleReturn.items.map((line) => {
                     const decisionMeta =
-                      RESTOCK_DECISION_META[line.restockDecision] ??
-                      RESTOCK_DECISION_META.RESTOCK
+                      RESTOCK_DECISION_META[line.restockDecision] ?? RESTOCK_DECISION_META.RESTOCK
 
                     return (
                       <tr key={line.id} className="border-b">
@@ -171,43 +158,27 @@ export default async function SaleReturnDetailPage({
             <Card className="border-primary/30 bg-primary/5">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base text-primary">
-                    Associated Credit Note
-                  </CardTitle>
-                  <Badge
-                    variant={
-                      CREDIT_NOTE_STATUS_META[saleReturn.creditNote.status].variant
-                    }
-                  >
+                  <CardTitle className="text-base text-primary">Associated Credit Note</CardTitle>
+                  <Badge variant={CREDIT_NOTE_STATUS_META[saleReturn.creditNote.status].variant}>
                     {CREDIT_NOTE_STATUS_META[saleReturn.creditNote.status].label}
                   </Badge>
                 </div>
-                <CardDescription>
-                  Store credit issued to customer for this return
-                </CardDescription>
+                <CardDescription>Store credit issued to customer for this return</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 text-sm sm:grid-cols-3">
                 <div>
-                  <span className="text-xs text-muted-foreground block">
-                    Credit Note #
-                  </span>
-                  <span className="font-mono font-bold">
-                    {saleReturn.creditNote.noteNumber}
-                  </span>
+                  <span className="block text-xs text-muted-foreground">Credit Note #</span>
+                  <span className="font-mono font-bold">{saleReturn.creditNote.noteNumber}</span>
                 </div>
                 <div>
-                  <span className="text-xs text-muted-foreground block">
-                    Issued Amount
-                  </span>
+                  <span className="block text-xs text-muted-foreground">Issued Amount</span>
                   <span className="font-semibold tabular-nums">
                     {formatCurrency(Number(saleReturn.creditNote.amount))}
                   </span>
                 </div>
                 <div>
-                  <span className="text-xs text-muted-foreground block">
-                    Available Balance
-                  </span>
-                  <span className="font-semibold text-green-600 dark:text-green-400 tabular-nums">
+                  <span className="block text-xs text-muted-foreground">Available Balance</span>
+                  <span className="font-semibold tabular-nums text-green-600 dark:text-green-400">
                     {formatCurrency(
                       Math.max(
                         0,
@@ -253,16 +224,14 @@ export default async function SaleReturnDetailPage({
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">Total Refund</span>
-                <span className="text-lg font-bold text-primary tabular-nums">
+                <span className="text-lg font-bold tabular-nums text-primary">
                   {formatCurrency(Number(saleReturn.totalAmount))}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">Refund Method</span>
                 <span className="font-medium capitalize">
-                  {saleReturn.refundMethod
-                    ? saleReturn.refundMethod.toLowerCase()
-                    : 'N/A'}
+                  {saleReturn.refundMethod ? saleReturn.refundMethod.toLowerCase() : 'N/A'}
                 </span>
               </div>
               {saleReturn.refundRef && (
@@ -274,22 +243,16 @@ export default async function SaleReturnDetailPage({
               {saleReturn.creditNote?.expiresAt && (
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Credit Expires</span>
-                  <span className="font-medium">
-                    {formatDate(saleReturn.creditNote.expiresAt)}
-                  </span>
+                  <span className="font-medium">{formatDate(saleReturn.creditNote.expiresAt)}</span>
                 </div>
               )}
-              <div className="pt-2 border-t">
-                <span className="text-xs text-muted-foreground block mb-1">
-                  Reason for Return
-                </span>
+              <div className="border-t pt-2">
+                <span className="mb-1 block text-xs text-muted-foreground">Reason for Return</span>
                 <p className="text-sm font-medium">{saleReturn.reason}</p>
               </div>
               {saleReturn.notes && (
-                <div className="pt-2 border-t">
-                  <span className="text-xs text-muted-foreground block mb-1">
-                    Notes
-                  </span>
+                <div className="border-t pt-2">
+                  <span className="mb-1 block text-xs text-muted-foreground">Notes</span>
                   <p className="text-xs text-muted-foreground">{saleReturn.notes}</p>
                 </div>
               )}

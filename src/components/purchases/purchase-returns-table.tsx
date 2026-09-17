@@ -32,14 +32,7 @@ export const PURCHASE_RETURN_STATUS_META: Record<
   PurchaseReturnStatus,
   {
     label: string
-    variant:
-      | 'default'
-      | 'secondary'
-      | 'destructive'
-      | 'outline'
-      | 'success'
-      | 'warning'
-      | 'info'
+    variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info'
   }
 > = {
   PENDING: { label: 'Pending', variant: 'warning' },
@@ -56,7 +49,7 @@ const columns: ColumnDef<PurchaseReturnRow>[] = [
     cell: ({ row }) => (
       <Link
         href={ROUTES.PURCHASE_RETURN(row.original.id)}
-        className="font-medium text-primary hover:underline font-mono text-xs"
+        className="font-mono text-xs font-medium text-primary hover:underline"
       >
         {row.original.returnNumber}
       </Link>
@@ -68,7 +61,7 @@ const columns: ColumnDef<PurchaseReturnRow>[] = [
     cell: ({ row }) => (
       <Link
         href={ROUTES.PURCHASE(row.original.purchaseId)}
-        className="text-xs text-muted-foreground hover:text-foreground hover:underline font-mono"
+        className="font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
       >
         {row.original.purchaseNumber}
       </Link>
@@ -77,24 +70,20 @@ const columns: ColumnDef<PurchaseReturnRow>[] = [
   {
     accessorKey: 'supplierName',
     header: 'Supplier',
-    cell: ({ row }) => (
-      <span className="text-sm font-medium">{row.original.supplierName}</span>
-    ),
+    cell: ({ row }) => <span className="text-sm font-medium">{row.original.supplierName}</span>,
   },
   {
     accessorKey: 'returnDate',
     header: 'Return Date',
     cell: ({ row }) => (
-      <span className="text-xs text-muted-foreground">
-        {formatDate(row.original.returnDate)}
-      </span>
+      <span className="text-xs text-muted-foreground">{formatDate(row.original.returnDate)}</span>
     ),
   },
   {
     accessorKey: 'reason',
     header: 'Reason',
     cell: ({ row }) => (
-      <span className="text-xs text-muted-foreground line-clamp-1 max-w-[200px]">
+      <span className="line-clamp-1 max-w-[200px] text-xs text-muted-foreground">
         {row.original.reason}
       </span>
     ),
@@ -103,9 +92,7 @@ const columns: ColumnDef<PurchaseReturnRow>[] = [
     accessorKey: 'totalAmount',
     header: 'Debit Amount',
     cell: ({ row }) => (
-      <span className="tabular-nums font-semibold">
-        {formatCurrency(row.original.totalAmount)}
-      </span>
+      <span className="font-semibold tabular-nums">{formatCurrency(row.original.totalAmount)}</span>
     ),
   },
   {

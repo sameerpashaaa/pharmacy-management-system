@@ -40,6 +40,12 @@ export const posItemSchema = z
       .int('Quantity must be a whole number')
       .min(1, 'Quantity must be at least 1')
       .max(99999, 'Quantity cannot exceed 99999'),
+    looseUnits: z
+      .number()
+      .int('Loose units must be a whole number')
+      .min(0, 'Loose units cannot be negative')
+      .max(99999, 'Loose units cannot exceed 99999')
+      .optional(),
     discountPercent: z
       .number()
       .min(0, 'Discount cannot be negative')
@@ -85,6 +91,15 @@ export const createSaleSchema = z.object({
     .optional(),
   prescriptionId: z.string().optional(),
   notes: z.string().max(1000, 'Notes cannot exceed 1000 characters').optional(),
+  h1Capture: z
+    .object({
+      patientName: z.string().min(1, 'Patient name is required').max(120),
+      patientAddress: z.string().max(250).default(''),
+      patientPhone: z.string().max(20).optional(),
+      doctorName: z.string().min(1, 'Doctor name is required').max(120),
+      doctorRegNo: z.string().min(1, 'Doctor registration number is required').max(80),
+    })
+    .optional(),
 })
 
 export type CreateSaleInput = z.infer<typeof createSaleSchema>

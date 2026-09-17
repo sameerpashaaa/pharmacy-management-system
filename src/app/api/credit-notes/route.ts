@@ -18,9 +18,7 @@ function errStatus(msg: string) {
 export async function GET(req: NextRequest) {
   try {
     const user = await requirePermission(PERMISSIONS.RETURNS_READ)
-    const query = creditNoteQuerySchema.parse(
-      Object.fromEntries(req.nextUrl.searchParams)
-    )
+    const query = creditNoteQuerySchema.parse(Object.fromEntries(req.nextUrl.searchParams))
     const result = await listCreditNotes(query, user)
     return NextResponse.json({
       success: true,

@@ -1,12 +1,6 @@
 'use client'
 
-import {
-  FileCheck2,
-  FileSpreadsheet,
-  ReceiptText,
-  RefreshCw,
-  Scale,
-} from 'lucide-react'
+import { FileCheck2, FileSpreadsheet, ReceiptText, RefreshCw, Scale } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
@@ -277,11 +271,7 @@ export function GstSummaryView({
                   />
                 </div>
                 <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setFileDialogOpen(false)}
-                  >
+                  <Button type="button" variant="outline" onClick={() => setFileDialogOpen(false)}>
                     Cancel
                   </Button>
                   <Button type="submit" disabled={fileLoading}>
@@ -380,7 +370,8 @@ export function GstSummaryView({
                     {summary.byType.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
-                          No GST transactions grouped yet. Click &quot;Sync Transactions&quot; to import.
+                          No GST transactions grouped yet. Click &quot;Sync Transactions&quot; to
+                          import.
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -501,21 +492,36 @@ export function GstSummaryView({
                       <TableBody>
                         {gstr1Data.b2b.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={8} className="h-16 text-center text-xs text-muted-foreground">
+                            <TableCell
+                              colSpan={8}
+                              className="h-16 text-center text-xs text-muted-foreground"
+                            >
                               No B2B invoices in this period.
                             </TableCell>
                           </TableRow>
                         ) : (
                           gstr1Data.b2b.map((inv) => (
                             <TableRow key={inv.id}>
-                              <TableCell className="font-mono text-xs">{inv.invoiceNumber}</TableCell>
-                              <TableCell className="text-xs">{new Date(inv.invoiceDate).toLocaleDateString()}</TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {inv.invoiceNumber}
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                {new Date(inv.invoiceDate).toLocaleDateString()}
+                              </TableCell>
                               <TableCell className="font-mono text-xs">{inv.partyGstin}</TableCell>
                               <TableCell className="text-xs font-medium">{inv.partyName}</TableCell>
-                              <TableCell className="text-right tabular-nums text-xs">{formatCurrency(inv.taxableAmount)}</TableCell>
-                              <TableCell className="text-right tabular-nums text-xs">{formatCurrency(inv.cgstAmount)}</TableCell>
-                              <TableCell className="text-right tabular-nums text-xs">{formatCurrency(inv.sgstAmount)}</TableCell>
-                              <TableCell className="text-right font-medium tabular-nums text-xs">{formatCurrency(inv.totalAmount)}</TableCell>
+                              <TableCell className="text-right text-xs tabular-nums">
+                                {formatCurrency(inv.taxableAmount)}
+                              </TableCell>
+                              <TableCell className="text-right text-xs tabular-nums">
+                                {formatCurrency(inv.cgstAmount)}
+                              </TableCell>
+                              <TableCell className="text-right text-xs tabular-nums">
+                                {formatCurrency(inv.sgstAmount)}
+                              </TableCell>
+                              <TableCell className="text-right text-xs font-medium tabular-nums">
+                                {formatCurrency(inv.totalAmount)}
+                              </TableCell>
                             </TableRow>
                           ))
                         )}
@@ -524,13 +530,15 @@ export function GstSummaryView({
                   </div>
 
                   <div>
-                    <h4 className="mb-2 text-sm font-semibold">7 — B2C (Small / Walk-in) Supplies</h4>
+                    <h4 className="mb-2 text-sm font-semibold">
+                      7 — B2C (Small / Walk-in) Supplies
+                    </h4>
                     <div className="rounded-md border p-4 text-sm">
                       <div className="flex justify-between">
                         <span>Total B2C Invoices:</span>
                         <span className="font-semibold tabular-nums">{gstr1Data.b2c.length}</span>
                       </div>
-                      <div className="flex justify-between mt-1">
+                      <div className="mt-1 flex justify-between">
                         <span>B2C Taxable Value:</span>
                         <span className="font-semibold tabular-nums">
                           {formatCurrency(
@@ -538,12 +546,10 @@ export function GstSummaryView({
                           )}
                         </span>
                       </div>
-                      <div className="flex justify-between mt-1">
+                      <div className="mt-1 flex justify-between">
                         <span>B2C Total Tax:</span>
                         <span className="font-semibold tabular-nums">
-                          {formatCurrency(
-                            gstr1Data.b2c.reduce((sum, r) => sum + r.totalTax, 0)
-                          )}
+                          {formatCurrency(gstr1Data.b2c.reduce((sum, r) => sum + r.totalTax, 0))}
                         </span>
                       </div>
                     </div>
@@ -580,30 +586,30 @@ export function GstSummaryView({
                 <div className="space-y-6">
                   {/* Table 3.1 Outward Supplies */}
                   <div className="rounded-lg border p-4">
-                    <h4 className="font-semibold text-sm mb-3">
+                    <h4 className="mb-3 text-sm font-semibold">
                       3.1 Details of Outward Supplies (Sales)
                     </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
                       <div>
-                        <span className="text-xs text-muted-foreground block">Taxable Value</span>
+                        <span className="block text-xs text-muted-foreground">Taxable Value</span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table31OutwardSupplies.taxableAmount)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">CGST (Output)</span>
+                        <span className="block text-xs text-muted-foreground">CGST (Output)</span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table31OutwardSupplies.cgstAmount)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">SGST (Output)</span>
+                        <span className="block text-xs text-muted-foreground">SGST (Output)</span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table31OutwardSupplies.sgstAmount)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">Total Tax</span>
+                        <span className="block text-xs text-muted-foreground">Total Tax</span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table31OutwardSupplies.totalTax)}
                         </span>
@@ -613,30 +619,30 @@ export function GstSummaryView({
 
                   {/* Table 4 Eligible ITC */}
                   <div className="rounded-lg border p-4">
-                    <h4 className="font-semibold text-sm mb-3">
+                    <h4 className="mb-3 text-sm font-semibold">
                       4. Eligible Input Tax Credit (ITC - Purchases)
                     </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
                       <div>
-                        <span className="text-xs text-muted-foreground block">Purchase Value</span>
+                        <span className="block text-xs text-muted-foreground">Purchase Value</span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table4EligibleItc.taxableAmount)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">CGST (Input)</span>
+                        <span className="block text-xs text-muted-foreground">CGST (Input)</span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table4EligibleItc.cgstAmount)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">SGST (Input)</span>
+                        <span className="block text-xs text-muted-foreground">SGST (Input)</span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table4EligibleItc.sgstAmount)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">Total ITC</span>
+                        <span className="block text-xs text-muted-foreground">Total ITC</span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table4EligibleItc.totalTax)}
                         </span>
@@ -646,30 +652,36 @@ export function GstSummaryView({
 
                   {/* Table 6 Net Tax Payable */}
                   <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-                    <h4 className="font-semibold text-sm mb-3 text-primary">
+                    <h4 className="mb-3 text-sm font-semibold text-primary">
                       6. Payment of Tax — Net Tax Payable (Output Tax - ITC)
                     </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
                       <div>
-                        <span className="text-xs text-muted-foreground block">Net CGST Payable</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Net CGST Payable
+                        </span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table6PaymentOfTax.netCgstPayable)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">Net SGST Payable</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Net SGST Payable
+                        </span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table6PaymentOfTax.netSgstPayable)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">Net IGST Payable</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Net IGST Payable
+                        </span>
                         <span className="font-bold tabular-nums">
                           {formatCurrency(gstr3bData.table6PaymentOfTax.netIgstPayable)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-xs text-muted-foreground block">Total Net Due</span>
+                        <span className="block text-xs text-muted-foreground">Total Net Due</span>
                         <span className="font-bold tabular-nums text-destructive">
                           {formatCurrency(gstr3bData.table6PaymentOfTax.netTotalPayable)}
                         </span>

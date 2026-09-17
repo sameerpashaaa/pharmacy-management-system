@@ -156,9 +156,7 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
             <Card>
               <CardHeader>
                 <CardTitle>Returns on this Invoice</CardTitle>
-                <CardDescription>
-                  {sale.returns.length} return order(s) processed
-                </CardDescription>
+                <CardDescription>{sale.returns.length} return order(s) processed</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">

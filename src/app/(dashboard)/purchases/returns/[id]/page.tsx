@@ -5,13 +5,7 @@ import { notFound } from 'next/navigation'
 import { PURCHASE_RETURN_STATUS_META } from '@/components/purchases/purchase-returns-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { can, getSession } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { ROUTES } from '@/lib/constants/routes'
@@ -25,13 +19,8 @@ interface PurchaseReturnDetailPageProps {
   params: { id: string }
 }
 
-export default async function PurchaseReturnDetailPage({
-  params,
-}: PurchaseReturnDetailPageProps) {
-  const [canRead, session] = await Promise.all([
-    can(PERMISSIONS.PURCHASES_READ),
-    getSession(),
-  ])
+export default async function PurchaseReturnDetailPage({ params }: PurchaseReturnDetailPageProps) {
+  const [canRead, session] = await Promise.all([can(PERMISSIONS.PURCHASES_READ), getSession()])
 
   if (!canRead || !session?.user) {
     return (
@@ -63,9 +52,7 @@ export default async function PurchaseReturnDetailPage({
           </div>
           <p className="text-muted-foreground">
             Returned on {formatDate(purchaseReturn.returnDate)} · Supplier:{' '}
-            <span className="font-medium text-foreground">
-              {purchaseReturn.supplier.name}
-            </span>
+            <span className="font-medium text-foreground">{purchaseReturn.supplier.name}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -73,9 +60,7 @@ export default async function PurchaseReturnDetailPage({
             <Link href={ROUTES.PURCHASE_RETURNS}>Back to returns</Link>
           </Button>
           <Button asChild variant="secondary" size="sm">
-            <Link href={ROUTES.PURCHASE(purchaseReturn.purchase.id)}>
-              View Purchase Order
-            </Link>
+            <Link href={ROUTES.PURCHASE(purchaseReturn.purchase.id)}>View Purchase Order</Link>
           </Button>
         </div>
       </div>
@@ -119,9 +104,7 @@ export default async function PurchaseReturnDetailPage({
                       <td className="py-3 pr-4 text-right font-semibold tabular-nums">
                         {formatCurrency(Number(line.totalAmount))}
                       </td>
-                      <td className="py-3 text-xs text-muted-foreground">
-                        {line.reason ?? '—'}
-                      </td>
+                      <td className="py-3 text-xs text-muted-foreground">{line.reason ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -164,21 +147,17 @@ export default async function PurchaseReturnDetailPage({
               )}
               <div className="flex items-center justify-between gap-4 border-t pt-3">
                 <span className="text-muted-foreground">Total Debited</span>
-                <span className="text-lg font-bold text-destructive tabular-nums">
+                <span className="text-lg font-bold tabular-nums text-destructive">
                   -{formatCurrency(Number(purchaseReturn.totalAmount))}
                 </span>
               </div>
               <div className="border-t pt-3">
-                <span className="text-xs text-muted-foreground block mb-1">
-                  Reason for Return
-                </span>
+                <span className="mb-1 block text-xs text-muted-foreground">Reason for Return</span>
                 <p className="text-sm font-medium">{purchaseReturn.reason}</p>
               </div>
               {purchaseReturn.notes && (
                 <div className="border-t pt-3">
-                  <span className="text-xs text-muted-foreground block mb-1">
-                    Notes
-                  </span>
+                  <span className="mb-1 block text-xs text-muted-foreground">Notes</span>
                   <p className="text-xs text-muted-foreground">{purchaseReturn.notes}</p>
                 </div>
               )}

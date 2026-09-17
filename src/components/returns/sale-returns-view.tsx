@@ -27,12 +27,7 @@ interface SaleReturnsViewProps {
   canCreate: boolean
 }
 
-export function SaleReturnsView({
-  returns,
-  creditNotes,
-  stats,
-  canCreate,
-}: SaleReturnsViewProps) {
+export function SaleReturnsView({ returns, creditNotes, stats, canCreate }: SaleReturnsViewProps) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -83,9 +78,7 @@ export function SaleReturnsView({
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold tabular-nums">
-              {stats.activeCreditNotesCount}
-            </div>
+            <div className="text-2xl font-bold tabular-nums">{stats.activeCreditNotesCount}</div>
             <p className="text-xs text-muted-foreground">Unredeemed store credits</p>
           </CardContent>
         </Card>
@@ -96,7 +89,7 @@ export function SaleReturnsView({
             <ArrowDownLeft className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600 dark:text-green-400 tabular-nums">
+            <div className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">
               {formatCurrency(stats.activeCreditBalance)}
             </div>
             <p className="text-xs text-muted-foreground">Outstanding customer credit</p>
@@ -106,12 +99,8 @@ export function SaleReturnsView({
 
       <Tabs defaultValue="returns" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="returns">
-            Sales Returns ({returns.length})
-          </TabsTrigger>
-          <TabsTrigger value="credit-notes">
-            Credit Notes ({creditNotes.length})
-          </TabsTrigger>
+          <TabsTrigger value="returns">Sales Returns ({returns.length})</TabsTrigger>
+          <TabsTrigger value="credit-notes">Credit Notes ({creditNotes.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="returns" className="space-y-4">

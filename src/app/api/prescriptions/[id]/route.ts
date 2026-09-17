@@ -4,10 +4,7 @@ import { ZodError } from 'zod'
 
 import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
-import {
-  getPrescriptionById,
-  updatePrescription,
-} from '@/lib/prescriptions/prescription-service'
+import { getPrescriptionById, updatePrescription } from '@/lib/prescriptions/prescription-service'
 import { updatePrescriptionSchema } from '@/lib/validations/prescription'
 
 function errStatus(msg: string) {
@@ -22,10 +19,7 @@ interface RouteParams {
   params: { id: string }
 }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: RouteParams
-) {
+export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const user = await requirePermission(PERMISSIONS.PRESCRIPTIONS_READ)
     const prescription = await getPrescriptionById(params.id, user)
@@ -39,10 +33,7 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: RouteParams
-) {
+export async function PATCH(req: NextRequest, { params }: RouteParams) {
   try {
     const user = await requirePermission(PERMISSIONS.PRESCRIPTIONS_CREATE)
     const body: unknown = await req.json()
