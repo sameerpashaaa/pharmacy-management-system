@@ -6,8 +6,10 @@ export default withAuth(
     const { pathname } = req.nextUrl
     const token = req.nextauth.token
 
-    // If accessing /pos route group, verify POS permission
-    if (pathname.startsWith('/pos') && !token?.permissions?.includes('sales:create')) {
+    // If accessing /pos route group, verify POS permission or owner/admin role
+    const isOwnerOrAdmin =
+      token?.roles?.includes('owner') || token?.roles?.includes('admin')
+    if (pathname.startsWith('/pos') && !isOwnerOrAdmin && !token?.permissions?.includes('sales:create')) {
       return NextResponse.redirect(new URL('/', req.url))
     }
 

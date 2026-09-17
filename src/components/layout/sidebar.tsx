@@ -162,7 +162,10 @@ export function Sidebar() {
 
   const visibleNavItems = useMemo(() => {
     const permissions = session?.user?.permissions ?? []
-    const isAllowed = (item: NavItem) => (item.permission ? permissions.includes(item.permission) : true)
+    const isOwnerOrAdmin =
+      session?.user?.roles?.includes('owner') || session?.user?.roles?.includes('admin')
+    const isAllowed = (item: NavItem) =>
+      isOwnerOrAdmin || (item.permission ? permissions.includes(item.permission) : true)
     const filterChildren = (children?: Omit<NavItem, 'children'>[]) =>
       children?.filter((child) => isAllowed(child)) ?? []
 

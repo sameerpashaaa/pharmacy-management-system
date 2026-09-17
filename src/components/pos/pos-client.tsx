@@ -61,6 +61,7 @@ interface PosUser {
   id: string
   branchId: string | null
   permissions: string[]
+  roles?: string[]
 }
 
 interface PosBranch {
@@ -242,9 +243,10 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   const [charging, setCharging] = useState(false)
 
   // Permissions
-  const canDiscount = user.permissions.includes('sales:discount')
-  const canDiscountOverride = user.permissions.includes('sales:discount_override')
-  const canCredit = user.permissions.includes('sales:credit')
+  const isSuperUser = user.roles?.includes('owner') || user.roles?.includes('admin')
+  const canDiscount = isSuperUser || user.permissions.includes('sales:discount')
+  const canDiscountOverride = isSuperUser || user.permissions.includes('sales:discount_override')
+  const canCredit = isSuperUser || user.permissions.includes('sales:credit')
 
   // ─── Auto-focus search input when opening POS ──────────────
   useEffect(() => {

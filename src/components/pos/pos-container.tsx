@@ -8,7 +8,9 @@ export async function PosContainer() {
   const session = await getSession()
   if (!session?.user) return null
   
-  if (!session.user.permissions.includes(PERMISSIONS.SALES_CREATE)) {
+  const isOwnerOrAdmin =
+    session.user.roles?.includes('owner') || session.user.roles?.includes('admin')
+  if (!isOwnerOrAdmin && !session.user.permissions.includes(PERMISSIONS.SALES_CREATE)) {
     return null
   }
 
@@ -16,6 +18,7 @@ export async function PosContainer() {
     id: session.user.id,
     branchId: session.user.branchId,
     permissions: session.user.permissions,
+    roles: session.user.roles,
   }
 
   const [settings, branches] = await Promise.all([

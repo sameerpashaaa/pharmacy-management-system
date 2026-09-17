@@ -36,12 +36,17 @@ export async function requireAuth() {
   return session.user
 }
 
+function isSuperUser(roles?: string[]): boolean {
+  return !!roles && (roles.includes('owner') || roles.includes('admin'))
+}
+
 /**
  * Check if the current user has a specific permission
  */
 export async function can(permission: PermissionCode): Promise<boolean> {
   const session = await getSession()
   if (!session?.user) return false
+  if (isSuperUser(session.user.roles)) return true
   return session.user.permissions.includes(permission)
 }
 
@@ -52,6 +57,9 @@ export async function requirePermission(permission: PermissionCode) {
   const session = await getSession()
   if (!session?.user) {
     throw new Error('Unauthorized')
+  }
+  if (isSuperUser(session.user.roles)) {
+    return session.user
   }
   if (!session.user.permissions.includes(permission)) {
     throw new Error(`Forbidden: requires permission '${permission}'`)
@@ -65,6 +73,7 @@ export async function requirePermission(permission: PermissionCode) {
 export async function canAny(permissions: PermissionCode[]): Promise<boolean> {
   const session = await getSession()
   if (!session?.user) return false
+  if (isSuperUser(session.user.roles)) return true
   return permissions.some((p) => session.user.permissions.includes(p))
 }
 
@@ -73,8 +82,10 @@ export async function canAny(permissions: PermissionCode[]): Promise<boolean> {
  */
 export function userCan(
   permissions: string[],
-  permission: PermissionCode
+  permission: PermissionCode,
+  roles?: string[]
 ): boolean {
+  if (isSuperUser(roles)) return true
   return permissions.includes(permission)
 }
 
@@ -92,7 +103,9 @@ export async function assertAssignableRoles(roleIds: string[]): Promise<void> {
     throw new Error('Unauthorized')
   }
 
-  const actorCanManageRoles = session.user.permissions.includes(PERMISSIONS.ROLES_MANAGE)
+  const actorCanManageRoles =
+    isSuperUser(session.user.roles) ||
+    session.user.permissions.includes(PERMISSIONS.ROLES_MANAGE)
   const roles = await prisma.role.findMany({
     where: { id: { in: roleIds } },
     select: {

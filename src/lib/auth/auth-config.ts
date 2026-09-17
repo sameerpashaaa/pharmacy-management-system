@@ -4,6 +4,7 @@ import type { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 
 import prisma from '@/lib/db/prisma'
+import { PERMISSIONS } from '@/lib/constants/permissions'
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as NextAuthOptions['adapter'],
@@ -89,11 +90,15 @@ export const authOptions: NextAuthOptions = {
           },
         })
 
-        // Collect permissions
-        const permissions = user.userRoles.flatMap((ur) =>
-          ur.role.rolePermissions.map((rp) => rp.permission.code)
-        )
         const roles = user.userRoles.map((ur) => ur.role.name)
+        const isOwnerOrAdmin = roles.includes('owner') || roles.includes('admin')
+
+        // Collect permissions - owner and admin roles get ALL permissions
+        const permissions = isOwnerOrAdmin
+          ? (Object.values(PERMISSIONS) as string[])
+          : user.userRoles.flatMap((ur) =>
+              ur.role.rolePermissions.map((rp) => rp.permission.code)
+            )
 
         return {
           id: user.id,
@@ -115,6 +120,52 @@ export const authOptions: NextAuthOptions = {
         token.roles = (user as { roles?: string[] }).roles ?? []
         token.branchId = (user as { branchId?: string | null }).branchId ?? null
       }
+
+      // If token has owner or admin role, guarantee ALL permissions
+      if (token.roles?.includes('owner') || token.roles?.includes('admin')) {
+        token.permissions = Object.values(PERMISSIONS) as string[]
+      } else if (!token.permissions || token.permissions.length === 0) {
+        // Heal stale tokens by refreshing roles/permissions from DB
+        if (token.id) {
+          try {
+            const dbUser = await prisma.user.findUnique({
+              where: { id: token.id as string },
+              include: {
+                userRoles: {
+                  include: {
+                    role: {
+                      include: {
+                        rolePermissions: {
+                          include: { permission: true },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            })
+
+            if (dbUser) {
+              const roles = dbUser.userRoles.map((ur) => ur.role.name)
+              token.roles = roles
+              if (roles.includes('owner') || roles.includes('admin')) {
+                token.permissions = Object.values(PERMISSIONS) as string[]
+              } else {
+                token.permissions = [
+                  ...new Set(
+                    dbUser.userRoles.flatMap((ur) =>
+                      ur.role.rolePermissions.map((rp) => rp.permission.code)
+                    )
+                  ),
+                ]
+              }
+            }
+          } catch {
+            // Keep existing token if DB lookup fails
+          }
+        }
+      }
+
       return token
     },
     async session({ session, token }) {

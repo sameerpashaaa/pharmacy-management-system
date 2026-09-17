@@ -54,6 +54,7 @@ export interface SaleActor {
   id: string
   branchId: string | null
   permissions?: string[]
+  roles?: string[]
 }
 
 export interface CreateSaleItemInput {
@@ -537,9 +538,10 @@ export async function createSale(
   await assertBranchAccess(actor, command.branchId)
 
   // ─── Policy gates (server authority) ─────────────────────────
-  const hasDiscount = permissions.includes(PERMISSIONS.SALES_DISCOUNT)
-  const hasDiscountOverride = permissions.includes(PERMISSIONS.SALES_DISCOUNT_OVERRIDE)
-  const hasCredit = permissions.includes(PERMISSIONS.SALES_CREDIT)
+  const isSuperUser = actor.roles?.includes('owner') || actor.roles?.includes('admin')
+  const hasDiscount = isSuperUser || permissions.includes(PERMISSIONS.SALES_DISCOUNT)
+  const hasDiscountOverride = isSuperUser || permissions.includes(PERMISSIONS.SALES_DISCOUNT_OVERRIDE)
+  const hasCredit = isSuperUser || permissions.includes(PERMISSIONS.SALES_CREDIT)
 
   for (const line of command.items) {
     const lineDiscount = line.discountPercent ?? 0
@@ -895,7 +897,8 @@ export async function cancelSale(
   actor: SaleActor
 ): Promise<void> {
   const permissions = actor.permissions ?? []
-  if (!permissions.includes(PERMISSIONS.SALES_VOID)) {
+  const isSuperUser = actor.roles?.includes('owner') || actor.roles?.includes('admin')
+  if (!isSuperUser && !permissions.includes(PERMISSIONS.SALES_VOID)) {
     throw new Error('Forbidden: requires permission sales:void')
   }
 

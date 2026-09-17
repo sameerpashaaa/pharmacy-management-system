@@ -8,7 +8,11 @@ export const metadata: Metadata = { title: 'POS — Billing' }
 export default async function PosPage() {
   const session = await getSession()
 
-  const hasAccess = session?.user && session.user.permissions.includes(PERMISSIONS.SALES_CREATE)
+  const isOwnerOrAdmin =
+    session?.user?.roles?.includes('owner') || session?.user?.roles?.includes('admin')
+  const hasAccess =
+    session?.user &&
+    (isOwnerOrAdmin || session.user.permissions.includes(PERMISSIONS.SALES_CREATE))
 
   if (!hasAccess) {
     return (
