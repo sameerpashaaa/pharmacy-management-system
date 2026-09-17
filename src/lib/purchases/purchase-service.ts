@@ -11,7 +11,7 @@ import type { z } from 'zod'
 
 import prisma from '@/lib/db/prisma'
 import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
-import { assertBranchAccess, type AuthUser } from '@/lib/inventory/branch-access'
+import { assertBranchAccess, resolveBranchScope, type AuthUser } from '@/lib/inventory/branch-access'
 import {
   supplierListQuerySchema,
   purchaseListQuerySchema,
@@ -131,9 +131,7 @@ export async function createSupplier(
   return supplier
 }
 
-export async function getSupplier(id: string, actor: AuthUser): Promise<Supplier | null> {
-  await assertBranchAccess(actor, '') // Global check for read
-
+export async function getSupplier(id: string, _actor: AuthUser): Promise<Supplier | null> {
   return prisma.supplier.findUnique({ where: { id } })
 }
 
@@ -167,12 +165,11 @@ export async function updateSupplier(
 
 export async function listSuppliers(
   params: z.infer<typeof supplierListQuerySchema>,
-  actor: AuthUser
+  _actor: AuthUser
 ): Promise<{
   data: Supplier[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
-  await assertBranchAccess(actor, '')
 
   const {
     page = 1,
@@ -391,7 +388,8 @@ export async function listPurchases(
   } = purchaseListQuerySchema.parse(params)
 
   const where: Prisma.PurchaseWhereInput = {}
-  if (branchId) where.branchId = branchId
+  const scopeBranchId = await resolveBranchScope(actor, branchId)
+  if (scopeBranchId) where.branchId = scopeBranchId
   if (supplierId) where.supplierId = supplierId
   if (status) where.status = status
   if (search) {
@@ -848,7 +846,8 @@ export async function listGrns(
 
   // GRN info is stored on purchase records
   const where: Prisma.PurchaseWhereInput = { status: { in: ['PARTIALLY_RECEIVED', 'RECEIVED'] } }
-  if (branchId) where.branchId = branchId
+  const scopeBranchId = await resolveBranchScope(actor, branchId)
+  if (scopeBranchId) where.branchId = scopeBranchId
   if (purchaseId) where.id = purchaseId
   if (search) {
     where.OR = [
@@ -1233,8 +1232,9 @@ export async function listPurchaseReturns(
     sortBy = 'returnDate',
     sortOrder = 'desc',
   } = purchaseReturnListQuerySchema.parse(params)
-
+  const scopeBranchId = await resolveBranchScope(actor)
   const where: Prisma.PurchaseReturnWhereInput = {}
+  if (scopeBranchId) where.purchase = { branchId: scopeBranchId }
   if (supplierId) where.supplierId = supplierId
   if (status) where.status = status
   if (search) {
