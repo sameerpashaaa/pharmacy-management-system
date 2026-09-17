@@ -1,9 +1,10 @@
 import { PrismaAdapter } from '@auth/prisma-adapter'
-import bcrypt from 'bcryptjs'
 import type { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 
 import prisma from '@/lib/db/prisma'
+
+import { completeMfaChallenge, verifyPasswordStep } from './mfa-service'
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as NextAuthOptions['adapter'],
@@ -21,89 +22,26 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
+        mfaToken: { label: 'MFA Token', type: 'text' },
+        totpCode: { label: 'Authenticator Code', type: 'text' },
       },
       async authorize(credentials) {
+        // MFA challenge completion: password was already verified when the
+        // short-lived pending credential was issued. Session issuance still
+        // happens here, inside NextAuth's normal authorize → jwt → session path.
+        if (credentials?.mfaToken && credentials?.totpCode) {
+          return completeMfaChallenge(credentials.mfaToken, credentials.totpCode)
+        }
+
         if (!credentials?.email || !credentials?.password) {
           throw new Error('Email and password are required')
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
-          include: {
-            userRoles: {
-              include: {
-                role: {
-                  include: {
-                    rolePermissions: {
-                      include: { permission: true },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        })
-
-        if (!user) {
-          throw new Error('Invalid email or password')
+        const result = await verifyPasswordStep(credentials.email, credentials.password)
+        if (result.status === 'mfa_required') {
+          throw new Error(`MFA_REQUIRED:${result.mfaToken}`)
         }
-
-        if (!user.isActive) {
-          throw new Error('Your account has been deactivated')
-        }
-
-        // Check account lockout
-        if (user.lockedUntil && user.lockedUntil > new Date()) {
-          throw new Error('Account temporarily locked due to too many failed attempts')
-        }
-
-        if (!user.password) {
-          throw new Error('Please use the password reset flow to set a password')
-        }
-
-        const isValidPassword = await bcrypt.compare(credentials.password, user.password)
-
-        if (!isValidPassword) {
-          // Increment failed login count
-          await prisma.user.update({
-            where: { id: user.id },
-            data: {
-              failedLoginCount: { increment: 1 },
-              // Lock after 5 failed attempts for 15 minutes
-              lockedUntil:
-                user.failedLoginCount >= 4
-                  ? new Date(Date.now() + 15 * 60 * 1000)
-                  : undefined,
-            },
-          })
-          throw new Error('Invalid email or password')
-        }
-
-        // Reset failed login count and update last login
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            failedLoginCount: 0,
-            lockedUntil: null,
-            lastLoginAt: new Date(),
-          },
-        })
-
-        // Collect permissions
-        const permissions = user.userRoles.flatMap((ur) =>
-          ur.role.rolePermissions.map((rp) => rp.permission.code)
-        )
-        const roles = user.userRoles.map((ur) => ur.role.name)
-
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          image: user.image,
-          permissions: [...new Set(permissions)],
-          roles,
-          branchId: user.branchId,
-        }
+        return result.user
       },
     }),
   ],
@@ -114,6 +52,7 @@ export const authOptions: NextAuthOptions = {
         token.permissions = (user as { permissions?: string[] }).permissions ?? []
         token.roles = (user as { roles?: string[] }).roles ?? []
         token.branchId = (user as { branchId?: string | null }).branchId ?? null
+        token.mfaVerified = (user as { mfaVerified?: boolean }).mfaVerified ?? false
       }
       return token
     },
@@ -123,6 +62,7 @@ export const authOptions: NextAuthOptions = {
         session.user.permissions = token.permissions
         session.user.roles = token.roles
         session.user.branchId = token.branchId
+        session.user.mfaVerified = token.mfaVerified
       }
       return session
     },

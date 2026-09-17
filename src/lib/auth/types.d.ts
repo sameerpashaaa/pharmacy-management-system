@@ -9,6 +9,7 @@ declare module 'next-auth' {
       permissions: string[]
       roles: string[]
       branchId: string | null
+      mfaVerified?: boolean
     }
   }
 
@@ -16,6 +17,7 @@ declare module 'next-auth' {
     permissions: string[]
     roles: string[]
     branchId: string | null
+    mfaVerified?: boolean
   }
 }
 
@@ -25,5 +27,6 @@ declare module 'next-auth/jwt' {
     permissions: string[]
     roles: string[]
     branchId: string | null
+    mfaVerified?: boolean
   }
 }

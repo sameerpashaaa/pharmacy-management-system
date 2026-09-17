@@ -1,8 +1,9 @@
 import bcrypt from 'bcryptjs'
-import type { NextRequest} from 'next/server';
+import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 
 import { requirePermission } from '@/lib/auth/auth-helpers'
+import { recordPasswordHistory } from '@/lib/auth/password-history'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import prisma from '@/lib/db/prisma'
 import { createUserSchema } from '@/lib/validations/user'
@@ -81,21 +82,25 @@ export async function POST(req: NextRequest) {
 
     const hashedPassword = await bcrypt.hash(data.password, 12)
 
-    const user = await prisma.user.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        password: hashedPassword,
-        phone: data.phone,
-        branchId: data.branchId,
-        isActive: data.isActive,
-        userRoles: {
-          create: data.roleIds.map((roleId) => ({ roleId })),
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          name: data.name,
+          email: data.email,
+          password: hashedPassword,
+          phone: data.phone,
+          branchId: data.branchId,
+          isActive: data.isActive,
+          userRoles: {
+            create: data.roleIds.map((roleId) => ({ roleId })),
+          },
         },
-      },
-      include: {
-        userRoles: { include: { role: true } },
-      },
+        include: {
+          userRoles: { include: { role: true } },
+        },
+      })
+      await recordPasswordHistory(tx, created.id, hashedPassword)
+      return created
     })
 
     // Audit
@@ -108,7 +113,10 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({ success: true, data: user, message: 'User created successfully' }, { status: 201 })
+    return NextResponse.json(
+      { success: true, data: user, message: 'User created successfully' },
+      { status: 201 }
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ success: false, error: { code: 'ERROR', message } }, { status: 400 })

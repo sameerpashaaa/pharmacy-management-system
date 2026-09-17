@@ -1,5 +1,5 @@
-import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '@prisma/client'
+import bcrypt from 'bcryptjs'
 
 export async function seedUsers(prisma: PrismaClient) {
   const ownerRole = await prisma.role.findUnique({ where: { name: 'owner' } })
@@ -58,6 +58,15 @@ export async function seedUsers(prisma: PrismaClient) {
         update: {},
         create: { userId: user.id, roleId: u.role.id },
       })
+    }
+
+    // Seed initial password history from the current hash (idempotent).
+    // Existing passwords remain valid; history only constrains future changes.
+    if (user.password) {
+      const existingHistory = await prisma.passwordHistory.count({ where: { userId: user.id } })
+      if (existingHistory === 0) {
+        await prisma.passwordHistory.create({ data: { userId: user.id, hash: user.password } })
+      }
     }
   }
 

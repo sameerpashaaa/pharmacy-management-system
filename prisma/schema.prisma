@@ -31,6 +31,8 @@ model User {
   lastLoginAt        DateTime?
   failedLoginCount   Int       @default(0)
   lockedUntil        DateTime?
+  mfaEnabled         Boolean   @default(false)
+  totpSecret         String?   @db.Text
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -47,6 +49,7 @@ model User {
   auditLogs            AuditLog[]
   notifications        Notification[]
   passwordResetTokens  PasswordResetToken[]
+  passwordHistories    PasswordHistory[]
   salesCreated         Sale[]          @relation("SaleCreatedBy")
   purchasesCreated     Purchase[]      @relation("PurchaseCreatedBy")
   stockAdjustments     StockAdjustment[] @relation("AdjustmentCreatedBy")
@@ -105,6 +108,18 @@ model PasswordResetToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("password_reset_tokens")
+}
+
+model PasswordHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  hash      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_histories")
 }
 
 model Role {
