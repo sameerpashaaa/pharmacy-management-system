@@ -160,6 +160,8 @@ describeDb('TOTP MFA + password history (real Postgres)', () => {
 
   // ── Password history helper ──────────────────────────────────
 
+  // Explicit timeout: ~10 sequential bcrypt cost-12 operations exceed the
+  // default 5s budget on slower CI runners. Cost is intentionally unchanged.
   it('detects reuse against the last 5 hashes and retains only 5', async () => {
     const weak = 'Legacy123'
     const hash = await bcrypt.hash(weak, 12)
@@ -181,7 +183,7 @@ describeDb('TOTP MFA + password history (real Postgres)', () => {
     // The oldest entries were pruned: the very first password is reusable again
     expect(await isPasswordReused(fx.ownerId, weak)).toBe(false)
     expect(await isPasswordReused(fx.ownerId, 'Password6123!')).toBe(true)
-  })
+  }, 30000)
 
   // ── Password policy on user routes ───────────────────────────
 

@@ -144,6 +144,21 @@ async function seedFixtures(): Promise<Fixtures> {
   const ownerUser = await createUser('owner@test.local', branchA.id, ownerRole.id)
   const otherUser = await createUser('other@test.local', branchOther.id, managerRole.id)
 
+  // Self-contained HSN reference: the fixture product uses hsnCode '3004',
+  // which must exist for the products_hsnCode_fkey on fresh migrated DBs.
+  await prisma.hsnCode.upsert({
+    where: { code: '3004' },
+    update: {},
+    create: {
+      code: '3004',
+      description: 'Pharmaceutical products',
+      gstRate: 12,
+      cgstRate: 6,
+      sgstRate: 6,
+      igstRate: 12,
+    },
+  })
+
   const product = await prisma.product.create({
     data: {
       name: 'Test Product',
