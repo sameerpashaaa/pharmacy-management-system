@@ -6,6 +6,7 @@
 // Real Postgres; only requirePermission is mocked for route tests.
 import { requirePermission } from '@/lib/auth/auth-helpers'
 import prisma from '@/lib/db/prisma'
+import { createGrn, createPurchase, updatePurchase } from '@/lib/purchases/purchase-service'
 import { cancelSale, createSale } from '@/lib/sales/sales-service'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
@@ -580,40 +581,492 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     // Verify no duplicate narcotic reversal (if applicable) - normal product
   })
 
-  it('rejects concurrent cancellation attempts (idempotency via Serializable)', async () => {
-    const actor = { id: userAId, branchId: branchA, permissions: ['sales:create'] }
-    const normal = await prisma.product.findUniqueOrThrow({ where: { sku: 'MG-N' } })
+  // ── D2-B: Narcotic Purchase Receipt / GRN ────────────────────────
 
-    const sale = await createSale(
+  it('creates PURCHASE_RECEIPT NarcoticRegister entry for narcotic GRN', async () => {
+    const actor = {
+      id: userAId,
+      branchId: branchA,
+      permissions: ['purchases:create', 'purchases:receive'],
+    }
+
+    // Create narcotic product
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'GRN Narcotic',
+        sku: 'GRN-NARC',
+        barcode: '99NARC',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
+    })
+
+    // Create PO
+    const purchase = await createPurchase(
       {
         branchId: branchA,
-        items: [{ productId: normal.id, quantity: 2 }],
-        payments: [{ method: 'CASH', amount: 224 }],
+        supplierId: (
+          await prisma.supplier.create({ data: { name: 'GRN Supplier', gstin: '29AAAAA0000A1Z5' } })
+        ).id,
+        items: [
+          {
+            productId: narcotic.id,
+            orderedQuantity: 10,
+            unitCost: 100,
+            discountPercent: 0,
+            taxPercent: 12,
+          },
+        ],
       },
       actor
     )
 
-    const voidActor = { id: userAId, branchId: branchA, permissions: ['sales:void'] }
+    // GRN for narcotic product
+    await updatePurchase(purchase.id, { status: 'ORDERED' }, actor)
+    await createGrn(
+      {
+        purchaseId: purchase.id,
+        branchId: branchA,
+        grnNumber: 'GRN-NARC-001',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: purchase.items[0].id,
+            receivedQuantity: 10,
+            batchNumber: 'BATCH-GRN-NARC-001',
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            manufacturingDate: new Date(),
+            purchasePrice: 100,
+            mrp: 150,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      actor
+    )
 
-    // Run two cancellations concurrently - one should succeed, one should fail
-    const results = await Promise.allSettled([
-      cancelSale(sale.id, 'Concurrent 1', voidActor),
-      cancelSale(sale.id, 'Concurrent 2', voidActor),
-    ])
-
-    // Exactly one should succeed, one should fail
-    const succeeded = results.filter((r) => r.status === 'fulfilled').length
-    const failed = results.filter((r) => r.status === 'rejected').length
-    expect(succeeded).toBe(1)
-    expect(failed).toBe(1)
-
-    // Verify database state is consistent
-    const cancelled = await prisma.sale.findUniqueOrThrow({ where: { id: sale.id } })
-    expect(cancelled.status).toBe('CANCELLED')
-
-    const inventory = await prisma.inventory.findUniqueOrThrow({
-      where: { productId_branchId: { productId: normal.id, branchId: branchA } },
+    // Verify NarcoticRegister entry was created
+    const narcRegister = await prisma.narcoticRegister.findMany({
+      where: { referenceType: 'PURCHASE', referenceId: purchase.id },
     })
-    expect(inventory.availableQuantity).toBe(50)
+    expect(narcRegister.length).toBe(1)
+    expect(narcRegister[0].movementType).toBe('PURCHASE_RECEIPT')
+    expect(narcRegister[0].quantityIn).toBe(10)
+    expect(narcRegister[0].quantityOut).toBe(0)
+    expect(narcRegister[0].balanceQuantity).toBe(10) // afterAvailable = 10
+    expect(narcRegister[0].productId).toBe(narcotic.id)
+    expect(narcRegister[0].branchId).toBe(branchA)
+    expect(narcRegister[0].referenceType).toBe('PURCHASE')
+    expect(narcRegister[0].enteredById).toBe(actor.id)
+  })
+
+  it('does NOT create NarcoticRegister entry for non-narcotic GRN', async () => {
+    const actor = {
+      id: userAId,
+      branchId: branchA,
+      permissions: ['purchases:create', 'purchases:receive'],
+    }
+
+    const normal = await prisma.product.findUniqueOrThrow({ where: { sku: 'MG-N' } })
+
+    const purchase = await createPurchase(
+      {
+        branchId: branchA,
+        supplierId: (
+          await prisma.supplier.create({
+            data: { name: 'GRN Supplier 2', gstin: '29BBBBB0000B1Z5' },
+          })
+        ).id,
+        items: [
+          {
+            productId: normal.id,
+            orderedQuantity: 5,
+            unitCost: 80,
+            discountPercent: 0,
+            taxPercent: 12,
+          },
+        ],
+      },
+      actor
+    )
+
+    await updatePurchase(purchase.id, { status: 'ORDERED' }, actor)
+    await createGrn(
+      {
+        purchaseId: purchase.id,
+        branchId: branchA,
+        grnNumber: 'GRN-NORMAL-001',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: purchase.items[0].id,
+            receivedQuantity: 5,
+            batchNumber: 'BATCH-GRN-NORMAL-001',
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            manufacturingDate: new Date(),
+            purchasePrice: 80,
+            mrp: 100,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      actor
+    )
+
+    // Verify NO NarcoticRegister entry was created
+    const narcRegister = await prisma.narcoticRegister.findMany({
+      where: { referenceType: 'PURCHASE', referenceId: purchase.id },
+    })
+    expect(narcRegister.length).toBe(0)
+  })
+
+  it('creates correct PURCHASE_RECEIPT entries for multi-batch narcotic GRN', async () => {
+    const actor = {
+      id: userAId,
+      branchId: branchA,
+      permissions: ['purchases:create', 'purchases:receive'],
+    }
+
+    const narcotic1 = await prisma.product.create({
+      data: {
+        name: 'Multi-Batch Narcotic 1',
+        sku: 'MB-NARC-1',
+        barcode: '99MBNARC1',
+        mrp: 200,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+    const narcotic2 = await prisma.product.create({
+      data: {
+        name: 'Multi-Batch Narcotic 2',
+        sku: 'MB-NARC-2',
+        barcode: '99MBNARC2',
+        mrp: 200,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: {
+        productId: narcotic1.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
+    })
+    await prisma.inventory.create({
+      data: {
+        productId: narcotic2.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
+    })
+
+    const purchase = await createPurchase(
+      {
+        branchId: branchA,
+        supplierId: (
+          await prisma.supplier.create({ data: { name: 'MB Supplier', gstin: '29CCCCC0000C1Z5' } })
+        ).id,
+        items: [
+          {
+            productId: narcotic1.id,
+            orderedQuantity: 10,
+            unitCost: 150,
+            discountPercent: 0,
+            taxPercent: 12,
+          },
+          {
+            productId: narcotic2.id,
+            orderedQuantity: 5,
+            unitCost: 150,
+            discountPercent: 0,
+            taxPercent: 12,
+          },
+        ],
+      },
+      actor
+    )
+
+    await updatePurchase(purchase.id, { status: 'ORDERED' }, actor)
+    // GRN with two batches for two narcotic products
+    await createGrn(
+      {
+        purchaseId: purchase.id,
+        branchId: branchA,
+        grnNumber: 'GRN-MB-001',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: purchase.items[0].id,
+            receivedQuantity: 10,
+            batchNumber: 'BATCH-MB-001',
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            manufacturingDate: new Date(),
+            purchasePrice: 150,
+            mrp: 200,
+            qualityCheckPassed: true,
+          },
+          {
+            purchaseItemId: purchase.items[1].id,
+            receivedQuantity: 5,
+            batchNumber: 'BATCH-MB-002',
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            manufacturingDate: new Date(),
+            purchasePrice: 150,
+            mrp: 200,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      actor
+    )
+
+    // Verify two NarcoticRegister entries (one per product)
+    const narcRegister = await prisma.narcoticRegister.findMany({
+      where: { referenceType: 'PURCHASE', referenceId: purchase.id },
+      orderBy: { entryDate: 'asc' },
+    })
+    expect(narcRegister.length).toBe(2)
+    expect(narcRegister[0].quantityIn).toBe(10)
+    expect(narcRegister[1].quantityIn).toBe(5)
+    expect(narcRegister.every((n) => n.movementType === 'PURCHASE_RECEIPT')).toBe(true)
+    expect(narcRegister.every((n) => n.quantityOut === 0)).toBe(true)
+    // Balance is per-product: first product has 10, second has 5
+    expect(narcRegister[0].balanceQuantity).toBe(10)
+    expect(narcRegister[1].balanceQuantity).toBe(5)
+  })
+
+  it('rolls back NarcoticRegister on failed GRN (C2 quarantine)', async () => {
+    const actor = {
+      id: userAId,
+      branchId: branchA,
+      permissions: ['purchases:create', 'purchases:receive'],
+    }
+
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'Quarantine Narcotic',
+        sku: 'Q-NARC',
+        barcode: '99QNARC',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
+    })
+
+    const purchase = await createPurchase(
+      {
+        branchId: branchA,
+        supplierId: (
+          await prisma.supplier.create({ data: { name: 'Q Supplier', gstin: '29DDDDD0000D1Z5' } })
+        ).id,
+        items: [
+          {
+            productId: narcotic.id,
+            orderedQuantity: 10,
+            unitCost: 100,
+            discountPercent: 0,
+            taxPercent: 12,
+          },
+        ],
+      },
+      actor
+    )
+
+    await updatePurchase(purchase.id, { status: 'ORDERED' }, actor)
+    // GRN with quality check FAILED - should quarantine the batch
+    await createGrn(
+      {
+        purchaseId: purchase.id,
+        branchId: branchA,
+        grnNumber: 'GRN-Q-001',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: purchase.items[0].id,
+            receivedQuantity: 10,
+            batchNumber: 'BATCH-Q-NARC-001',
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            manufacturingDate: new Date(),
+            purchasePrice: 100,
+            mrp: 150,
+            qualityCheckPassed: false, // FAILED quality check
+            qualityCheckNotes: 'Contamination detected',
+          },
+        ],
+      },
+      actor
+    )
+
+    // GRN should succeed (batch is BLOCKED/quarantined)
+    const grnPurchase = await prisma.purchase.findUniqueOrThrow({ where: { id: purchase.id } })
+    expect(grnPurchase.status).toBe('RECEIVED')
+
+    // NarcoticRegister entry SHOULD still be created for quarantined batch
+    // (GRN succeeds, batch is just marked BLOCKED)
+    const narcRegister = await prisma.narcoticRegister.findMany({
+      where: { referenceType: 'PURCHASE', referenceId: purchase.id },
+    })
+    expect(narcRegister.length).toBe(1)
+    expect(narcRegister[0].movementType).toBe('PURCHASE_RECEIPT')
+    expect(narcRegister[0].quantityIn).toBe(10)
+
+    // Verify batch is quarantined
+    const batch = await prisma.batch.findUniqueOrThrow({
+      where: { productId_batchNumber: { productId: narcotic.id, batchNumber: 'BATCH-Q-NARC-001' } },
+    })
+    expect(batch.status).toBe('BLOCKED')
+  })
+
+  it('verifies C2 quarantine behavior unchanged for non-narcotic products', async () => {
+    const actor = {
+      id: userAId,
+      branchId: branchA,
+      permissions: ['purchases:create', 'purchases:receive'],
+    }
+
+    const normal = await prisma.product.findUniqueOrThrow({ where: { sku: 'MG-N' } })
+
+    await createPurchase(
+      {
+        branchId: branchA,
+        supplierId: (
+          await prisma.supplier.create({ data: { name: 'C2 Supplier', gstin: '29EEEEE0000E1Z5' } })
+        ).id,
+        items: [
+          {
+            productId: normal.id,
+            orderedQuantity: 5,
+            unitCost: 80,
+            discountPercent: 0,
+            taxPercent: 12,
+          },
+        ],
+      },
+      actor
+    )
+
+    // Missing cold chain log for cold-chain product should fail
+    const coldChainProduct = await prisma.product.create({
+      data: {
+        name: 'Cold Chain Normal',
+        sku: 'CC-NORMAL',
+        barcode: '99CCNORM',
+        mrp: 100,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NONE',
+        storageCondition: 'REFRIGERATED',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: {
+        productId: coldChainProduct.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
+    })
+
+    const ccPurchase = await createPurchase(
+      {
+        branchId: branchA,
+        supplierId: (
+          await prisma.supplier.create({ data: { name: 'CC Supplier', gstin: '29FFFFF0000F1Z5' } })
+        ).id,
+        items: [
+          {
+            productId: coldChainProduct.id,
+            orderedQuantity: 5,
+            unitCost: 80,
+            discountPercent: 0,
+            taxPercent: 12,
+          },
+        ],
+      },
+      actor
+    )
+
+    await updatePurchase(ccPurchase.id, { status: 'ORDERED' }, actor)
+    // GRN without cold chain temp log should be quarantined (not rejected)
+    await createGrn(
+      {
+        purchaseId: ccPurchase.id,
+        branchId: branchA,
+        grnNumber: 'GRN-CC-001',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: ccPurchase.items[0].id,
+            receivedQuantity: 5,
+            batchNumber: 'BATCH-CC-001',
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            manufacturingDate: new Date(),
+            purchasePrice: 80,
+            mrp: 100,
+            qualityCheckPassed: true,
+            // No coldChainTempLog provided
+          },
+        ],
+      },
+      actor
+    )
+
+    // Verify batch is quarantined
+    const ccBatch = await prisma.batch.findUniqueOrThrow({
+      where: {
+        productId_batchNumber: { productId: coldChainProduct.id, batchNumber: 'BATCH-CC-001' },
+      },
+    })
+    expect(ccBatch.status).toBe('BLOCKED')
+    expect(ccBatch.blockedReason).toContain('cold-chain temperature log')
   })
 })

@@ -682,6 +682,25 @@ export async function createGrn(
         },
       })
 
+      // ─── Narcotic Register — PURCHASE_RECEIPT ──────────────────────
+      if (product.drugSchedule === 'NARCOTIC_NDPS') {
+        await tx.narcoticRegister.create({
+          data: {
+            branchId: command.branchId,
+            productId: poItem.productId,
+            batchId: batch.id,
+            movementType: 'PURCHASE_RECEIPT',
+            quantityIn: item.receivedQuantity,
+            quantityOut: 0,
+            balanceQuantity: afterAvailable,
+            referenceType: 'PURCHASE',
+            referenceId: command.purchaseId,
+            enteredById: actor.id,
+            entryDate: command.grnDate,
+          },
+        })
+      }
+
       // Update purchase item received quantity with CAS (concurrency-safe)
       const piRes = await tx.purchaseItem.updateMany({
         where: {
