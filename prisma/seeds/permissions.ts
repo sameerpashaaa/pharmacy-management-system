@@ -11,7 +11,12 @@ const PERMISSIONS = [
 
   // Organization
   { code: 'organization:read', name: 'View Organization', module: 'organization', action: 'read' },
-  { code: 'organization:update', name: 'Update Organization', module: 'organization', action: 'update' },
+  {
+    code: 'organization:update',
+    name: 'Update Organization',
+    module: 'organization',
+    action: 'update',
+  },
   { code: 'branches:manage', name: 'Manage Branches', module: 'branches', action: 'manage' },
 
   // Products
@@ -25,7 +30,18 @@ const PERMISSIONS = [
   // Inventory
   { code: 'inventory:read', name: 'View Inventory', module: 'inventory', action: 'read' },
   { code: 'inventory:adjust', name: 'Adjust Stock', module: 'inventory', action: 'adjust' },
-  { code: 'inventory:approve_adjustment', name: 'Approve Stock Adjustments', module: 'inventory', action: 'approve' },
+  {
+    code: 'inventory:approve_adjustment',
+    name: 'Approve Stock Adjustments',
+    module: 'inventory',
+    action: 'approve',
+  },
+  {
+    code: 'inventory:approve_adjustment_chief',
+    name: 'Approve Chief Stock Adjustments',
+    module: 'inventory',
+    action: 'approve_chief',
+  },
 
   // Batches
   { code: 'batches:read', name: 'View Batches', module: 'batches', action: 'read' },
@@ -38,19 +54,49 @@ const PERMISSIONS = [
   { code: 'sales:read', name: 'View Sales', module: 'sales', action: 'read' },
   { code: 'sales:void', name: 'Void/Cancel Sales', module: 'sales', action: 'void' },
   { code: 'sales:discount', name: 'Apply Discounts', module: 'sales', action: 'discount' },
-  { code: 'sales:discount_override', name: 'Override Max Discount', module: 'sales', action: 'discount_override' },
+  {
+    code: 'sales:discount_override',
+    name: 'Override Max Discount',
+    module: 'sales',
+    action: 'discount_override',
+  },
   { code: 'sales:credit', name: 'Sell on Credit', module: 'sales', action: 'credit' },
   { code: 'invoices:print', name: 'Print Invoices', module: 'invoices', action: 'print' },
 
   // Prescriptions
-  { code: 'prescriptions:create', name: 'Create Prescriptions', module: 'prescriptions', action: 'create' },
-  { code: 'prescriptions:read', name: 'View Prescriptions', module: 'prescriptions', action: 'read' },
-  { code: 'prescriptions:approve', name: 'Approve Prescriptions', module: 'prescriptions', action: 'approve' },
+  {
+    code: 'prescriptions:create',
+    name: 'Create Prescriptions',
+    module: 'prescriptions',
+    action: 'create',
+  },
+  {
+    code: 'prescriptions:read',
+    name: 'View Prescriptions',
+    module: 'prescriptions',
+    action: 'read',
+  },
+  {
+    code: 'prescriptions:approve',
+    name: 'Approve Prescriptions',
+    module: 'prescriptions',
+    action: 'approve',
+  },
 
   // Purchases
-  { code: 'purchases:create', name: 'Create Purchase Orders', module: 'purchases', action: 'create' },
+  {
+    code: 'purchases:create',
+    name: 'Create Purchase Orders',
+    module: 'purchases',
+    action: 'create',
+  },
   { code: 'purchases:read', name: 'View Purchases', module: 'purchases', action: 'read' },
-  { code: 'purchases:receive', name: 'Receive Stock (GRN)', module: 'purchases', action: 'receive' },
+  {
+    code: 'purchases:receive',
+    name: 'Receive Stock (GRN)',
+    module: 'purchases',
+    action: 'receive',
+  },
   { code: 'purchases:update', name: 'Update Purchases', module: 'purchases', action: 'update' },
 
   // Returns
@@ -62,13 +108,23 @@ const PERMISSIONS = [
   { code: 'customers:create', name: 'Create Customers', module: 'customers', action: 'create' },
   { code: 'customers:read', name: 'View Customers', module: 'customers', action: 'read' },
   { code: 'customers:update', name: 'Update Customers', module: 'customers', action: 'update' },
-  { code: 'customers:payments', name: 'Record Customer Payments', module: 'customers', action: 'payments' },
+  {
+    code: 'customers:payments',
+    name: 'Record Customer Payments',
+    module: 'customers',
+    action: 'payments',
+  },
 
   // Suppliers
   { code: 'suppliers:create', name: 'Create Suppliers', module: 'suppliers', action: 'create' },
   { code: 'suppliers:read', name: 'View Suppliers', module: 'suppliers', action: 'read' },
   { code: 'suppliers:update', name: 'Update Suppliers', module: 'suppliers', action: 'update' },
-  { code: 'suppliers:payments', name: 'Record Supplier Payments', module: 'suppliers', action: 'payments' },
+  {
+    code: 'suppliers:payments',
+    name: 'Record Supplier Payments',
+    module: 'suppliers',
+    action: 'payments',
+  },
 
   // Finance
   { code: 'finance:read', name: 'View Financial Data', module: 'finance', action: 'read' },
@@ -80,9 +136,24 @@ const PERMISSIONS = [
 
   // Reports
   { code: 'reports:sales', name: 'View Sales Reports', module: 'reports', action: 'sales' },
-  { code: 'reports:purchases', name: 'View Purchase Reports', module: 'reports', action: 'purchases' },
-  { code: 'reports:inventory', name: 'View Inventory Reports', module: 'reports', action: 'inventory' },
-  { code: 'reports:financial', name: 'View Financial Reports', module: 'reports', action: 'financial' },
+  {
+    code: 'reports:purchases',
+    name: 'View Purchase Reports',
+    module: 'reports',
+    action: 'purchases',
+  },
+  {
+    code: 'reports:inventory',
+    name: 'View Inventory Reports',
+    module: 'reports',
+    action: 'inventory',
+  },
+  {
+    code: 'reports:financial',
+    name: 'View Financial Reports',
+    module: 'reports',
+    action: 'financial',
+  },
   { code: 'reports:export', name: 'Export Reports', module: 'reports', action: 'export' },
 
   // Audit

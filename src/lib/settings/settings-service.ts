@@ -36,6 +36,16 @@ export const DEFAULT_POS_SETTINGS: PosSettings = {
   taxInclusive: false,
 }
 
+export interface ApprovalPolicy {
+  selfMax: number
+  managerMax: number
+}
+
+export const DEFAULT_APPROVAL_POLICY: ApprovalPolicy = {
+  selfMax: 10,
+  managerMax: 50,
+}
+
 /**
  * All system settings as `key = `${category}.${key}`` → value.
  */
@@ -101,4 +111,43 @@ export async function getPosSettings(): Promise<PosSettings> {
     negativeStock: pickBoolean(map, 'inventory.negative_stock', DEFAULT_POS_SETTINGS.negativeStock),
     taxInclusive: pickBoolean(map, 'gst.tax_inclusive', DEFAULT_POS_SETTINGS.taxInclusive),
   }
+}
+
+export function getTierForQuantity(
+  quantity: number,
+  policy: ApprovalPolicy
+): 'SELF' | 'MANAGER' | 'CHIEF' {
+  const abs = Math.abs(quantity)
+  if (abs <= policy.selfMax) return 'SELF'
+  if (abs <= policy.managerMax) return 'MANAGER'
+  return 'CHIEF'
+}
+
+export async function getApprovalPolicy(): Promise<ApprovalPolicy> {
+  const map = await getSystemSettingsMap()
+  const selfMax = pickNumber(
+    map,
+    'inventory.approval_tier_self_max',
+    DEFAULT_APPROVAL_POLICY.selfMax
+  )
+  const managerMax = pickNumber(
+    map,
+    'inventory.approval_tier_manager_max',
+    DEFAULT_APPROVAL_POLICY.managerMax
+  )
+  // Validate and sanitize — ensure manager > self, both integers >=0
+  const s = Number.isInteger(selfMax) && selfMax >= 0 ? selfMax : DEFAULT_APPROVAL_POLICY.selfMax
+  const m =
+    Number.isInteger(managerMax) && managerMax > s ? managerMax : DEFAULT_APPROVAL_POLICY.managerMax
+  // If sanitized m is not > s, fallback to defaults
+  if (m <= s) return { ...DEFAULT_APPROVAL_POLICY }
+  return { selfMax: s, managerMax: m }
+}
+
+export function validateApprovalPolicy(selfMax: unknown, managerMax: unknown): string | null {
+  if (!Number.isInteger(selfMax) || (selfMax as number) < 0)
+    return 'self_max must be an integer >= 0'
+  if (!Number.isInteger(managerMax) || (managerMax as number) <= (selfMax as number))
+    return 'manager_max must be an integer > self_max'
+  return null
 }

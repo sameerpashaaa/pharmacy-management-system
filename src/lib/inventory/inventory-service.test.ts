@@ -28,11 +28,25 @@ jest.mock('@/lib/db/prisma', () => ({
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn(),
       updateMany: jest.fn(),
+      findFirst: jest.fn(),
     },
     branch: { findMany: jest.fn(), findUnique: jest.fn() },
+    systemSetting: { findMany: jest.fn() },
+    file: { findUnique: jest.fn() },
+    user: { findUnique: jest.fn() },
     $transaction: jest.fn(),
   },
   prisma: null,
+}))
+
+jest.mock('@/lib/settings/settings-service', () => ({
+  getApprovalPolicy: jest.fn().mockResolvedValue({ selfMax: 10, managerMax: 50 }),
+  getTierForQuantity: jest.fn((q: number, p: { selfMax: number; managerMax: number }) => {
+    const abs = Math.abs(q)
+    if (abs <= p.selfMax) return 'SELF'
+    if (abs <= p.managerMax) return 'MANAGER'
+    return 'CHIEF'
+  }),
 }))
 
 jest.mock('@/lib/inventory/branch-access', () => ({
@@ -69,7 +83,10 @@ const txMock = {
     findUnique: jest.fn(),
     findUniqueOrThrow: jest.fn(),
     updateMany: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
   },
+  file: { findUnique: jest.fn() },
 }
 
 const mockedAssertBranchAccess = assertBranchAccess as jest.Mock
@@ -131,6 +148,28 @@ describe('inventory-service', () => {
     txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' })
     txMock.stockAdjustment.updateMany.mockResolvedValue({ count: 1 })
     txMock.stockAdjustment.findUniqueOrThrow.mockResolvedValue(summaryFixture)
+    txMock.stockAdjustment.findFirst.mockResolvedValue(null)
+    txMock.stockAdjustment.update.mockResolvedValue(summaryFixture)
+    txMock.file.findUnique.mockResolvedValue(null)
+    ;(
+      prismaMock as unknown as { file: { findUnique: jest.Mock } }
+    ).file.findUnique.mockResolvedValue(null)
+    ;(
+      prismaMock as unknown as { user: { findUnique: jest.Mock } }
+    ).user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      userRoles: [
+        {
+          role: {
+            name: 'manager',
+            rolePermissions: [
+              { permission: { code: 'inventory:approve_adjustment' } },
+              { permission: { code: 'inventory:approve_adjustment_chief' } },
+            ],
+          },
+        },
+      ],
+    })
   })
 
   describe('getInventory', () => {

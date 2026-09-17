@@ -398,23 +398,27 @@ enum MovementType {
 }
 
 model StockAdjustment {
-  id            String           @id @default(cuid())
+  id            String                  @id @default(cuid())
   branchId      String
   productId     String
   batchId       String?
   adjustmentType AdjustmentType
-  quantity      Int              // positive = add, negative = remove
+  quantity      Int                     // positive = add, negative = remove
   reason        String
-  notes         String?          @db.Text
-  status        AdjustmentStatus @default(PENDING)
+  notes         String?                 @db.Text
+  status        AdjustmentStatus        @default(PENDING)
+  requiredTier  AdjustmentApprovalTier?
+  evidenceFileId String?
   approvedById  String?
   approvedAt    DateTime?
   createdById   String
-  createdAt     DateTime         @default(now())
+  createdAt     DateTime                @default(now())
 
-  createdBy User @relation("AdjustmentCreatedBy", fields: [createdById], references: [id])
+  createdBy    User  @relation("AdjustmentCreatedBy", fields: [createdById], references: [id])
+  evidenceFile File? @relation("AdjustmentEvidence", fields: [evidenceFileId], references: [id])
 
   @@index([branchId, productId])
+  @@index([evidenceFileId])
   @@map("stock_adjustments")
 }
 
@@ -431,6 +435,12 @@ enum AdjustmentStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum AdjustmentApprovalTier {
+  SELF
+  MANAGER
+  CHIEF
 }
 
 model Batch {
@@ -1190,6 +1200,8 @@ model File {
   entityType  String?  // "prescription", "product", etc.
   entityId    String?
   createdAt   DateTime @default(now())
+
+  stockAdjustmentEvidence StockAdjustment[] @relation("AdjustmentEvidence")
 
   @@index([entityType, entityId])
   @@map("files")

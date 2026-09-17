@@ -8,6 +8,8 @@ import prisma from '@/lib/db/prisma'
 export interface AuthUser {
   id: string
   branchId: string | null
+  permissions?: string[]
+  roles?: string[]
 }
 
 /**

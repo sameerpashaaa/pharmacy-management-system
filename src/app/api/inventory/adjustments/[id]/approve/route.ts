@@ -6,15 +6,25 @@ import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { prisma } from '@/lib/db/prisma'
 import { approveAdjustment } from '@/lib/inventory/inventory-service'
+import { approveAdjustmentSchema } from '@/lib/validations/inventory'
 
 type RouteParams = { params: { id: string } }
 
 // POST /api/inventory/adjustments/:id/approve
-export async function POST(_req: NextRequest, { params }: RouteParams) {
+export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
     const user = await requirePermission(PERMISSIONS.INVENTORY_APPROVE_ADJUSTMENT)
 
-    const adjustment = await approveAdjustment(params.id, user)
+    let evidenceFileId: string | null | undefined
+    try {
+      const body: unknown = await req.json()
+      const parsed = approveAdjustmentSchema.parse(body)
+      evidenceFileId = parsed.evidenceFileId ?? undefined
+    } catch {
+      // No body or invalid JSON — treat as no evidence (validation will happen in service for CHIEF)
+    }
+
+    const adjustment = await approveAdjustment(params.id, user, evidenceFileId ?? null)
 
     // Audit
     await prisma.auditLog.create({

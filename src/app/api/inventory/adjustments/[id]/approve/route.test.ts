@@ -55,7 +55,11 @@ describe('POST /api/inventory/adjustments/:id/approve', () => {
     const body = await res.json()
     expect(res.status).toBe(200)
     expect(body.success).toBe(true)
-    expect(mockedApproveAdjustment).toHaveBeenCalledWith('adj-1', { id: 'u1', branchId: 'br-1' })
+    expect(mockedApproveAdjustment).toHaveBeenCalledWith(
+      'adj-1',
+      { id: 'u1', branchId: 'br-1' },
+      null
+    )
     expect(mockedAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ action: 'APPROVE', entityId: 'adj-1' }),

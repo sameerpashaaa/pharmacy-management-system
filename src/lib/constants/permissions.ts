@@ -27,6 +27,7 @@ export const PERMISSIONS = {
   INVENTORY_READ: 'inventory:read',
   INVENTORY_ADJUST: 'inventory:adjust',
   INVENTORY_APPROVE_ADJUSTMENT: 'inventory:approve_adjustment',
+  INVENTORY_APPROVE_ADJUSTMENT_CHIEF: 'inventory:approve_adjustment_chief',
 
   // Batches
   BATCHES_READ: 'batches:read',
