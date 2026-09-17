@@ -29,7 +29,7 @@ export async function GET() {
 // POST /api/roles
 export async function POST(req: NextRequest) {
   try {
-    await requirePermission(PERMISSIONS.ROLES_MANAGE)
+    const user = await requirePermission(PERMISSIONS.ROLES_MANAGE)
 
     const body: unknown = await req.json()
     const data = createRoleSchema.parse(body)
@@ -52,6 +52,16 @@ export async function POST(req: NextRequest) {
         },
       },
       include: { rolePermissions: { include: { permission: true } } },
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'CREATE',
+        entity: 'Role',
+        entityId: role.id,
+        newData: { name: role.name, displayName: role.displayName },
+      },
     })
 
     return NextResponse.json({ success: true, data: role, message: 'Role created' }, { status: 201 })

@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 // ─── Drug Schedule Enum ───────────────────────────────────────
 
-export const DrugScheduleEnum = z.enum(['NONE', 'H', 'H1', 'X', 'G', 'J'])
+export const DrugScheduleEnum = z.enum(['NONE', 'H', 'H1', 'X', 'G', 'J', 'NARCOTIC_NDPS'])
 
 export type DrugSchedule = z.infer<typeof DrugScheduleEnum>
 
@@ -113,6 +113,7 @@ export const createProductSchema = z.object({
   mrp: z.number().min(0).max(999999.99).step(0.01),
   ptr: z.number().min(0).max(999999.99).step(0.01).optional(),
   costPrice: z.number().min(0).max(999999.99).step(0.01).optional(),
+  dpcoCeiling: z.number().min(0).max(999999.99).step(0.01).optional(),
   minStockLevel: z.number().int().min(0).default(10),
   maxStockLevel: z.number().int().min(0).optional(),
   reorderLevel: z.number().int().min(0).default(20),

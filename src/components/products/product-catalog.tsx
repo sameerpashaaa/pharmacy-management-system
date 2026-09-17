@@ -29,7 +29,6 @@ interface ProductCatalogProps {
   initialPagination: { page: number; limit: number; total: number; pages: number }
   canCreate: boolean
   canUpdate: boolean
-  canDelete: boolean
   canImport: boolean
 }
 
@@ -43,7 +42,6 @@ export function ProductCatalog({
   initialPagination,
   canCreate,
   canUpdate,
-  canDelete,
   canImport,
 }: ProductCatalogProps) {
   const router = useRouter()
@@ -218,7 +216,7 @@ export function ProductCatalog({
         onAddProduct={canCreate ? () => router.push(ROUTES.PRODUCTS_NEW) : undefined}
         onViewProduct={(p) => router.push(ROUTES.PRODUCT(p.id))}
         onEditProduct={canUpdate ? (p) => router.push(ROUTES.PRODUCT_EDIT(p.id)) : undefined}
-        onToggleActive={canDelete ? handleToggleActive : undefined}
+        onToggleActive={canUpdate ? handleToggleActive : undefined}
       />
     </div>
   )

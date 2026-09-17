@@ -15,12 +15,15 @@ import { getSaleById } from '@/lib/sales/sales-service'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDateTime } from '@/lib/utils/date'
 
+import { SaleActionButtons } from './sale-action-buttons'
+
 export const metadata: Metadata = { title: 'Sale Details' }
 
 export default async function SaleDetailPage({ params }: { params: { id: string } }) {
-  const [canRead, canReturn, session] = await Promise.all([
+  const [canRead, canReturn, canCancel, session] = await Promise.all([
     can(PERMISSIONS.SALES_READ),
     can(PERMISSIONS.RETURNS_CREATE),
+    can(PERMISSIONS.SALES_VOID),
     getSession(),
   ])
 
@@ -78,6 +81,7 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
               </Link>
             </Button>
           )}
+          <SaleActionButtons saleId={sale.id} canCancel={canCancel && sale.status === 'COMPLETED'} />
           <Button asChild variant="outline" size="sm">
             <Link href={ROUTES.SALES}>Back to sales</Link>
           </Button>

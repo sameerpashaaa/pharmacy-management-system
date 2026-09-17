@@ -58,6 +58,7 @@ export const gstReportQuerySchema = financeDateRangeBaseSchema
       .regex(/^\d{2}-\d{4}$/, 'Return period must be MM-YYYY')
       .optional(),
     filed: z.coerce.boolean().optional(),
+    limit: z.coerce.number().int().positive().max(10000).default(1000),
   })
   .refine((data) => !data.from || !data.to || new Date(data.from) <= new Date(data.to), {
     message: 'From date must be before or equal to to date',

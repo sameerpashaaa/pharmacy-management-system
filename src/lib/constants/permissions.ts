@@ -72,6 +72,12 @@ export const PERMISSIONS = {
   SUPPLIERS_UPDATE: 'suppliers:update',
   SUPPLIERS_PAYMENTS: 'suppliers:payments',
 
+  // Doctors
+  DOCTORS_CREATE: 'doctors:create',
+  DOCTORS_READ: 'doctors:read',
+  DOCTORS_UPDATE: 'doctors:update',
+  DOCTORS_DELETE: 'doctors:delete',
+
   // Finance
   FINANCE_READ: 'finance:read',
   FINANCE_MANAGE: 'finance:manage',

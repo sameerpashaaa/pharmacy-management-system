@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 
-import { requirePermission } from '@/lib/auth/auth-helpers'
+import { assertAssignableRoles, requirePermission } from '@/lib/auth/auth-helpers'
 import { recordPasswordHistory } from '@/lib/auth/password-history'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import prisma from '@/lib/db/prisma'
@@ -14,9 +14,25 @@ export async function GET(req: NextRequest) {
     await requirePermission(PERMISSIONS.USERS_READ)
 
     const { searchParams } = new URL(req.url)
-    const page = parseInt(searchParams.get('page') ?? '1')
-    const limit = parseInt(searchParams.get('limit') ?? '20')
+    const rawPage = searchParams.get('page') ?? '1'
+    const rawLimit = searchParams.get('limit') ?? '20'
+    const page = parseInt(rawPage, 10)
+    const limit = parseInt(rawLimit, 10)
     const search = searchParams.get('search') ?? ''
+
+    if (Number.isNaN(page) || page < 1) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'Page must be a positive integer' } },
+        { status: 400 }
+      )
+    }
+    if (Number.isNaN(limit) || limit < 1 || limit > 100) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'Limit must be between 1 and 100' } },
+        { status: 400 }
+      )
+    }
+
     const skip = (page - 1) * limit
 
     const where = search
@@ -66,10 +82,11 @@ export async function GET(req: NextRequest) {
 // POST /api/users
 export async function POST(req: NextRequest) {
   try {
-    await requirePermission(PERMISSIONS.USERS_CREATE)
+    const actor = await requirePermission(PERMISSIONS.USERS_CREATE)
 
     const body: unknown = await req.json()
     const data = createUserSchema.parse(body)
+    await assertAssignableRoles(data.roleIds)
 
     // Check email uniqueness
     const existing = await prisma.user.findUnique({ where: { email: data.email } })
@@ -106,6 +123,7 @@ export async function POST(req: NextRequest) {
     // Audit
     await prisma.auditLog.create({
       data: {
+        userId: actor.id,
         action: 'CREATE',
         entity: 'User',
         entityId: user.id,

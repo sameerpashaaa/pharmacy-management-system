@@ -5,7 +5,7 @@ import { GET as posConfigGET } from '@/app/api/pos/config/route'
 import { DELETE as heldBillDELETE } from '@/app/api/pos/held-bills/[id]/route'
 import { GET as heldBillsGET, POST as heldBillsPOST } from '@/app/api/pos/held-bills/route'
 import { GET as posProductsGET } from '@/app/api/pos/products/route'
-import { requirePermission } from '@/lib/auth/auth-helpers'
+import { requireAuth, requirePermission } from '@/lib/auth/auth-helpers'
 import { resolveBranchScope } from '@/lib/inventory/branch-access'
 import {
   createHeldBill,
@@ -17,6 +17,7 @@ import { getPosSettings } from '@/lib/settings/settings-service'
 
 jest.mock('@/lib/auth/auth-helpers', () => ({
   requirePermission: jest.fn(),
+  requireAuth: jest.fn(),
 }))
 
 jest.mock('@/lib/inventory/branch-access', () => ({
@@ -35,6 +36,7 @@ jest.mock('@/lib/settings/settings-service', () => ({
 }))
 
 const mockedPermission = requirePermission as jest.Mock
+const mockedAuth = requireAuth as jest.Mock
 const mockedScope = resolveBranchScope as jest.Mock
 const mockedService = {
   searchPosProducts: searchPosProducts as jest.Mock,
@@ -57,14 +59,14 @@ describe('GET /api/pos/products', () => {
   beforeEach(() => jest.clearAllMocks())
 
   it('requires a branch scope for POS search', async () => {
-    mockedPermission.mockResolvedValueOnce(cashier())
+    mockedAuth.mockResolvedValueOnce(cashier())
     mockedScope.mockResolvedValueOnce(null)
     const res = await posProductsGET(makeReq('http://localhost/api/pos/products?search=para'))
     expect(res.status).toBe(400)
   })
 
   it('searches active products for the resolved branch', async () => {
-    mockedPermission.mockResolvedValueOnce(cashier())
+    mockedAuth.mockResolvedValueOnce(cashier())
     mockedScope.mockResolvedValueOnce('br-1')
     mockedService.searchPosProducts.mockResolvedValueOnce([{ id: 'p1', availableQuantity: 5 }])
 
@@ -76,7 +78,7 @@ describe('GET /api/pos/products', () => {
   })
 
   it('validates the query', async () => {
-    mockedPermission.mockResolvedValueOnce(cashier())
+    mockedAuth.mockResolvedValueOnce(cashier())
     mockedScope.mockResolvedValueOnce('br-1')
     const res = await posProductsGET(makeReq('http://localhost/api/pos/products?limit=999'))
     expect(res.status).toBe(400)

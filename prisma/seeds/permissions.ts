@@ -63,6 +63,12 @@ const PERMISSIONS = [
   { code: 'sales:credit', name: 'Sell on Credit', module: 'sales', action: 'credit' },
   { code: 'invoices:print', name: 'Print Invoices', module: 'invoices', action: 'print' },
 
+  // Doctors
+  { code: 'doctors:create', name: 'Create Doctors', module: 'doctors', action: 'create' },
+  { code: 'doctors:read', name: 'View Doctors', module: 'doctors', action: 'read' },
+  { code: 'doctors:update', name: 'Update Doctors', module: 'doctors', action: 'update' },
+  { code: 'doctors:delete', name: 'Delete Doctors', module: 'doctors', action: 'delete' },
+
   // Prescriptions
   {
     code: 'prescriptions:create',

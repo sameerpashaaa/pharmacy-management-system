@@ -30,7 +30,6 @@ export interface MovementRow {
     product: { id: string; name: string; sku: string; unitOfMeasure: string }
     branch: { id: string; name: string; code: string | null }
   }
-  createdBy: { id: string; name: string } | null
 }
 
 interface MovementsTableProps {

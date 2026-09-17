@@ -25,6 +25,8 @@ const HAS_DB = Boolean(process.env.DATABASE_URL)
 jest.mock('@/lib/auth/auth-helpers', () => ({
   requireAuth: jest.fn(),
   requirePermission: jest.fn(),
+  // Role-assignment guard is out of scope for these tests; allow by default.
+  assertAssignableRoles: jest.fn(),
 }))
 
 // @auth/prisma-adapter ships ESM which jest does not transform; it is unused

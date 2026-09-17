@@ -7,7 +7,7 @@ import { STATUS_META } from '@/components/batches/batches-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { can } from '@/lib/auth/auth-helpers'
+import { can, getSession } from '@/lib/auth/auth-helpers'
 import { getBatchById } from '@/lib/batches/batch-service'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { ROUTES } from '@/lib/constants/routes'
@@ -17,7 +17,7 @@ import { formatDate, formatDateTime } from '@/lib/utils/date'
 export const metadata: Metadata = { title: 'Batch Details' }
 
 export default async function BatchDetailPage({ params }: { params: { id: string } }) {
-  const canRead = await can(PERMISSIONS.BATCHES_READ)
+  const [canRead, session] = await Promise.all([can(PERMISSIONS.BATCHES_READ), getSession()])
 
   if (!canRead) {
     return (
@@ -30,7 +30,7 @@ export default async function BatchDetailPage({ params }: { params: { id: string
     )
   }
 
-  const detail = await getBatchById(params.id)
+  const detail = await getBatchById(params.id, session?.user ?? undefined)
   if (!detail) notFound()
 
   const statusMeta = STATUS_META[detail.status]

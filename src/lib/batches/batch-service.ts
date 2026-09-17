@@ -173,11 +173,20 @@ export async function getBatches(params: BatchListParams = {}): Promise<BatchLis
   }
 }
 
-export async function getBatchById(id: string): Promise<BatchDetailItem | null> {
+export async function getBatchById(
+  id: string,
+  user?: AuthUser
+): Promise<BatchDetailItem | null> {
   await expireDueBatches()
 
   const batch = await prisma.batch.findUnique({ where: { id }, include: detailInclude })
-  return batch ? toDetailItem(batch as BatchDetail) : null
+  if (!batch) return null
+
+  if (batch.branchId && user) {
+    await assertBranchAccess(user, batch.branchId)
+  }
+
+  return toDetailItem(batch as BatchDetail)
 }
 
 // ─── Create (used by future GRN/Purchases + tests) ────────────
@@ -340,6 +349,7 @@ export async function disposeBatch(
       select: {
         status: true,
         branchId: true,
+        productId: true,
         quantity: true,
         reservedQuantity: true,
         soldQuantity: true,
@@ -356,7 +366,7 @@ export async function disposeBatch(
       throw new Error(`Insufficient available quantity: available ${available}`)
     }
 
-    await tx.batchDisposal.create({
+    const disposal = await tx.batchDisposal.create({
       data: {
         batchId: id,
         quantity: input.quantity,
@@ -365,6 +375,49 @@ export async function disposeBatch(
         disposedById: user.id,
       },
     })
+
+    // Reconcile product-branch inventory aggregate (CAS via updatedAt),
+    // mirroring the GRN/purchase and POS/sale patterns.
+    if (existing.branchId) {
+      const inventory = await tx.inventory.findUnique({
+        where: {
+          productId_branchId: { productId: existing.productId, branchId: existing.branchId },
+        },
+      })
+      if (inventory) {
+        const beforeTotal = inventory.totalQuantity
+        const afterTotal = inventory.totalQuantity - input.quantity
+        const afterAvailable = inventory.availableQuantity - input.quantity
+        if (afterAvailable < 0) {
+          throw new Error('Conflict: inventory changed concurrently, please retry')
+        }
+
+        const inventoryRes = await tx.inventory.updateMany({
+          where: { id: inventory.id, updatedAt: inventory.updatedAt },
+          data: { totalQuantity: afterTotal, availableQuantity: afterAvailable },
+        })
+        if (inventoryRes.count !== 1) {
+          throw new Error('Conflict: inventory changed concurrently, please retry')
+        }
+
+        await tx.inventoryMovement.create({
+          data: {
+            inventoryId: inventory.id,
+            type: 'WRITE_OFF',
+            quantity: -input.quantity,
+            quantityBefore: beforeTotal,
+            quantityAfter: afterTotal,
+            referenceType: 'WRITE_OFF',
+            referenceId: disposal.id,
+            batchId: id,
+            notes: `Batch disposal: ${input.reason}${
+              input.notes ? ` — ${input.notes}` : ''
+            }`,
+            createdById: user.id,
+          },
+        })
+      }
+    }
 
     const nextQuantity = existing.quantity - input.quantity
 
