@@ -34,14 +34,7 @@ export const PRESCRIPTION_STATUS_META: Record<
   PrescriptionStatus,
   {
     label: string
-    variant:
-      | 'default'
-      | 'secondary'
-      | 'destructive'
-      | 'outline'
-      | 'success'
-      | 'warning'
-      | 'info'
+    variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info'
   }
 > = {
   PENDING: { label: 'Pending Review', variant: 'warning' },
@@ -84,9 +77,7 @@ const columns: ColumnDef<PrescriptionRow>[] = [
       <div>
         <div className="text-sm">{row.original.doctorName || '—'}</div>
         {row.original.doctorRegNumber && (
-          <div className="text-xs text-muted-foreground">
-            Reg: {row.original.doctorRegNumber}
-          </div>
+          <div className="text-xs text-muted-foreground">Reg: {row.original.doctorRegNumber}</div>
         )}
       </div>
     ),
@@ -104,9 +95,7 @@ const columns: ColumnDef<PrescriptionRow>[] = [
     header: 'Images',
     cell: ({ row }) => (
       <span className="text-sm text-muted-foreground">
-        {row.original.imagesCount > 0
-          ? `${row.original.imagesCount} attached`
-          : 'None'}
+        {row.original.imagesCount > 0 ? `${row.original.imagesCount} attached` : 'None'}
       </span>
     ),
   },
@@ -138,10 +127,7 @@ interface PrescriptionsTableProps {
   isLoading?: boolean
 }
 
-export function PrescriptionsTable({
-  rows,
-  isLoading,
-}: PrescriptionsTableProps) {
+export function PrescriptionsTable({ rows, isLoading }: PrescriptionsTableProps) {
   return (
     <DataTable
       columns={columns}

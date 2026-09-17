@@ -26,11 +26,7 @@ interface PurchaseReturnsViewProps {
   canCreate: boolean
 }
 
-export function PurchaseReturnsView({
-  returns,
-  stats,
-  canCreate,
-}: PurchaseReturnsViewProps) {
+export function PurchaseReturnsView({ returns, stats, canCreate }: PurchaseReturnsViewProps) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -81,7 +77,7 @@ export function PurchaseReturnsView({
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+            <div className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
               {stats.pendingReturnsCount}
             </div>
             <p className="text-xs text-muted-foreground">Awaiting vendor pickup/dispatch</p>

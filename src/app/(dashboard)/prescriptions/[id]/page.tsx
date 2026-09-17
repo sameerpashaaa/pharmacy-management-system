@@ -21,9 +21,7 @@ interface PrescriptionPageProps {
 
 export const metadata: Metadata = { title: 'Prescription Details' }
 
-export default async function PrescriptionDetailPage({
-  params,
-}: PrescriptionPageProps) {
+export default async function PrescriptionDetailPage({ params }: PrescriptionPageProps) {
   const [canRead, canApprove, session] = await Promise.all([
     can(PERMISSIONS.PRESCRIPTIONS_READ),
     can(PERMISSIONS.PRESCRIPTIONS_APPROVE),
@@ -66,7 +64,7 @@ export default async function PrescriptionDetailPage({
             </h1>
             <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="mt-1 text-sm text-muted-foreground">
             Registered on {formatDateTime(rx.createdAt.toISOString())}
           </p>
         </div>
@@ -80,7 +78,7 @@ export default async function PrescriptionDetailPage({
 
       <Separator />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/* Patient Card */}
         <Card>
           <CardHeader>
@@ -104,7 +102,7 @@ export default async function PrescriptionDetailPage({
                 <span className="text-muted-foreground">Customer Profile:</span>
                 <Link
                   href={`/customers/${rx.customerId}`}
-                  className="text-primary hover:underline font-medium"
+                  className="font-medium text-primary hover:underline"
                 >
                   {rx.approvedBy?.name ?? 'View Customer'}
                 </Link>
@@ -145,7 +143,7 @@ export default async function PrescriptionDetailPage({
         <CardContent className="space-y-4 text-sm">
           {rx.notes && (
             <div>
-              <div className="font-medium text-xs uppercase tracking-wider text-muted-foreground mb-1">
+              <div className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Prescription / Medication Notes
               </div>
               <p className="rounded-md bg-muted p-3">{rx.notes}</p>
@@ -155,7 +153,7 @@ export default async function PrescriptionDetailPage({
           {rx.status === 'APPROVED' && (
             <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 text-emerald-900">
               <div className="font-semibold">Verified & Approved</div>
-              <div className="text-xs text-emerald-700 mt-1">
+              <div className="mt-1 text-xs text-emerald-700">
                 Approved by {rx.pharmacist?.name ?? 'Pharmacist'} on{' '}
                 {rx.approvedAt ? formatDateTime(rx.approvedAt.toISOString()) : '—'}
               </div>
@@ -165,7 +163,7 @@ export default async function PrescriptionDetailPage({
           {rx.status === 'REJECTED' && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-destructive">
               <div className="font-semibold">Prescription Rejected</div>
-              <div className="text-sm mt-1">Reason: {rx.rejectionReason}</div>
+              <div className="mt-1 text-sm">Reason: {rx.rejectionReason}</div>
             </div>
           )}
         </CardContent>
@@ -180,17 +178,15 @@ export default async function PrescriptionDetailPage({
         </CardHeader>
         <CardContent>
           {rx.images.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No prescription image files attached.
-            </p>
+            <p className="text-sm text-muted-foreground">No prescription image files attached.</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
               {rx.images.map((img) => (
                 <div
                   key={img.id}
-                  className="rounded-lg border overflow-hidden bg-card flex flex-col"
+                  className="flex flex-col overflow-hidden rounded-lg border bg-card"
                 >
-                  <div className="h-40 bg-muted flex items-center justify-center p-2">
+                  <div className="flex h-40 items-center justify-center bg-muted p-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={img.fileUrl}
@@ -198,13 +194,13 @@ export default async function PrescriptionDetailPage({
                       className="max-h-full max-w-full object-contain"
                     />
                   </div>
-                  <div className="p-3 text-xs flex items-center justify-between border-t bg-background">
+                  <div className="flex items-center justify-between border-t bg-background p-3 text-xs">
                     <span className="truncate font-medium">{img.fileName}</span>
                     <a
                       href={img.fileUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary hover:underline ml-2 flex-shrink-0"
+                      className="ml-2 flex-shrink-0 text-primary hover:underline"
                     >
                       Open
                     </a>
@@ -227,7 +223,7 @@ export default async function PrescriptionDetailPage({
           <CardContent>
             <div className="divide-y text-sm">
               {rx.sales.map((s) => (
-                <div key={s.id} className="py-2 flex items-center justify-between">
+                <div key={s.id} className="flex items-center justify-between py-2">
                   <div>
                     <Link
                       href={`/sales/${s.id}`}
@@ -240,9 +236,7 @@ export default async function PrescriptionDetailPage({
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="font-semibold">
-                      {formatCurrency(Number(s.totalAmount))}
-                    </div>
+                    <div className="font-semibold">{formatCurrency(Number(s.totalAmount))}</div>
                     <Badge variant="outline" className="text-xs">
                       {s.status}
                     </Badge>

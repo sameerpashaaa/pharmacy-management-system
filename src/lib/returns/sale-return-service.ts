@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 
 import prisma from '@/lib/db/prisma'
+import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
 import type {
   CreateSaleReturnInput,
@@ -66,10 +67,8 @@ const saleReturnInclude = {
   creditNote: true,
 } satisfies Prisma.SaleReturnInclude
 
-export async function createSaleReturn(
-  input: CreateSaleReturnInput,
-  actor: ReturnActor
-) {
+export async function createSaleReturn(input: CreateSaleReturnInput, actor: ReturnActor) {
+  await ensureDefaultLedgers()
   const sale = await prisma.sale.findUnique({
     where: { id: input.saleId },
     include: {
@@ -127,8 +126,7 @@ export async function createSaleReturn(
     const lineTotal = Math.round(netUnit * line.quantity * 100) / 100
     returnTotalAmount += lineTotal
 
-    const resolvedBatchId =
-      line.batchId ?? saleItem.itemBatches[0]?.batchId ?? null
+    const resolvedBatchId = line.batchId ?? saleItem.itemBatches[0]?.batchId ?? null
 
     processedLines.push({
       saleItemId: line.saleItemId,
@@ -275,9 +273,7 @@ export async function createSaleReturn(
     const allSaleItems = await tx.saleItem.findMany({
       where: { saleId: sale.id },
     })
-    const isFullyReturned = allSaleItems.every(
-      (item) => item.returnedQuantity >= item.quantity
-    )
+    const isFullyReturned = allSaleItems.every((item) => item.returnedQuantity >= item.quantity)
     await tx.sale.update({
       where: { id: sale.id },
       data: {
@@ -305,18 +301,31 @@ export async function createSaleReturn(
 
       // If customer profile exists, update ledger
       if (sale.customerId) {
-        await tx.customerLedger.create({
-          data: {
-            customerId: sale.customerId,
-            type: 'CREDIT',
-            entryDate: new Date(),
-            description: `Credit note ${noteNumber} for return ${returnNumber}`,
-            amount: returnTotalAmount,
-            balance: returnTotalAmount,
-            referenceType: 'SALE_RETURN',
-            referenceId: saleReturn.id,
-          },
+        const customer = await tx.customer.findUnique({
+          where: { id: sale.customerId },
+          select: { outstandingBalance: true },
         })
+        if (customer) {
+          const newBalance = customer.outstandingBalance.sub(returnTotalAmount)
+
+          await tx.customer.update({
+            where: { id: sale.customerId },
+            data: { outstandingBalance: newBalance },
+          })
+
+          await tx.customerLedger.create({
+            data: {
+              customerId: sale.customerId,
+              type: 'CREDIT',
+              entryDate: new Date(),
+              description: `Credit note ${noteNumber} for return ${returnNumber}`,
+              amount: returnTotalAmount,
+              balance: newBalance,
+              referenceType: 'SALE_RETURN',
+              referenceId: saleReturn.id,
+            },
+          })
+        }
       }
     }
 
@@ -436,7 +445,7 @@ export async function listSaleReturns(
 
 export async function listCreditNotes(
   params: Partial<CreditNoteQueryParams> = {},
-  _actor: ReturnActor
+  actor: ReturnActor
 ) {
   const {
     page = 1,
@@ -449,6 +458,13 @@ export async function listCreditNotes(
   } = params
 
   const where: Prisma.CreditNoteWhereInput = {}
+
+  // Branch isolation: credit notes belong to the branch of their sale.
+  // Branch-bound actors only see their own branch; branchless (global)
+  // actors retain cross-branch visibility per the documented access model.
+  if (actor.branchId) {
+    where.saleReturn = { sale: { branchId: actor.branchId } }
+  }
 
   if (status) {
     where.status = status
@@ -501,7 +517,7 @@ export async function listCreditNotes(
   }
 }
 
-export async function getCreditNoteById(id: string, _actor: ReturnActor) {
+export async function getCreditNoteById(id: string, actor: ReturnActor) {
   const note = await prisma.creditNote.findUnique({
     where: { id },
     include: {
@@ -518,5 +534,6 @@ export async function getCreditNoteById(id: string, _actor: ReturnActor) {
     throw new Error('Not Found: credit note')
   }
 
+  await assertBranchAccess(actor, note.saleReturn.sale.branchId)
   return note
 }

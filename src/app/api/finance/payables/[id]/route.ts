@@ -6,10 +6,7 @@ import { PERMISSIONS } from '@/lib/constants/permissions'
 import { getSupplierLedgerStatement } from '@/lib/finance/finance-service'
 import { partyStatementQuerySchema } from '@/lib/validations/finance'
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     await requirePermission(PERMISSIONS.FINANCE_READ)
     const query = partyStatementQuerySchema.parse(Object.fromEntries(req.nextUrl.searchParams))

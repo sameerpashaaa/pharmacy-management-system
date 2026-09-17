@@ -16,13 +16,8 @@ interface NewPurchaseReturnPageProps {
   }
 }
 
-export default async function NewPurchaseReturnPage({
-  searchParams,
-}: NewPurchaseReturnPageProps) {
-  const [canCreate, session] = await Promise.all([
-    can(PERMISSIONS.RETURNS_CREATE),
-    getSession(),
-  ])
+export default async function NewPurchaseReturnPage({ searchParams }: NewPurchaseReturnPageProps) {
+  const [canCreate, session] = await Promise.all([can(PERMISSIONS.RETURNS_CREATE), getSession()])
 
   if (!canCreate || !session?.user) {
     return (
@@ -42,10 +37,7 @@ export default async function NewPurchaseReturnPage({
   if (searchParams.purchaseId) {
     try {
       const po = await getPurchase(searchParams.purchaseId, session.user)
-      if (
-        po &&
-        ['RECEIVED', 'INVOICED', 'PARTIALLY_RECEIVED'].includes(po.status)
-      ) {
+      if (po && ['RECEIVED', 'INVOICED', 'PARTIALLY_RECEIVED'].includes(po.status)) {
         initialPurchase = {
           id: po.id,
           purchaseNumber: po.purchaseNumber,

@@ -1,119 +1,154 @@
-import type { Metadata } from 'next'
+'use client'
 
+import { useState, useEffect } from 'react'
+
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { getSession } from '@/lib/auth/auth-helpers'
-import prisma from '@/lib/db/prisma'
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from '@/components/ui/table'
 import { formatCurrency } from '@/lib/utils/currency'
 
-export const metadata: Metadata = { title: 'Sales Reports' }
+interface DailyBreakdown {
+  date: string
+  salesCount: number
+  revenue: number
+  tax: number
+  discount: number
+}
 
-export default async function SalesReportsPage() {
-  const session = await getSession()
-  const branchId = session?.user?.branchId
+interface SalesData {
+  totalSalesCount: number
+  totalRevenue: number
+  totalTax: number
+  totalDiscount: number
+  excludedSalesCount?: number
+  dailyBreakdown: DailyBreakdown[]
+}
 
-  // Default to last 30 days
-  const startDate = new Date()
-  startDate.setDate(startDate.getDate() - 30)
-  startDate.setHours(0, 0, 0, 0)
+export default function SalesReportsPage() {
+  const [data, setData] = useState<SalesData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const where = {
-    branchId: branchId ?? undefined,
-    saleDate: { gte: startDate },
-    status: 'COMPLETED' as const,
+  useEffect(() => {
+    fetch('/api/reports/sales')
+      .then((res) => res.json())
+      .then((res) => {
+        const body = res as { success: boolean; data: SalesData }
+        if (!body.success) {
+          setError('Failed to load sales report. Please try again.')
+          return
+        }
+        setData(body.data)
+      })
+      .catch(() => setError('Failed to load sales report. Please try again.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const exportCSV = () => {
+    if (!data) return
+    void import('papaparse').then((Papa) => {
+      const csv = Papa.unparse(data.dailyBreakdown)
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.setAttribute('download', 'sales_report.csv')
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    })
   }
 
-  // Fetch sales for daily aggregation and payment methods
-  const sales = await prisma.sale.findMany({
-    where,
-    select: {
-      saleDate: true,
-      totalAmount: true,
-    },
-    orderBy: { saleDate: 'asc' },
-  })
+  if (loading) return <div>Loading...</div>
 
-  // Fetch payments for payment breakdown
-  const payments = await prisma.payment.groupBy({
-    by: ['method'],
-    where: {
-      sale: where
-    },
-    _sum: { amount: true },
-  })
-
-  // Fetch top products
-  const topProducts = await prisma.saleItem.groupBy({
-    by: ['productName'],
-    where: {
-      sale: where
-    },
-    _sum: {
-      quantity: true,
-      totalAmount: true,
-    },
-    orderBy: {
-      _sum: { totalAmount: 'desc' }
-    },
-    take: 10,
-  })
-
-  const totalRevenue = sales.reduce((sum, s) => sum + Number(s.totalAmount), 0)
+  if (error)
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight">Sales &amp; Financial Report</h1>
+        <p className="text-red-500">{error}</p>
+      </div>
+    )
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Sales Reports (Last 30 Days)</h1>
-        <p className="text-muted-foreground">Sales trends, product performance, and revenue analysis</p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Sales &amp; Financial Report</h1>
+          <p className="text-muted-foreground">Revenue and sales breakdown</p>
+        </div>
+        <Button onClick={exportCSV}>Export CSV</Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Total Sales</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalRevenue)}</div>
-            <p className="text-xs text-muted-foreground">Across {sales.length} transactions</p>
+            <div className="text-2xl font-bold">{data?.totalSalesCount ?? 0}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Total Revenue</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(data?.totalRevenue ?? 0)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Total Tax</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(data?.totalTax ?? 0)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Total Discount</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(data?.totalDiscount ?? 0)}</div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Products by Revenue</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {topProducts.map((p, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium leading-none">{p.productName}</p>
-                    <p className="text-sm text-muted-foreground">{p._sum.quantity} units sold</p>
-                  </div>
-                  <div className="font-medium">{formatCurrency(Number(p._sum.totalAmount))}</div>
-                </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Daily Breakdown</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Sales Count</TableHead>
+                <TableHead>Revenue</TableHead>
+                <TableHead>Tax</TableHead>
+                <TableHead>Discount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data?.dailyBreakdown?.map((day: DailyBreakdown) => (
+                <TableRow key={day.date}>
+                  <TableCell>{day.date}</TableCell>
+                  <TableCell>{day.salesCount}</TableCell>
+                  <TableCell>{formatCurrency(day.revenue)}</TableCell>
+                  <TableCell>{formatCurrency(day.tax)}</TableCell>
+                  <TableCell>{formatCurrency(day.discount)}</TableCell>
+                </TableRow>
               ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Payment Method Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {payments.map((p, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <p className="text-sm font-medium">{p.method}</p>
-                  <div className="font-medium">{formatCurrency(Number(p._sum.amount))}</div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   )
 }

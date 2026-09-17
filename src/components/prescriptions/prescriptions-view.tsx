@@ -71,9 +71,7 @@ export function PrescriptionsView({
   const [total, setTotal] = useState(initialPagination.total)
   const [loading, setLoading] = useState(false)
 
-  const [status, setStatus] = useState<string>(
-    searchParams.get('status') ?? defaultStatus
-  )
+  const [status, setStatus] = useState<string>(searchParams.get('status') ?? defaultStatus)
   const [search, setSearch] = useState<string>(searchParams.get('search') ?? '')
   const debouncedSearch = useDebounce(search, 300)
 
@@ -138,7 +136,7 @@ export function PrescriptionsView({
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={status} onValueChange={handleStatusChange} className="w-full sm:w-auto">
-          <TabsList className="grid grid-cols-5 w-full sm:w-auto">
+          <TabsList className="grid w-full grid-cols-5 sm:w-auto">
             <TabsTrigger value="ALL">All</TabsTrigger>
             <TabsTrigger value="PENDING">Pending</TabsTrigger>
             <TabsTrigger value="APPROVED">Approved</TabsTrigger>
@@ -147,7 +145,7 @@ export function PrescriptionsView({
           </TabsList>
         </Tabs>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           <div className="w-full sm:w-64">
             <Input
               placeholder="Search patient, doctor, rx #..."
@@ -157,7 +155,7 @@ export function PrescriptionsView({
           </div>
 
           <div className="flex items-center gap-1">
-            <div className="text-xs text-muted-foreground whitespace-nowrap">
+            <div className="whitespace-nowrap text-xs text-muted-foreground">
               Page {page} of {Math.max(totalPages, 1)} ({total})
             </div>
             <Button

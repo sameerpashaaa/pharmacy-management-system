@@ -1,10 +1,6 @@
 import { z } from 'zod'
 
-export const RestockDecisionEnum = z.enum([
-  'RESTOCK',
-  'QUARANTINE',
-  'DAMAGE_WRITE_OFF',
-])
+export const RestockDecisionEnum = z.enum(['RESTOCK', 'QUARANTINE', 'DAMAGE_WRITE_OFF'])
 
 export type RestockDecision = z.infer<typeof RestockDecisionEnum>
 
@@ -44,20 +40,10 @@ export type CreateSaleReturnItemInput = z.input<typeof createSaleReturnItemSchem
 export const createSaleReturnSchema = z.object({
   saleId: z.string().min(1, 'Sale ID is required'),
   reason: z.string().trim().min(1, 'Reason for return is required').max(500),
-  refundMethod: z.enum([
-    'CASH',
-    'CARD',
-    'UPI',
-    'NETBANKING',
-    'CHEQUE',
-    'CREDIT',
-    'WALLET',
-  ]),
+  refundMethod: z.enum(['CASH', 'CARD', 'UPI', 'NETBANKING', 'CHEQUE', 'CREDIT', 'WALLET']),
   refundRef: z.string().trim().max(100).optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
-  items: z
-    .array(createSaleReturnItemSchema)
-    .min(1, 'At least one item must be returned'),
+  items: z.array(createSaleReturnItemSchema).min(1, 'At least one item must be returned'),
 })
 
 export type CreateSaleReturnInput = z.input<typeof createSaleReturnSchema>
@@ -70,9 +56,7 @@ export const saleReturnQuerySchema = z.object({
   saleId: z.string().optional(),
   customerId: z.string().optional(),
   branchId: z.string().optional(),
-  sortBy: z
-    .enum(['createdAt', 'returnDate', 'totalAmount'])
-    .default('createdAt'),
+  sortBy: z.enum(['createdAt', 'returnDate', 'totalAmount']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 })
 

@@ -34,14 +34,7 @@ export const SALE_RETURN_STATUS_META: Record<
   SaleReturnStatus,
   {
     label: string
-    variant:
-      | 'default'
-      | 'secondary'
-      | 'destructive'
-      | 'outline'
-      | 'success'
-      | 'warning'
-      | 'info'
+    variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info'
   }
 > = {
   PENDING: { label: 'Pending', variant: 'warning' },
@@ -89,9 +82,7 @@ const columns: ColumnDef<SaleReturnRow>[] = [
     accessorKey: 'customerName',
     header: 'Customer',
     cell: ({ row }) => (
-      <span className="text-sm font-medium">
-        {row.original.customerName ?? 'Walk-in'}
-      </span>
+      <span className="text-sm font-medium">{row.original.customerName ?? 'Walk-in'}</span>
     ),
   },
   {
@@ -107,9 +98,7 @@ const columns: ColumnDef<SaleReturnRow>[] = [
     accessorKey: 'totalAmount',
     header: 'Amount',
     cell: ({ row }) => (
-      <span className="tabular-nums font-semibold">
-        {formatCurrency(row.original.totalAmount)}
-      </span>
+      <span className="font-semibold tabular-nums">{formatCurrency(row.original.totalAmount)}</span>
     ),
   },
   {
@@ -119,7 +108,7 @@ const columns: ColumnDef<SaleReturnRow>[] = [
       const method = row.original.refundMethod
       if (!method) return <span className="text-xs text-muted-foreground">—</span>
       return (
-        <Badge variant="outline" className="capitalize text-xs">
+        <Badge variant="outline" className="text-xs capitalize">
           {method.toLowerCase()}
         </Badge>
       )

@@ -69,9 +69,7 @@ export function PurchaseReturnForm({ initialPurchase }: PurchaseReturnFormProps)
 
   const [lines, setLines] = useState<Record<string, ReturnLineState>>({})
   const [reason, setReason] = useState('')
-  const [returnDate, setReturnDate] = useState(
-    new Date().toISOString().split('T')[0]
-  )
+  const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0])
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -157,11 +155,7 @@ export function PurchaseReturnForm({ initialPurchase }: PurchaseReturnFormProps)
     }
   }
 
-  const handleLineQtyChange = (
-    itemId: string,
-    rawQty: number,
-    maxAllowed: number
-  ) => {
+  const handleLineQtyChange = (itemId: string, rawQty: number, maxAllowed: number) => {
     const qty = Math.max(0, Math.min(rawQty, maxAllowed))
     setLines((prev) => ({
       ...prev,
@@ -259,9 +253,7 @@ export function PurchaseReturnForm({ initialPurchase }: PurchaseReturnFormProps)
         return
       }
 
-      toast.success(
-        `Purchase Return ${json.data?.returnNumber ?? ''} created successfully!`
-      )
+      toast.success(`Purchase Return ${json.data?.returnNumber ?? ''} created successfully!`)
       if (json.data?.id) {
         router.push(ROUTES.PURCHASE_RETURN(json.data.id))
       } else {
@@ -278,9 +270,7 @@ export function PurchaseReturnForm({ initialPurchase }: PurchaseReturnFormProps)
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            Return to Vendor (RTV)
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight">Return to Vendor (RTV)</h1>
           <p className="text-muted-foreground">
             Return received stock back to supplier, deduct inventory, and debit supplier ledger.
           </p>
@@ -414,7 +404,7 @@ export function PurchaseReturnForm({ initialPurchase }: PurchaseReturnFormProps)
                               )
                             }
                             placeholder="0"
-                            className="w-20 text-center mx-auto"
+                            className="mx-auto w-20 text-center"
                           />
                         </td>
                         <td className="py-3 pr-4 text-right tabular-nums">
@@ -428,10 +418,8 @@ export function PurchaseReturnForm({ initialPurchase }: PurchaseReturnFormProps)
                             placeholder="Reason for line return..."
                             disabled={isZeroReceived || returnQty === 0 || submitting}
                             value={lineState?.reason ?? ''}
-                            onChange={(e) =>
-                              handleLineReasonChange(item.id, e.target.value)
-                            }
-                            className="text-xs h-9"
+                            onChange={(e) => handleLineReasonChange(item.id, e.target.value)}
+                            className="h-9 text-xs"
                           />
                         </td>
                       </tr>
@@ -485,7 +473,7 @@ export function PurchaseReturnForm({ initialPurchase }: PurchaseReturnFormProps)
                         type="button"
                         variant="secondary"
                         size="sm"
-                        className="text-xs h-7"
+                        className="h-7 text-xs"
                         onClick={() => setReason(preset)}
                       >
                         {preset}
@@ -522,11 +510,11 @@ export function PurchaseReturnForm({ initialPurchase }: PurchaseReturnFormProps)
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Supplier Outstanding Debit:</span>
-                  <span className="font-bold text-destructive tabular-nums">
+                  <span className="font-bold tabular-nums text-destructive">
                     -{formatCurrency(totalReturnAmount)}
                   </span>
                 </div>
-                <div className="rounded-lg bg-muted p-4 space-y-1 text-xs text-muted-foreground">
+                <div className="space-y-1 rounded-lg bg-muted p-4 text-xs text-muted-foreground">
                   <p className="font-medium text-foreground">Automatic Actions on Submit:</p>
                   <p>1. Deducts inventory quantity from active branch stock.</p>
                   <p>2. Reduces associated batch quantities.</p>

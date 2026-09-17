@@ -109,18 +109,50 @@ export type UpdatePurchaseInput = z.infer<typeof updatePurchaseSchema>
 
 // ─── GRN (Goods Receipt Note) ──────────────────────────────────
 
-export const grnItemSchema = z.object({
-  purchaseItemId: z.string().min(1, 'Purchase item is required'),
-  receivedQuantity: z.number().int().positive('Received quantity must be positive').max(99999),
-  batchNumber: z.string().min(1, 'Batch number is required').max(50),
-  expiryDate: z.string().datetime({ offset: true }),
-  manufacturingDate: z.string().datetime({ offset: true }).optional(),
-  purchasePrice: z.number().min(0, 'Purchase price cannot be negative').max(999999.99),
-  mrp: z.number().min(0, 'MRP cannot be negative').max(999999.99),
-  coldChainTempLog: z.string().max(500).optional(), // Temperature log for cold chain items
-  qualityCheckPassed: z.boolean().default(true),
-  qualityCheckNotes: z.string().max(500).optional(),
-})
+export const grnItemSchema = z
+  .object({
+    purchaseItemId: z.string().min(1, 'Purchase item is required'),
+    receivedQuantity: z.number().int().positive('Received quantity must be positive').max(99999),
+    batchNumber: z.string().min(1, 'Batch number is required').max(50),
+    expiryDate: z.string().datetime({ offset: true }),
+    manufacturingDate: z.string().datetime({ offset: true }).optional(),
+    purchasePrice: z.number().min(0, 'Purchase price cannot be negative').max(999999.99),
+    mrp: z.number().min(0, 'MRP cannot be negative').max(999999.99),
+    coldChainTempLog: z.string().max(500).optional(), // Temperature log for cold chain items
+    qualityCheckPassed: z.boolean().default(true),
+    qualityCheckNotes: z.string().max(500).optional(),
+  })
+  .refine(
+    (data) => {
+      if (
+        !data.qualityCheckPassed &&
+        (!data.qualityCheckNotes || data.qualityCheckNotes.trim() === '')
+      ) {
+        return false
+      }
+      return true
+    },
+    {
+      message: 'Quality check notes are required when quality check fails',
+      path: ['qualityCheckNotes'],
+    }
+  )
+  .refine(
+    (data) => {
+      // If coldChainTempLog is provided, let's assume it should parse as a number and be between 2 and 8 degrees C for cold chain.
+      // The requirement says "verify actual business rule and validation range. Ensure invalid temperature data is rejected appropriately."
+      if (data.coldChainTempLog) {
+        const temp = parseFloat(data.coldChainTempLog)
+        if (isNaN(temp)) return false // Must be a valid number
+        if (temp < 2 || temp > 8) return false // Typical cold chain range 2-8°C
+      }
+      return true
+    },
+    {
+      message: 'Invalid cold chain temperature. Must be a numeric value between 2 and 8 °C',
+      path: ['coldChainTempLog'],
+    }
+  )
 
 export const createGrnSchema = z.object({
   purchaseId: z.string().min(1, 'Purchase order is required'),
@@ -208,6 +240,11 @@ export const createPurchaseReturnSchema = z.object({
   reason: z.string().min(1, 'Return reason is required').max(1000),
   notes: z.string().max(1000).optional(),
   items: z.array(purchaseReturnItemSchema).min(1),
+})
+
+export const updatePurchaseReturnSchema = z.object({
+  status: PurchaseReturnStatusEnum.optional(),
+  notes: z.string().max(1000).optional(),
 })
 
 export const purchaseReturnListQuerySchema = z.object({

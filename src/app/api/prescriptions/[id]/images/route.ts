@@ -19,10 +19,7 @@ interface RouteParams {
   params: { id: string }
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: RouteParams
-) {
+export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
     const user = await requirePermission(PERMISSIONS.PRESCRIPTIONS_CREATE)
     const body: unknown = await req.json()

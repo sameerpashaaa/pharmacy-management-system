@@ -23,8 +23,10 @@ jest.mock('@/lib/db/prisma', () => ({
       groupBy: jest.fn(),
       aggregate: jest.fn(),
       updateMany: jest.fn(),
+      deleteMany: jest.fn(),
     },
     auditLog: { create: jest.fn() },
+    ledger: { count: jest.fn().mockResolvedValue(1) },
   },
 }))
 

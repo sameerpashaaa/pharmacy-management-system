@@ -4,14 +4,8 @@ import { ZodError } from 'zod'
 
 import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
-import {
-  createSaleReturn,
-  listSaleReturns,
-} from '@/lib/returns/sale-return-service'
-import {
-  createSaleReturnSchema,
-  saleReturnQuerySchema,
-} from '@/lib/validations/sale-return'
+import { createSaleReturn, listSaleReturns } from '@/lib/returns/sale-return-service'
+import { createSaleReturnSchema, saleReturnQuerySchema } from '@/lib/validations/sale-return'
 
 function errStatus(msg: string) {
   if (msg === 'Unauthorized') return 401
@@ -24,9 +18,7 @@ function errStatus(msg: string) {
 export async function GET(req: NextRequest) {
   try {
     const user = await requirePermission(PERMISSIONS.RETURNS_READ)
-    const query = saleReturnQuerySchema.parse(
-      Object.fromEntries(req.nextUrl.searchParams)
-    )
+    const query = saleReturnQuerySchema.parse(Object.fromEntries(req.nextUrl.searchParams))
     const result = await listSaleReturns(query, user)
     return NextResponse.json({
       success: true,

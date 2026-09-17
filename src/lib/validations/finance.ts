@@ -82,9 +82,7 @@ export const recordPartyPaymentSchema = z.object({
 })
 
 export const fileGstPeriodSchema = z.object({
-  returnPeriod: z
-    .string()
-    .regex(/^\d{2}-\d{4}$/, 'Return period must be MM-YYYY'),
+  returnPeriod: z.string().regex(/^\d{2}-\d{4}$/, 'Return period must be MM-YYYY'),
   branchId: z.string().optional(),
 })
 

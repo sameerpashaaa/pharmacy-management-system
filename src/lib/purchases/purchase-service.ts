@@ -1,20 +1,17 @@
 import type {
   Purchase,
   PurchaseItem,
-  Supplier,
-  Payment,
   PurchaseReturn,
   PurchaseReturnItem,
+  Supplier,
+  Payment,
 } from '@prisma/client'
-import { Prisma } from '@prisma/client'
+import { GstTxType, Prisma } from '@prisma/client'
 import type { z } from 'zod'
 
 import prisma from '@/lib/db/prisma'
-import {
-  assertBranchAccess,
-  resolveBranchScope,
-  type AuthUser,
-} from '@/lib/inventory/branch-access'
+import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
+import { assertBranchAccess, type AuthUser } from '@/lib/inventory/branch-access'
 import {
   supplierListQuerySchema,
   purchaseListQuerySchema,
@@ -24,6 +21,7 @@ import {
   type threeWayMatchSchema,
   type supplierPaymentSchema,
   type createPurchaseReturnSchema,
+  type updatePurchaseReturnSchema,
   type CreateSupplierInput,
   type UpdateSupplierInput,
 } from '@/lib/validations/purchase'
@@ -34,6 +32,14 @@ import {
 // Server-side authority: client never sends trusted money/qty.
 // All amounts derived from DB; CAS for inventory; audit on mutations.
 // ─────────────────────────────────────────────────────────────
+
+// ─── Utilities ─────────────────────────────────────────────────
+
+/** GST return period "MM-YYYY" for the given date (mirrors finance/gst-service). */
+function formatReturnPeriod(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  return `${month}-${date.getFullYear()}`
+}
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -60,6 +66,15 @@ export interface PurchaseWithItems extends Purchase {
     status: string
     reason: string
   }[]
+}
+
+export interface PurchaseReturnWithDetails extends PurchaseReturn {
+  supplier: { id: string; name: string }
+  purchase: { id: string; purchaseNumber: string }
+  items: (PurchaseReturnItem & {
+    product: { id: string; name: string; sku: string }
+    batch: { id: string; batchNumber: string } | null
+  })[]
 }
 
 export interface GrnWithItems {
@@ -92,6 +107,8 @@ export async function createSupplier(
   data: CreateSupplierInput,
   actor: AuthUser
 ): Promise<Supplier> {
+  await assertBranchAccess(actor, '')
+
   const supplier = await prisma.supplier.create({
     data: {
       ...data,
@@ -114,7 +131,9 @@ export async function createSupplier(
   return supplier
 }
 
-export async function getSupplier(id: string, _actor: AuthUser): Promise<Supplier | null> {
+export async function getSupplier(id: string, actor: AuthUser): Promise<Supplier | null> {
+  await assertBranchAccess(actor, '') // Global check for read
+
   return prisma.supplier.findUnique({ where: { id } })
 }
 
@@ -125,6 +144,8 @@ export async function updateSupplier(
 ): Promise<Supplier> {
   const existing = await prisma.supplier.findUnique({ where: { id } })
   if (!existing) throw new Error('Not Found: supplier')
+
+  await assertBranchAccess(actor, '')
 
   const supplier = await prisma.supplier.update({
     where: { id },
@@ -146,11 +167,13 @@ export async function updateSupplier(
 
 export async function listSuppliers(
   params: z.infer<typeof supplierListQuerySchema>,
-  _actor: AuthUser
+  actor: AuthUser
 ): Promise<{
   data: Supplier[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
+  await assertBranchAccess(actor, '')
+
   const {
     page = 1,
     limit = 20,
@@ -204,6 +227,7 @@ export async function createPurchase(
   command: CreatePurchaseCommand,
   actor: AuthUser
 ): Promise<PurchaseWithItems> {
+  await ensureDefaultLedgers()
   await assertBranchAccess(actor, command.branchId)
 
   const supplier = await prisma.supplier.findUnique({ where: { id: command.supplierId } })
@@ -213,11 +237,11 @@ export async function createPurchase(
   const branch = await prisma.branch.findUnique({ where: { id: command.branchId } })
   if (!branch) throw new Error('Not Found: branch')
 
-  // Validate all products exist and are active
+  // Validate all products exist and are active; fetch MRP for server-side calculation
   const productIds = command.items.map((i) => i.productId)
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
-    select: { id: true, isActive: true, name: true },
+    select: { id: true, isActive: true, name: true, mrp: true, ptr: true },
   })
   if (products.length !== productIds.length) {
     const found = new Set(products.map((p) => p.id))
@@ -229,6 +253,51 @@ export async function createPurchase(
     throw new Error(`Product is inactive: ${inactive.map((p) => p.name).join(', ')}`)
   }
 
+  // Build product lookup for MRP
+  const productMap = new Map(products.map((p) => [p.id, p]))
+
+  // P1-1: server-side line + header financials. The same line-item
+  // formula persists to items AND is summed for the Purchase header, so
+  // the header is guaranteed to reconcile with its own items.
+  const itemRows = command.items.map((item) => {
+    const product = productMap.get(item.productId)!
+    // Server-side calculation: never trust client-provided totals
+    const lineSubtotal = item.orderedQuantity * item.unitCost
+    const discountAmount = lineSubtotal * (item.discountPercent / 100)
+    const taxableAmount = lineSubtotal - discountAmount
+    const taxAmount = taxableAmount * (item.taxPercent / 100)
+    const totalAmount = taxableAmount + taxAmount
+
+    return {
+      create: {
+        productId: item.productId,
+        orderedQuantity: item.orderedQuantity,
+        receivedQuantity: 0,
+        freeQuantity: 0,
+        unitCost: item.unitCost,
+        discountPercent: item.discountPercent,
+        taxPercent: item.taxPercent,
+        taxAmount: Math.round(taxAmount * 100) / 100,
+        totalAmount: Math.round(totalAmount * 100) / 100,
+        batchNumber: item.batchNumber ?? null,
+        expiryDate: item.expiryDate ?? null,
+        manufacturingDate: item.manufacturingDate ?? null,
+        mrp: Number(product.mrp),
+        ptr: product.ptr ? Number(product.ptr) : null,
+      },
+      lineSubtotal,
+      discountAmount,
+      taxAmount: Math.round(taxAmount * 100) / 100,
+      totalAmount: Math.round(totalAmount * 100) / 100,
+    }
+  })
+  const header = {
+    subtotal: Math.round(itemRows.reduce((sum, r) => sum + r.lineSubtotal, 0) * 100) / 100,
+    discountAmount: Math.round(itemRows.reduce((sum, r) => sum + r.discountAmount, 0) * 100) / 100,
+    taxAmount: Math.round(itemRows.reduce((sum, r) => sum + r.taxAmount, 0) * 100) / 100,
+    totalAmount: Math.round(itemRows.reduce((sum, r) => sum + r.totalAmount, 0) * 100) / 100,
+  }
+
   const purchase = await prisma.$transaction(async (tx) => {
     const purchaseNumber = `PO-${Date.now()}`
     const purchase = await tx.purchase.create({
@@ -236,25 +305,17 @@ export async function createPurchase(
         purchaseNumber,
         branchId: command.branchId,
         supplierId: command.supplierId,
+        subtotal: header.subtotal,
+        discountAmount: header.discountAmount,
+        taxAmount: header.taxAmount,
+        totalAmount: header.totalAmount,
+        balanceDue: header.totalAmount,
         expectedDate: command.expectedDate,
         notes: command.notes ?? null,
         status: 'DRAFT',
         createdById: actor.id,
         items: {
-          create: command.items.map((item) => ({
-            productId: item.productId,
-            orderedQuantity: item.orderedQuantity,
-            receivedQuantity: 0,
-            freeQuantity: 0,
-            unitCost: item.unitCost,
-            discountPercent: item.discountPercent,
-            taxPercent: item.taxPercent,
-            batchNumber: item.batchNumber ?? null,
-            expiryDate: item.expiryDate ?? null,
-            manufacturingDate: item.manufacturingDate ?? null,
-            mrp: 0,
-            totalAmount: 0,
-          })),
+          create: itemRows.map((r) => r.create),
         },
       },
       include: {
@@ -283,6 +344,8 @@ export async function createPurchase(
 }
 
 export async function getPurchase(id: string, actor: AuthUser): Promise<PurchaseWithItems | null> {
+  await assertBranchAccess(actor, '')
+
   const purchase = await prisma.purchase.findUnique({
     where: { id },
     include: {
@@ -304,10 +367,6 @@ export async function getPurchase(id: string, actor: AuthUser): Promise<Purchase
     },
   })
 
-  if (purchase) {
-    await assertBranchAccess(actor, purchase.branchId)
-  }
-
   return purchase
 }
 
@@ -318,6 +377,8 @@ export async function listPurchases(
   data: PurchaseWithItems[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
+  await assertBranchAccess(actor, '')
+
   const {
     page = 1,
     limit = 20,
@@ -330,8 +391,7 @@ export async function listPurchases(
   } = purchaseListQuerySchema.parse(params)
 
   const where: Prisma.PurchaseWhereInput = {}
-  const scopeBranchId = await resolveBranchScope(actor, branchId)
-  if (scopeBranchId) where.branchId = scopeBranchId
+  if (branchId) where.branchId = branchId
   if (supplierId) where.supplierId = supplierId
   if (status) where.status = status
   if (search) {
@@ -438,9 +498,10 @@ export async function createGrn(
 ): Promise<{ grn: { id: string; grnNumber: string }; purchase: Purchase }> {
   await assertBranchAccess(actor, command.branchId)
 
+  // Basic checks outside transaction (fast fail)
   const purchase = await prisma.purchase.findUnique({
     where: { id: command.purchaseId },
-    include: { items: true, supplier: true },
+    include: { items: true, supplier: true, branch: true },
   })
   if (!purchase) throw new Error('Not Found: purchase order')
 
@@ -458,29 +519,13 @@ export async function createGrn(
   })
   if (existingGrn) throw new Error('GRN number already exists')
 
-  // Validate received quantities against PO
-  const itemMap = new Map(purchase.items.map((i) => [i.id, i]))
-  const totalReceived: Record<string, number> = {}
-
+  // Expiry validation: reject if expiry < 6 months from today (fast fail)
+  const sixMonthsFromNow = new Date()
+  sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6)
   for (const item of command.items) {
-    const poItem = itemMap.get(item.purchaseItemId)
-    if (!poItem) throw new Error(`Purchase item not found: ${item.purchaseItemId}`)
-
-    const alreadyReceived = poItem.receivedQuantity
-    const remaining = poItem.orderedQuantity - alreadyReceived
-    if (item.receivedQuantity > remaining) {
-      throw new Error(`Over-receiving: item ${poItem.id} only ${remaining} remaining`)
-    }
-
-    // Expiry validation: reject if expiry < 6 months from today
-    const sixMonthsFromNow = new Date()
-    sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6)
     if (item.expiryDate < sixMonthsFromNow) {
       throw new Error(`Expiry date too soon: must be at least 6 months from today`)
     }
-
-    totalReceived[item.purchaseItemId] =
-      (totalReceived[item.purchaseItemId] || 0) + item.receivedQuantity
   }
 
   // Check for duplicate batch numbers within this GRN
@@ -490,8 +535,39 @@ export async function createGrn(
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    // Lock and re-read purchase items for concurrency-safe over-receiving check
+    const purchaseItems = await tx.purchaseItem.findMany({
+      where: { purchaseId: command.purchaseId },
+      select: {
+        id: true,
+        productId: true,
+        orderedQuantity: true,
+        receivedQuantity: true,
+        unitCost: true,
+        discountPercent: true,
+        taxPercent: true,
+      },
+    })
+    const itemMap = new Map(purchaseItems.map((i) => [i.id, i]))
+
+    // Re-validate received quantities against PO INSIDE transaction (concurrency-safe)
+    const totalReceived: Record<string, number> = {}
+    for (const item of command.items) {
+      const poItem = itemMap.get(item.purchaseItemId)
+      if (!poItem) throw new Error(`Purchase item not found: ${item.purchaseItemId}`)
+
+      const alreadyReceived = poItem.receivedQuantity
+      const remaining = poItem.orderedQuantity - alreadyReceived
+      if (item.receivedQuantity > remaining) {
+        throw new Error(`Over-receiving: item ${poItem.id} only ${remaining} remaining`)
+      }
+
+      totalReceived[item.purchaseItemId] =
+        (totalReceived[item.purchaseItemId] || 0) + item.receivedQuantity
+    }
+
     // Create GRN record (stored on purchase for simplicity)
-    const updatedPurchase = await tx.purchase.update({
+    await tx.purchase.update({
       where: { id: command.purchaseId },
       data: {
         status: 'PARTIALLY_RECEIVED',
@@ -572,11 +648,19 @@ export async function createGrn(
         },
       })
 
-      // Update purchase item received quantity
-      await tx.purchaseItem.update({
-        where: { id: item.purchaseItemId },
+      // Update purchase item received quantity with CAS (concurrency-safe)
+      const piRes = await tx.purchaseItem.updateMany({
+        where: {
+          id: item.purchaseItemId,
+          receivedQuantity: poItem.receivedQuantity, // CAS: only update if still same as read
+        },
         data: { receivedQuantity: { increment: item.receivedQuantity } },
       })
+      if (piRes.count !== 1) {
+        throw new Error(
+          'Conflict: purchase item received quantity changed concurrently, please retry'
+        )
+      }
 
       // Batch status log
       await tx.batchStatusLog.create({
@@ -590,20 +674,110 @@ export async function createGrn(
       })
     }
 
-    // Check if fully received
+    // Check if fully received (re-read after updates)
     const updatedItems = await tx.purchaseItem.findMany({
       where: { purchaseId: command.purchaseId },
     })
     const allReceived = updatedItems.every((i) => i.receivedQuantity >= i.orderedQuantity)
-    if (allReceived) {
-      await tx.purchase.update({
-        where: { id: command.purchaseId },
-        data: { status: 'RECEIVED', receivedAt: command.grnDate },
+    const finalStatus = allReceived ? 'RECEIVED' : 'PARTIALLY_RECEIVED'
+
+    const finalPurchase = await tx.purchase.update({
+      where: { id: command.purchaseId },
+      data: { status: finalStatus, receivedAt: command.grnDate },
+    })
+
+    // P1-2: recognize the supplier payable at GRN time, priced at the
+    // PO line-item cost formula for THIS GRN's received delta only.
+    // A PO is not a liability until goods land; each partial receipt
+    // accrues only its own share.
+    let grnTotalAmount = 0
+    for (const received of command.items) {
+      const poItem = itemMap.get(received.purchaseItemId)!
+      const lineSubtotal = received.receivedQuantity * Number(poItem.unitCost)
+      const discountAmount = lineSubtotal * (Number(poItem.discountPercent) / 100)
+      const taxableAmount = lineSubtotal - discountAmount
+      const taxAmount = taxableAmount * (Number(poItem.taxPercent) / 100)
+      const totalAmount = taxableAmount + taxAmount
+
+      grnTotalAmount += totalAmount
+    }
+    const grnTotal = Math.round(grnTotalAmount * 100) / 100
+
+    const currentSupplier = await tx.supplier.findUnique({
+      where: { id: purchase.supplierId },
+    })
+    if (currentSupplier) {
+      const newOutstanding = currentSupplier.outstandingBalance.add(grnTotal)
+      await tx.supplierLedger.create({
+        data: {
+          supplierId: currentSupplier.id,
+          type: 'DEBIT',
+          amount: grnTotal,
+          balance: newOutstanding,
+          description: `GRN ${command.grnNumber} received for PO ${purchase.purchaseNumber}`,
+          referenceType: 'PURCHASE',
+          referenceId: command.purchaseId,
+          entryDate: command.grnDate,
+        },
       })
-    } else {
-      await tx.purchase.update({
-        where: { id: command.purchaseId },
-        data: { status: 'PARTIALLY_RECEIVED' },
+      await tx.supplier.update({
+        where: { id: currentSupplier.id },
+        data: { outstandingBalance: newOutstanding },
+      })
+    }
+
+    // P1-3: post purchase GST on receipt. Delete-and-recreate inside the
+    // same transaction so partial receipts stay idempotent — the GST rows
+    // always reflect the CURRENT accumulated received quantities (no
+    // unique constraint exists; multiple rows per purchase are legitimate,
+    // one per received line item).
+    await tx.gstTransaction.deleteMany({
+      where: { referenceType: 'PURCHASE', referenceId: command.purchaseId },
+    })
+
+    const branchState = purchase.branch.state?.trim().toLowerCase()
+    const supplierState = purchase.supplier.state?.trim().toLowerCase()
+    const isInterstate = Boolean(branchState && supplierState && branchState !== supplierState)
+
+    for (const item of updatedItems) {
+      if (item.receivedQuantity <= 0) continue
+      const lineSubtotal = item.receivedQuantity * Number(item.unitCost)
+      const discountAmount = lineSubtotal * (Number(item.discountPercent) / 100)
+      const taxableAmount = lineSubtotal - discountAmount
+      const taxAmount = Math.round(taxableAmount * (Number(item.taxPercent) / 100) * 100) / 100
+      const totalAmount = Math.round((taxableAmount + taxAmount) * 100) / 100
+
+      let cgstAmount = 0
+      let sgstAmount = 0
+      let igstAmount = 0
+      if (isInterstate) {
+        igstAmount = taxAmount
+      } else {
+        cgstAmount = taxAmount / 2
+        sgstAmount = taxAmount / 2
+      }
+
+      await tx.gstTransaction.create({
+        data: {
+          branchId: purchase.branchId,
+          type: GstTxType.B2B,
+          referenceType: 'PURCHASE',
+          referenceId: purchase.id,
+          invoiceNumber: purchase.invoiceNumber ?? purchase.purchaseNumber,
+          invoiceDate: purchase.invoiceDate ?? purchase.createdAt,
+          partyGstin: purchase.supplier.gstin ?? null,
+          partyName: purchase.supplier.name,
+          partyState: purchase.supplier.state ?? purchase.branch.state ?? null,
+          hsnCode: null,
+          taxableAmount: Math.round(taxableAmount * 100) / 100,
+          cgstAmount: Math.round(cgstAmount * 100) / 100,
+          sgstAmount: Math.round(sgstAmount * 100) / 100,
+          igstAmount: Math.round(igstAmount * 100) / 100,
+          totalTax: taxAmount,
+          totalAmount,
+          returnPeriod: formatReturnPeriod(purchase.createdAt),
+          isFiled: false,
+        },
       })
     }
 
@@ -614,11 +788,22 @@ export async function createGrn(
         action: 'GRN_CREATE',
         entity: 'Purchase',
         entityId: command.purchaseId,
-        metadata: { grnNumber: command.grnNumber, purchaseId: command.purchaseId },
+        metadata: {
+          grnNumber: command.grnNumber,
+          purchaseId: command.purchaseId,
+          items: command.items.map((i) => ({
+            purchaseItemId: i.purchaseItemId,
+            batchNumber: i.batchNumber,
+            receivedQuantity: i.receivedQuantity,
+            qualityCheckPassed: i.qualityCheckPassed,
+            qualityCheckNotes: i.qualityCheckNotes,
+            coldChainTempLog: i.coldChainTempLog,
+          })),
+        },
       },
     })
 
-    return { purchase: updatedPurchase }
+    return { purchase: finalPurchase }
   })
 
   return {
@@ -641,6 +826,8 @@ export async function listGrns(
   }[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
+  await assertBranchAccess(actor, '')
+
   const {
     page = 1,
     limit = 20,
@@ -661,8 +848,7 @@ export async function listGrns(
 
   // GRN info is stored on purchase records
   const where: Prisma.PurchaseWhereInput = { status: { in: ['PARTIALLY_RECEIVED', 'RECEIVED'] } }
-  const scopeBranchId = await resolveBranchScope(actor, branchId)
-  if (scopeBranchId) where.branchId = scopeBranchId
+  if (branchId) where.branchId = branchId
   if (purchaseId) where.id = purchaseId
   if (search) {
     where.OR = [
@@ -716,12 +902,13 @@ export async function threeWayMatch(
   data: z.infer<typeof threeWayMatchSchema>,
   actor: AuthUser
 ): Promise<ThreeWayMatchResult> {
+  await assertBranchAccess(actor, '')
+
   const purchase = await prisma.purchase.findUnique({
     where: { id: data.purchaseId },
     include: { items: true },
   })
   if (!purchase) throw new Error('Not Found: purchase order')
-  await assertBranchAccess(actor, purchase.branchId)
 
   const mismatches: ThreeWayMatchResult['mismatches'] = []
   const itemMap = new Map(purchase.items.map((i) => [i.id, i]))
@@ -800,6 +987,8 @@ export async function recordSupplierPayment(
   data: z.infer<typeof supplierPaymentSchema>,
   actor: AuthUser
 ): Promise<{ payment: Payment; ledgerEntry: { id: string; balance: Prisma.Decimal } }> {
+  await assertBranchAccess(actor, '')
+
   const supplier = await prisma.supplier.findUnique({ where: { id: data.supplierId } })
   if (!supplier) throw new Error('Not Found: supplier')
 
@@ -867,12 +1056,14 @@ export async function createPurchaseReturn(
   data: z.infer<typeof createPurchaseReturnSchema>,
   actor: AuthUser
 ): Promise<PurchaseReturn> {
+  await ensureDefaultLedgers()
+  await assertBranchAccess(actor, '')
+
   const purchase = await prisma.purchase.findUnique({
     where: { id: data.purchaseId },
     include: { items: true, supplier: true },
   })
   if (!purchase) throw new Error('Not Found: purchase order')
-  await assertBranchAccess(actor, purchase.branchId)
   if (!['RECEIVED', 'INVOICED', 'PARTIALLY_RECEIVED'].includes(purchase.status)) {
     throw new Error('Purchase must be received before creating a return')
   }
@@ -1031,6 +1222,8 @@ export async function listPurchaseReturns(
   })[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
+  await assertBranchAccess(actor, '')
+
   const {
     page = 1,
     limit = 20,
@@ -1041,9 +1234,7 @@ export async function listPurchaseReturns(
     sortOrder = 'desc',
   } = purchaseReturnListQuerySchema.parse(params)
 
-  const scopeBranchId = await resolveBranchScope(actor)
   const where: Prisma.PurchaseReturnWhereInput = {}
-  if (scopeBranchId) where.purchase = { branchId: scopeBranchId }
   if (supplierId) where.supplierId = supplierId
   if (status) where.status = status
   if (search) {
@@ -1073,6 +1264,105 @@ export async function listPurchaseReturns(
   return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }
 }
 
+// ─── Get Purchase Return ─────────────────────────────────────────
+
+export async function getPurchaseReturn(
+  id: string,
+  actor: AuthUser
+): Promise<PurchaseReturnWithDetails | null> {
+  await assertBranchAccess(actor, '')
+
+  const purchaseReturn = await prisma.purchaseReturn.findUnique({
+    where: { id },
+    include: {
+      supplier: { select: { id: true, name: true } },
+      purchase: { select: { id: true, purchaseNumber: true } },
+    },
+  })
+
+  if (!purchaseReturn) return null
+
+  const items = await prisma.purchaseReturnItem.findMany({
+    where: { purchaseReturnId: id },
+  })
+
+  const productIds = items.map((i) => i.productId)
+  const batchIds = items.map((i) => i.batchId).filter(Boolean) as string[]
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { id: true, name: true, sku: true },
+  })
+
+  const batches = await prisma.batch.findMany({
+    where: { id: { in: batchIds } },
+    select: { id: true, batchNumber: true },
+  })
+
+  const productMap = new Map(products.map((p) => [p.id, p]))
+  const batchMap = new Map(batches.map((b) => [b.id, b]))
+
+  const itemsWithDetails = items.map((item) => ({
+    ...item,
+    product: productMap.get(item.productId)!,
+    batch: item.batchId ? batchMap.get(item.batchId)! : null,
+  }))
+
+  return {
+    ...purchaseReturn,
+    items: itemsWithDetails,
+  }
+}
+
+// ─── Update Purchase Return ──────────────────────────────────────
+
+export async function updatePurchaseReturn(
+  id: string,
+  data: z.infer<typeof updatePurchaseReturnSchema>,
+  actor: AuthUser
+): Promise<PurchaseReturn> {
+  const existing = await prisma.purchaseReturn.findUnique({ where: { id } })
+  if (!existing) throw new Error('Not Found: purchase return')
+
+  await assertBranchAccess(actor, '')
+
+  const validTransitions: Record<string, string[]> = {
+    PENDING: ['APPROVED', 'CANCELLED'],
+    APPROVED: ['DISPATCHED', 'CANCELLED'],
+    DISPATCHED: ['COMPLETED', 'CANCELLED'],
+    COMPLETED: [],
+    CANCELLED: [],
+  }
+
+  if (data.status && existing.status !== data.status) {
+    const allowed = validTransitions[existing.status] || []
+    if (!allowed.includes(data.status)) {
+      throw new Error(`Invalid status transition: ${existing.status} → ${data.status}`)
+    }
+  }
+
+  const purchaseReturn = await prisma.purchaseReturn.update({
+    where: { id },
+    data,
+    include: {
+      supplier: { select: { id: true, name: true } },
+      purchase: { select: { id: true, purchaseNumber: true } },
+    },
+  })
+
+  await prisma.auditLog.create({
+    data: {
+      userId: actor.id,
+      action: 'PURCHASE_RETURN_UPDATE',
+      entity: 'PurchaseReturn',
+      entityId: id,
+      metadata: { changes: data },
+    },
+  })
+
+  return purchaseReturn
+}
+
 export async function getPurchaseReturnById(
   id: string,
   actor: AuthUser
@@ -1091,6 +1381,8 @@ export async function getPurchaseReturnById(
     })
   | null
 > {
+  await assertBranchAccess(actor, '')
+
   const purchaseReturn = await prisma.purchaseReturn.findUnique({
     where: { id },
     include: {
@@ -1106,13 +1398,6 @@ export async function getPurchaseReturnById(
       items: true,
     },
   })
-  if (purchaseReturn) {
-    const p = await prisma.purchase.findUnique({
-      where: { id: purchaseReturn.purchaseId },
-      select: { branchId: true },
-    })
-    if (p) await assertBranchAccess(actor, p.branchId)
-  }
 
   if (!purchaseReturn) return null
 

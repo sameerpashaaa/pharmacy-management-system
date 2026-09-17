@@ -37,6 +37,7 @@ import {
 } from '@/lib/batches/fefo'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import prisma from '@/lib/db/prisma'
+import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
 import { postGstTransactionForSale } from '@/lib/finance/gst-service'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
 import {
@@ -529,6 +530,7 @@ export async function createSale(
   command: CreateSaleCommand,
   actor: SaleActor
 ): Promise<SaleDetail> {
+  await ensureDefaultLedgers()
   const settings = await getPosSettings()
   const permissions = actor.permissions ?? []
 
@@ -589,12 +591,17 @@ export async function createSale(
         if (command.prescriptionId) {
           const rx = await tx.prescription.findUnique({
             where: { id: command.prescriptionId },
-            select: { branchId: true },
+            select: { branchId: true, status: true },
           })
           if (!rx) throw new Error('Not Found: prescription')
           if (rx.branchId !== command.branchId) {
             throw new Error(
               `Forbidden: prescription does not belong to branch '${command.branchId}'`
+            )
+          }
+          if (rx.status !== 'APPROVED') {
+            throw new Error(
+              `Prescription '${command.prescriptionId}' is not approved for dispensing (status: ${rx.status})`
             )
           }
         }

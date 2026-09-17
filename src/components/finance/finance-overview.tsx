@@ -310,9 +310,7 @@ export function FinanceOverview({ summary, ledgers }: FinanceOverviewProps) {
                       min="0.01"
                       step="0.01"
                       value={newEntry.amount || ''}
-                      onChange={(e) =>
-                        setNewEntry({ ...newEntry, amount: Number(e.target.value) })
-                      }
+                      onChange={(e) => setNewEntry({ ...newEntry, amount: Number(e.target.value) })}
                     />
                   </div>
                 </div>
@@ -326,11 +324,7 @@ export function FinanceOverview({ summary, ledgers }: FinanceOverviewProps) {
                   />
                 </div>
                 <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsCreatingEntry(false)}
-                  >
+                  <Button type="button" variant="outline" onClick={() => setIsCreatingEntry(false)}>
                     Cancel
                   </Button>
                   <Button type="submit" disabled={entryLoading}>

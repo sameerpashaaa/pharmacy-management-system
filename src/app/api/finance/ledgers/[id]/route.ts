@@ -4,10 +4,7 @@ import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { getLedgerById } from '@/lib/finance/finance-service'
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     await requirePermission(PERMISSIONS.FINANCE_READ)
     const ledger = await getLedgerById(params.id)

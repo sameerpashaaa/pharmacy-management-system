@@ -83,9 +83,7 @@ export const prescriptionQuerySchema = z.object({
   customerId: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-  sortBy: z
-    .enum(['createdAt', 'prescriptionDate', 'patientName'])
-    .default('createdAt'),
+  sortBy: z.enum(['createdAt', 'prescriptionDate', 'patientName']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 })
 

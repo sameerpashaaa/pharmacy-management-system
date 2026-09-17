@@ -33,14 +33,7 @@ export const CREDIT_NOTE_STATUS_META: Record<
   CreditNoteStatus,
   {
     label: string
-    variant:
-      | 'default'
-      | 'secondary'
-      | 'destructive'
-      | 'outline'
-      | 'success'
-      | 'warning'
-      | 'info'
+    variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info'
   }
 > = {
   ACTIVE: { label: 'Active', variant: 'success' },
@@ -55,18 +48,14 @@ const columns: ColumnDef<CreditNoteRow>[] = [
     accessorKey: 'noteNumber',
     header: 'Note #',
     cell: ({ row }) => (
-      <span className="font-mono font-medium text-foreground">
-        {row.original.noteNumber}
-      </span>
+      <span className="font-mono font-medium text-foreground">{row.original.noteNumber}</span>
     ),
   },
   {
     accessorKey: 'customerName',
     header: 'Customer',
     cell: ({ row }) => (
-      <span className="text-sm font-medium">
-        {row.original.customerName ?? 'Walk-in'}
-      </span>
+      <span className="text-sm font-medium">{row.original.customerName ?? 'Walk-in'}</span>
     ),
   },
   {
@@ -80,9 +69,7 @@ const columns: ColumnDef<CreditNoteRow>[] = [
         >
           {row.original.returnNumber}
         </Link>
-        <span className="font-mono text-muted-foreground">
-          Inv: {row.original.invoiceNumber}
-        </span>
+        <span className="font-mono text-muted-foreground">Inv: {row.original.invoiceNumber}</span>
       </div>
     ),
   },
@@ -90,9 +77,7 @@ const columns: ColumnDef<CreditNoteRow>[] = [
     accessorKey: 'amount',
     header: 'Credit Amount',
     cell: ({ row }) => (
-      <span className="tabular-nums font-semibold">
-        {formatCurrency(row.original.amount)}
-      </span>
+      <span className="font-semibold tabular-nums">{formatCurrency(row.original.amount)}</span>
     ),
   },
   {
@@ -102,7 +87,7 @@ const columns: ColumnDef<CreditNoteRow>[] = [
       const balance = row.original.availableBalance
       return (
         <span
-          className={`tabular-nums font-semibold ${
+          className={`font-semibold tabular-nums ${
             balance > 0 ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'
           }`}
         >
@@ -132,9 +117,7 @@ const columns: ColumnDef<CreditNoteRow>[] = [
     accessorKey: 'createdAt',
     header: 'Issued',
     cell: ({ row }) => (
-      <span className="text-xs text-muted-foreground">
-        {formatDate(row.original.createdAt)}
-      </span>
+      <span className="text-xs text-muted-foreground">{formatDate(row.original.createdAt)}</span>
     ),
   },
 ]

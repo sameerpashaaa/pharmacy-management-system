@@ -17,10 +17,29 @@ jest.mock('@/lib/db/prisma', () => {
   const mockClient = {
     sale: { aggregate: jest.fn() },
     purchase: { aggregate: jest.fn() },
-    customer: { aggregate: jest.fn(), findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
-    supplier: { aggregate: jest.fn(), findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    customer: {
+      aggregate: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    supplier: {
+      aggregate: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
     payment: { aggregate: jest.fn(), create: jest.fn() },
-    ledger: { count: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), upsert: jest.fn() },
+    ledger: {
+      count: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      upsert: jest.fn(),
+    },
     ledgerEntry: { create: jest.fn() },
     customerLedger: { findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
     supplierLedger: { findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
@@ -40,10 +59,29 @@ jest.mock('@/lib/inventory/branch-access', () => ({
 const prismaMock = prisma as unknown as {
   sale: { aggregate: jest.Mock }
   purchase: { aggregate: jest.Mock }
-  customer: { aggregate: jest.Mock; findMany: jest.Mock; count: jest.Mock; findUnique: jest.Mock; update: jest.Mock }
-  supplier: { aggregate: jest.Mock; findMany: jest.Mock; count: jest.Mock; findUnique: jest.Mock; update: jest.Mock }
+  customer: {
+    aggregate: jest.Mock
+    findMany: jest.Mock
+    count: jest.Mock
+    findUnique: jest.Mock
+    update: jest.Mock
+  }
+  supplier: {
+    aggregate: jest.Mock
+    findMany: jest.Mock
+    count: jest.Mock
+    findUnique: jest.Mock
+    update: jest.Mock
+  }
   payment: { aggregate: jest.Mock; create: jest.Mock }
-  ledger: { count: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; upsert: jest.Mock }
+  ledger: {
+    count: jest.Mock
+    findMany: jest.Mock
+    findUnique: jest.Mock
+    create: jest.Mock
+    update: jest.Mock
+    upsert: jest.Mock
+  }
   ledgerEntry: { create: jest.Mock }
   customerLedger: { findMany: jest.Mock; count: jest.Mock; create: jest.Mock }
   supplierLedger: { findMany: jest.Mock; count: jest.Mock; create: jest.Mock }
@@ -66,7 +104,11 @@ describe('Finance Service', () => {
   describe('getFinanceSummary', () => {
     it('aggregates sales, purchases, party dues and cash correctly', async () => {
       ;(prisma.sale.aggregate as jest.Mock).mockResolvedValueOnce({
-        _sum: { totalAmount: new Prisma.Decimal(50000), taxAmount: new Prisma.Decimal(6000), amountPaid: new Prisma.Decimal(45000) },
+        _sum: {
+          totalAmount: new Prisma.Decimal(50000),
+          taxAmount: new Prisma.Decimal(6000),
+          amountPaid: new Prisma.Decimal(45000),
+        },
       })
       ;(prisma.purchase.aggregate as jest.Mock).mockResolvedValueOnce({
         _sum: { totalAmount: new Prisma.Decimal(30000), taxAmount: new Prisma.Decimal(3600) },
@@ -241,7 +283,7 @@ describe('Finance Service', () => {
       expect(res.supplier.outstandingBalance).toBe(8500)
     })
 
-    it('recordSupplierPayment reduces supplier balance and records DEBIT entry', async () => {
+    it('recordSupplierPayment reduces supplier balance and records CREDIT entry', async () => {
       ;(prisma.supplier.findUnique as jest.Mock).mockResolvedValueOnce({
         id: 'sup-1',
         name: 'Pharma Dist Ltd',
@@ -256,7 +298,7 @@ describe('Finance Service', () => {
       })
       ;(prisma.supplierLedger.create as jest.Mock).mockResolvedValueOnce({
         id: 'sle-1',
-        type: 'DEBIT',
+        type: 'CREDIT',
         amount: new Prisma.Decimal(3500),
         balance: new Prisma.Decimal(5000),
         entryDate: new Date(),
@@ -274,6 +316,14 @@ describe('Finance Service', () => {
         where: { id: 'sup-1' },
         data: { outstandingBalance: new Prisma.Decimal(5000) },
       })
+      // Supplier payments follow the established supplier-ledger convention:
+      // payments are CREDIT entries and the Payment row links the supplier.
+      expect(prismaMock.supplierLedger.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ type: 'CREDIT' }) })
+      )
+      expect(prismaMock.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ supplierId: 'sup-1' }) })
+      )
     })
   })
 })

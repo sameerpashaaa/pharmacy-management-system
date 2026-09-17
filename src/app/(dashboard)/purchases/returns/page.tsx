@@ -1,8 +1,6 @@
 import type { Metadata } from 'next'
 
-import {
-  type PurchaseReturnRow,
-} from '@/components/purchases/purchase-returns-table'
+import { type PurchaseReturnRow } from '@/components/purchases/purchase-returns-table'
 import { PurchaseReturnsView } from '@/components/purchases/purchase-returns-view'
 import { can, getSession } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'

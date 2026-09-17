@@ -17,7 +17,13 @@ export const metadata: Metadata = { title: 'Purchase Order Detail' }
 
 type Props = { params: { id: string } }
 
-const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info' }> = {
+const STATUS_LABELS: Record<
+  string,
+  {
+    label: string
+    variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info'
+  }
+> = {
   DRAFT: { label: 'Draft', variant: 'secondary' },
   ORDERED: { label: 'Ordered', variant: 'info' },
   SENT: { label: 'Sent', variant: 'info' },
@@ -41,7 +47,9 @@ export default async function PurchaseDetailPage({ params }: Props) {
   if (!canRead || !session?.user) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-muted-foreground">You do not have permission to view this purchase order.</p>
+        <p className="text-muted-foreground">
+          You do not have permission to view this purchase order.
+        </p>
       </div>
     )
   }
@@ -49,7 +57,10 @@ export default async function PurchaseDetailPage({ params }: Props) {
   const purchase = await getPurchase(params.id, session.user)
   if (!purchase) notFound()
 
-  const statusMeta = STATUS_LABELS[purchase.status] ?? { label: purchase.status, variant: 'secondary' as const }
+  const statusMeta = STATUS_LABELS[purchase.status] ?? {
+    label: purchase.status,
+    variant: 'secondary' as const,
+  }
 
   return (
     <div className="space-y-6">
@@ -65,14 +76,18 @@ export default async function PurchaseDetailPage({ params }: Props) {
               <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
             </div>
             <p className="text-muted-foreground">
-              {purchase.supplier?.name ?? 'Unknown supplier'} &middot; {formatDateTime(purchase.purchaseDate.toISOString())}
+              {purchase.supplier?.name ?? 'Unknown supplier'} &middot;{' '}
+              {formatDateTime(purchase.purchaseDate.toISOString())}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {canReturn && CAN_RETURN.has(purchase.status) && (
             <Button asChild variant="secondary" size="sm">
-              <Link href={`${ROUTES.PURCHASE_RETURNS_NEW}?purchaseId=${purchase.id}`} className="gap-2">
+              <Link
+                href={`${ROUTES.PURCHASE_RETURNS_NEW}?purchaseId=${purchase.id}`}
+                className="gap-2"
+              >
                 <RotateCcw className="h-4 w-4" />
                 Return to Vendor
               </Link>
@@ -98,7 +113,9 @@ export default async function PurchaseDetailPage({ params }: Props) {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Expected Date</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Expected Date
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="font-semibold">
@@ -108,10 +125,14 @@ export default async function PurchaseDetailPage({ params }: Props) {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Amount</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Amount
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-semibold tabular-nums">{formatCurrency(purchase.totalAmount.toString())}</p>
+            <p className="font-semibold tabular-nums">
+              {formatCurrency(purchase.totalAmount.toString())}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -153,12 +174,22 @@ export default async function PurchaseDetailPage({ params }: Props) {
                     <td className="py-2 text-muted-foreground">{item.product.sku}</td>
                     <td className="py-2 text-right">{item.orderedQuantity}</td>
                     <td className="py-2 text-right">
-                      <span className={item.receivedQuantity >= item.orderedQuantity ? 'text-green-600' : 'text-amber-600'}>
+                      <span
+                        className={
+                          item.receivedQuantity >= item.orderedQuantity
+                            ? 'text-green-600'
+                            : 'text-amber-600'
+                        }
+                      >
                         {item.receivedQuantity}
                       </span>
                     </td>
-                    <td className="py-2 text-right tabular-nums">{formatCurrency(item.unitCost.toString())}</td>
-                    <td className="py-2 text-right tabular-nums">{formatCurrency(item.totalAmount.toString())}</td>
+                    <td className="py-2 text-right tabular-nums">
+                      {formatCurrency(item.unitCost.toString())}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {formatCurrency(item.totalAmount.toString())}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -195,7 +226,7 @@ export default async function PurchaseDetailPage({ params }: Props) {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-destructive tabular-nums">
+                    <span className="font-semibold tabular-nums text-destructive">
                       -{formatCurrency(ret.totalAmount.toString())}
                     </span>
                     <Badge variant="outline" className="text-xs">

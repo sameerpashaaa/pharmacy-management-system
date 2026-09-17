@@ -23,6 +23,20 @@ import {
   recordPartyPaymentSchema,
 } from '@/lib/validations/finance'
 
+export interface FinanceSummaryScope {
+  /** Branch the transactional totals (sales/purchases/tax) are scoped to, or null when global. */
+  branchId: string | null
+  /** Scope of sales/purchases/tax aggregates. */
+  transactionTotals: 'BRANCH' | 'GLOBAL'
+  /**
+   * Scope of party balances and cash. Always GLOBAL: Customer, Supplier
+   * and Payment rows carry no branch, so these aggregates cannot be
+   * branch-scoped without a schema change.
+   */
+  partyBalances: 'GLOBAL'
+  cashCollected: 'GLOBAL'
+}
+
 export interface FinanceSummary {
   sales: number
   purchases: number
@@ -32,6 +46,7 @@ export interface FinanceSummary {
   taxCollected: number
   taxPaid: number
   netGstPayable: number
+  scope: FinanceSummaryScope
 }
 
 export interface GstSummary {
@@ -119,7 +134,9 @@ export async function getFinanceSummary(
           ...(Object.keys(dateRangeWhere(query)).length
             ? { paymentDate: dateRangeWhere(query) }
             : {}),
-          saleId: { not: null },
+          method: { not: 'CREDIT' },
+          supplierId: null,
+          purchaseId: null,
         },
         _sum: { amount: true },
       }),
@@ -135,10 +152,16 @@ export async function getFinanceSummary(
     purchases,
     customerReceivables: toNumber(customerTotals._sum.outstandingBalance),
     supplierPayables: toNumber(supplierTotals._sum.outstandingBalance),
-    cashCollected: toNumber(paymentTotals._sum.amount) || toNumber(saleTotals._sum.amountPaid),
+    cashCollected: toNumber(paymentTotals._sum.amount),
     taxCollected,
     taxPaid,
     netGstPayable: Math.round((taxCollected - taxPaid) * 100) / 100,
+    scope: {
+      branchId: branchId ?? null,
+      transactionTotals: branchId ? 'BRANCH' : 'GLOBAL',
+      partyBalances: 'GLOBAL',
+      cashCollected: 'GLOBAL',
+    },
   }
 }
 
@@ -259,6 +282,7 @@ export async function createLedgerEntry(
   data: CreateLedgerEntryInput,
   actor: AuthUser
 ): Promise<LedgerEntry> {
+  await ensureDefaultLedgers()
   const amount = new Prisma.Decimal(data.amount)
 
   return prisma.$transaction(async (tx) => {
@@ -448,6 +472,7 @@ export async function recordCustomerPayment(
   params: RecordPartyPaymentInput,
   actor: AuthUser
 ) {
+  await ensureDefaultLedgers()
   const input = recordPartyPaymentSchema.parse(params)
   const amount = new Prisma.Decimal(input.amount)
 
@@ -639,6 +664,7 @@ export async function recordSupplierPayment(
   params: RecordPartyPaymentInput,
   actor: AuthUser
 ) {
+  await ensureDefaultLedgers()
   const input = recordPartyPaymentSchema.parse(params)
   const amount = new Prisma.Decimal(input.amount)
 
@@ -653,14 +679,17 @@ export async function recordSupplierPayment(
         method: input.paymentMethod,
         amount,
         reference: input.reference ?? null,
+        supplierId: supplier.id,
         paymentDate: input.paymentDate ? new Date(input.paymentDate) : new Date(),
       },
     })
 
+    // A supplier payment reduces what we owe, matching the established
+    // supplier-ledger convention (payments are CREDIT entries).
     const ledgerEntry = await tx.supplierLedger.create({
       data: {
         supplierId: supplier.id,
-        type: LedgerEntryType.DEBIT,
+        type: LedgerEntryType.CREDIT,
         amount,
         balance: newBalance,
         description: input.notes?.trim() || `Payment made to supplier via ${input.paymentMethod}`,

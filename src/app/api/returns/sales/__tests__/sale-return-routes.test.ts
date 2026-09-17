@@ -2,10 +2,7 @@
 import { NextRequest } from 'next/server'
 
 import { GET as returnDetailGET } from '@/app/api/returns/sales/[id]/route'
-import {
-  GET as returnsGET,
-  POST as returnsPOST,
-} from '@/app/api/returns/sales/route'
+import { GET as returnsGET, POST as returnsPOST } from '@/app/api/returns/sales/route'
 import { requirePermission } from '@/lib/auth/auth-helpers'
 import {
   createSaleReturn,

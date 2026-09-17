@@ -21,6 +21,7 @@ jest.mock('@/lib/db/prisma', () => ({
     saleItem: { count: jest.fn() },
     branch: { findUnique: jest.fn() },
     heldBill: { findMany: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
+    ledger: { count: jest.fn().mockResolvedValue(1) },
   },
 }))
 

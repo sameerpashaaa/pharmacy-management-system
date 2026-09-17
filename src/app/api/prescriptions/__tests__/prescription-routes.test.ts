@@ -36,7 +36,11 @@ const mockedService = {
   rejectPrescription: rejectPrescription as jest.Mock,
 }
 
-const mockUser = { id: 'user-1', branchId: 'branch-1', permissions: ['prescriptions:read', 'prescriptions:create'] }
+const mockUser = {
+  id: 'user-1',
+  branchId: 'branch-1',
+  permissions: ['prescriptions:read', 'prescriptions:create'],
+}
 
 describe('Prescription API Routes', () => {
   beforeEach(() => {
