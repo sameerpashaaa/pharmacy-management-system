@@ -587,6 +587,33 @@ export async function createGrn(
       const product = await tx.product.findUnique({ where: { id: poItem.productId } })
       if (!product) throw new Error(`Product not found: ${poItem.productId}`)
 
+      // Quarantine evaluation (service-level enforcement; must not rely on
+      // API/UI validation alone). Non-conforming goods are received as
+      // BLOCKED so FEFO/sales can never allocate them.
+      let blockedReason: string | null = null
+      if (item.qualityCheckPassed === false) {
+        const notes = item.qualityCheckNotes?.trim()
+        blockedReason = `Quality check failed${notes ? `: ${notes}` : ' (no details provided)'}`
+      } else {
+        const storageCondition = product.storageCondition
+        const isColdChain =
+          storageCondition === 'DEEP_FREEZE' || storageCondition === 'REFRIGERATED'
+        const tempLog = item.coldChainTempLog?.trim() || null
+        if (isColdChain && !tempLog) {
+          blockedReason = 'Missing required cold-chain temperature log for cold-chain product'
+        } else if (tempLog) {
+          // Same acceptability rule as the API validation: a provided log
+          // must be numeric and within 2–8 °C. Invalid input fails closed.
+          const temp = parseFloat(tempLog)
+          if (Number.isNaN(temp) || temp < 2 || temp > 8) {
+            throw new Error(
+              'Validation: Invalid cold chain temperature. Must be a numeric value between 2 and 8 °C'
+            )
+          }
+        }
+      }
+      const batchStatus = blockedReason ? 'BLOCKED' : 'ACTIVE'
+
       // Create batch
       const batch = await tx.batch.create({
         data: {
@@ -599,7 +626,8 @@ export async function createGrn(
           quantity: item.receivedQuantity,
           reservedQuantity: 0,
           soldQuantity: 0,
-          status: 'ACTIVE',
+          status: batchStatus,
+          blockedReason,
           supplierRef: item.batchNumber,
           purchaseId: command.purchaseId,
           branchId: command.branchId,
@@ -668,13 +696,17 @@ export async function createGrn(
         )
       }
 
-      // Batch status log
+      // Batch status log (birth convention: X → X; quarantined batches are
+      // born BLOCKED with the quarantine reason recorded)
       await tx.batchStatusLog.create({
         data: {
           batchId: batch.id,
-          fromStatus: 'ACTIVE',
-          toStatus: 'ACTIVE',
-          reason: `Received via GRN ${command.grnNumber}`,
+          fromStatus: batchStatus,
+          toStatus: batchStatus,
+          reason:
+            batchStatus === 'BLOCKED'
+              ? `Quarantined at receipt via GRN ${command.grnNumber}: ${blockedReason}`
+              : `Received via GRN ${command.grnNumber}`,
           changedById: actor.id,
         },
       })

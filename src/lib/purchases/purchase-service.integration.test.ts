@@ -14,6 +14,7 @@
 // protection, ±2% three-way matching, supplier payments + ledger,
 // purchase returns + inventory reversal, and branch/org isolation.
 // ─────────────────────────────────────────────────────────────
+import { filterEligibleBatches } from '@/lib/batches/fefo'
 import prisma from '@/lib/db/prisma'
 import type { AuthUser } from '@/lib/inventory/branch-access'
 import {
@@ -1670,5 +1671,173 @@ describeDb('Purchase management integration (real Postgres)', () => {
 
     await expect(getPurchaseReturn(ret.id, fx.branchAUser)).resolves.toMatchObject({ id: ret.id })
     await expect(getPurchaseReturn(ret.id, fx.otherOrgUser)).rejects.toThrow('Forbidden')
+  })
+
+  // ── C2: GRN quality / cold-chain quarantine ────────────────────
+
+  async function coldProduct(): Promise<string> {
+    const p = await prisma.product.create({
+      data: {
+        name: 'ColdC2',
+        sku: `C2-${Date.now()}`,
+        barcode: `97${Date.now().toString().slice(-8)}`,
+        mrp: 100,
+        storageCondition: 'REFRIGERATED',
+        unitOfMeasure: 'Strip',
+        createdById: fx.userAId,
+      },
+    })
+    return p.id
+  }
+
+  function grnInput(
+    purchaseId: string,
+    itemId: string,
+    batchNumber: string,
+    extra: Record<string, unknown> = {}
+  ) {
+    return {
+      purchaseId,
+      branchId: fx.branchA,
+      grnNumber: `GRN-${batchNumber}`,
+      grnDate: new Date(),
+      items: [
+        {
+          purchaseItemId: itemId,
+          receivedQuantity: 10,
+          batchNumber,
+          expiryDate: inDays(300),
+          purchasePrice: 10,
+          mrp: 100,
+          qualityCheckPassed: true,
+          ...extra,
+        },
+      ],
+    }
+  }
+
+  async function batchOf(batchNumber: string) {
+    const batch = await prisma.batch.findFirst({ where: { batchNumber } })
+    expect(batch).not.toBeNull()
+    return batch!
+  }
+
+  function expectFefoEligible(
+    batch: {
+      id: string
+      batchNumber: string
+      productId: string
+      quantity: number
+      reservedQuantity: number
+      soldQuantity: number
+      status: string
+      expiryDate: Date
+      branchId: string | null
+    },
+    eligible: boolean
+  ) {
+    // Uses the ACTUAL persisted batch row so the assertion proves the real
+    // batch is (in)eligible for FEFO allocation.
+    const candidates = filterEligibleBatches([
+      {
+        id: batch.id,
+        batchNumber: batch.batchNumber,
+        productId: batch.productId,
+        quantity: batch.quantity,
+        reservedQuantity: batch.reservedQuantity,
+        soldQuantity: batch.soldQuantity,
+        status: batch.status as 'ACTIVE' | 'BLOCKED',
+        expiryDate: batch.expiryDate,
+        branchId: batch.branchId,
+      },
+    ])
+    expect(candidates.length > 0).toBe(eligible)
+  }
+
+  it('receives a quality-passed batch as ACTIVE and FEFO eligible', async () => {
+    const { id: purchaseId, itemId } = await orderPurchase(fx)
+    await createGrn(grnInput(purchaseId, itemId, 'BT-C2-OK'), fx.branchAUser)
+
+    const batch = await batchOf('BT-C2-OK')
+    expect(batch.status).toBe('ACTIVE')
+    expect(batch.blockedReason).toBeNull()
+    expectFefoEligible(batch, true)
+
+    const inv = await inventoryFor(fx.para, fx.branchA)
+    expect(inv?.totalQuantity).toBe(10)
+    expect(inv?.availableQuantity).toBe(10)
+  })
+
+  it('quarantines a batch that fails quality check', async () => {
+    const { id: purchaseId, itemId } = await orderPurchase(fx)
+    await createGrn(
+      grnInput(purchaseId, itemId, 'BT-C2-FAILQ', {
+        qualityCheckPassed: false,
+        qualityCheckNotes: 'Broken seals',
+      }),
+      fx.branchAUser
+    )
+
+    const batch = await batchOf('BT-C2-FAILQ')
+    expect(batch.status).toBe('BLOCKED')
+    expect(batch.blockedReason).toContain('Broken seals')
+    expectFefoEligible(batch, false)
+
+    const log = await prisma.batchStatusLog.findFirst({ where: { batchId: batch.id } })
+    expect(log?.fromStatus).toBe('BLOCKED')
+    expect(log?.toStatus).toBe('BLOCKED')
+    expect(log?.reason).toContain('Quarantined')
+
+    // Physical quantity is preserved; FEFO exclusion (not deletion) is the guard.
+    const inv = await inventoryFor(fx.para, fx.branchA)
+    expect(inv?.totalQuantity).toBe(10)
+  })
+
+  it('quarantines a cold-chain batch received without a temperature log', async () => {
+    const productId = await coldProduct()
+    const { id: purchaseId } = await orderPurchase(fx, {
+      items: [{ productId, orderedQuantity: 10, unitCost: 10, discountPercent: 0, taxPercent: 0 }],
+    })
+    const itemId = (await getPurchase(purchaseId, fx.globalActor))!.items[0].id
+    await createGrn(grnInput(purchaseId, itemId, 'BT-C2-NOLOG'), fx.branchAUser)
+
+    const batch = await batchOf('BT-C2-NOLOG')
+    expect(batch.status).toBe('BLOCKED')
+    expect(batch.blockedReason).toContain('temperature log')
+    expectFefoEligible(batch, false)
+  })
+
+  it('rejects a cold-chain batch with an unacceptable temperature log', async () => {
+    const productId = await coldProduct()
+    const { id: purchaseId } = await orderPurchase(fx, {
+      items: [{ productId, orderedQuantity: 10, unitCost: 10, discountPercent: 0, taxPercent: 0 }],
+    })
+    const itemId = (await getPurchase(purchaseId, fx.globalActor))!.items[0].id
+
+    await expect(
+      createGrn(
+        grnInput(purchaseId, itemId, 'BT-C2-BADTEMP', { coldChainTempLog: '25' }),
+        fx.branchAUser
+      )
+    ).rejects.toThrow('Validation')
+
+    expect(await prisma.batch.findFirst({ where: { batchNumber: 'BT-C2-BADTEMP' } })).toBeNull()
+  })
+
+  it('receives a cold-chain batch with an acceptable temperature log as ACTIVE', async () => {
+    const productId = await coldProduct()
+    const { id: purchaseId } = await orderPurchase(fx, {
+      items: [{ productId, orderedQuantity: 10, unitCost: 10, discountPercent: 0, taxPercent: 0 }],
+    })
+    const itemId = (await getPurchase(purchaseId, fx.globalActor))!.items[0].id
+    await createGrn(
+      grnInput(purchaseId, itemId, 'BT-C2-OKTEMP', { coldChainTempLog: '5' }),
+      fx.branchAUser
+    )
+
+    const batch = await batchOf('BT-C2-OKTEMP')
+    expect(batch.status).toBe('ACTIVE')
+    expect(batch.blockedReason).toBeNull()
+    expectFefoEligible(batch, true)
   })
 })
