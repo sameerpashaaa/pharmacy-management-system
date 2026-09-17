@@ -271,6 +271,7 @@ model Product {
   manufacturer    String?
   composition     String?  @db.Text
   drugSchedule    DrugSchedule @default(NONE)
+  storageCondition StorageCondition?
   isPrescriptionRequired Boolean @default(false)
   unitOfMeasure   String   @default("Strip")
   tabsPerStrip    Int?
@@ -317,6 +318,14 @@ enum DrugSchedule {
   X    // Special prescription
   G    // OTC warning
   J    // Exempt
+}
+
+enum StorageCondition {
+  DEEP_FREEZE             // Deep Freeze -25°C to -15°C
+  REFRIGERATED            // Refrigerated +2°C to +8°C
+  COOL                    // Cool +8°C to +15°C
+  ROOM_TEMPERATURE        // Room Temperature +15°C to +25°C
+  CONTROLLED_ROOM_TEMP    // Controlled Room Temp +20°C to +25°C
 }
 
 model ProductCategory {

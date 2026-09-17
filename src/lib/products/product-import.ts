@@ -64,7 +64,10 @@ const CANONICAL_COLUMNS = [...REQUIRED_CSV_COLUMNS, ...OPTIONAL_CSV_COLUMNS]
 // Headers are lowercased at parse time, so compare case-insensitively.
 const REQUIRED_HEADERS = REQUIRED_CSV_COLUMNS.map((c) => c.toLowerCase())
 
-const KNOWN_HEADERS = new Set<string>(CANONICAL_COLUMNS.map((c) => c.toLowerCase()))
+const KNOWN_HEADERS = new Set<string>([
+  ...CANONICAL_COLUMNS.map((c) => c.toLowerCase()),
+  'storage_condition',
+])
 
 const ALLOWED_MIME_TYPES = new Set([
   'text/csv',
@@ -137,7 +140,12 @@ function parseCsv(file: ProductImportFile): ParseResult {
   const canonicalRow = (raw: Record<string, string>): Record<string, string> => {
     const out: Record<string, string> = {}
     for (const col of CANONICAL_COLUMNS) {
-      const value = raw[col.toLowerCase()]
+      const lower = col.toLowerCase()
+      let value = raw[lower]
+      // Alias snake_case header for storageCondition
+      if (value === undefined && col === 'storageCondition') {
+        value = raw['storage_condition']
+      }
       if (value !== undefined) out[col] = value
     }
     return out
@@ -166,6 +174,7 @@ function buildProductData(
     manufacturer: row.manufacturer || null,
     composition: row.composition || null,
     drugSchedule: row.drugSchedule,
+    storageCondition: row.storageCondition ?? null,
     isPrescriptionRequired: row.isPrescriptionRequired,
     unitOfMeasure: row.unitOfMeasure,
     tabsPerStrip: row.tabsPerStrip ?? null,
