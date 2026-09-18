@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
         quantity: data.quantity,
         reason: data.reason,
         notes: data.notes,
+        evidenceFileId: data.evidenceFileId ?? null,
       },
       user
     )

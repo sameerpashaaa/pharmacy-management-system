@@ -9,7 +9,14 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ROUTES } from '@/lib/constants/routes'
@@ -20,6 +27,9 @@ export function LoginForm() {
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') ?? ROUTES.DASHBOARD
   const [showPassword, setShowPassword] = useState(false)
+  const [mfaToken, setMfaToken] = useState<string | null>(null)
+  const [totpCode, setTotpCode] = useState('')
+  const [mfaSubmitting, setMfaSubmitting] = useState(false)
 
   const {
     register,
@@ -38,6 +48,12 @@ export function LoginForm() {
       })
 
       if (result?.error) {
+        const prefix = 'MFA_REQUIRED:'
+        if (result.error.startsWith(prefix)) {
+          setMfaToken(result.error.slice(prefix.length))
+          setTotpCode('')
+          return
+        }
         toast.error(result.error)
         return
       }
@@ -48,6 +64,91 @@ export function LoginForm() {
     } catch {
       toast.error('Something went wrong. Please try again.')
     }
+  }
+
+  const onMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!mfaToken) return
+    if (!/^\d{6}$/.test(totpCode)) {
+      toast.error('Enter the 6-digit code from your authenticator app.')
+      return
+    }
+    setMfaSubmitting(true)
+    try {
+      const result = await signIn('credentials', {
+        mfaToken,
+        totpCode,
+        redirect: false,
+      })
+      if (result?.error) {
+        toast.error(result.error)
+        return
+      }
+      toast.success('Logged in successfully!')
+      router.push(callbackUrl)
+      router.refresh()
+    } catch {
+      toast.error('Something went wrong. Please try again.')
+    } finally {
+      setMfaSubmitting(false)
+    }
+  }
+
+  if (mfaToken) {
+    return (
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader className="space-y-1 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <span className="text-2xl">🔐</span>
+          </div>
+          <CardTitle className="text-2xl font-bold">Two-Factor Authentication</CardTitle>
+          <CardDescription>Enter the 6-digit code from your authenticator app</CardDescription>
+        </CardHeader>
+
+        <form onSubmit={onMfaSubmit}>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="totp">Authenticator Code</Label>
+              <Input
+                id="totp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                maxLength={6}
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                disabled={mfaSubmitting}
+              />
+            </div>
+          </CardContent>
+
+          <CardFooter className="flex flex-col gap-4">
+            <Button type="submit" className="w-full" disabled={mfaSubmitting}>
+              {mfaSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                'Verify & Sign In'
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              disabled={mfaSubmitting}
+              onClick={() => {
+                setMfaToken(null)
+                setTotpCode('')
+              }}
+            >
+              Back to sign in
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
+    )
   }
 
   return (
@@ -72,9 +173,7 @@ export function LoginForm() {
               disabled={isSubmitting}
               {...register('email')}
             />
-            {errors.email && (
-              <p className="text-sm text-destructive">{errors.email.message}</p>
-            )}
+            {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
           </div>
 
           <div className="space-y-2">

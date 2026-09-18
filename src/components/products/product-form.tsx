@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/lib/hooks/use-toast'
-import { createProductSchema } from '@/lib/validations/product'
+import { createProductSchema, STORAGE_CONDITION_LABELS } from '@/lib/validations/product'
 
 type ProductFormValues = z.infer<typeof createProductSchema>
 
@@ -40,6 +40,11 @@ type HsnCodeOption = {
 
 const DRUG_SCHEDULES = ['NONE', 'H', 'H1', 'X', 'G', 'J'] as const
 
+const STORAGE_CONDITIONS = Object.entries(STORAGE_CONDITION_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}))
+
 interface ProductFormInit {
   id?: string
   name: string
@@ -50,6 +55,7 @@ interface ProductFormInit {
   manufacturer?: string | null
   composition?: string | null
   drugSchedule: string
+  storageCondition?: string | null
   isPrescriptionRequired: boolean
   unitOfMeasure: string
   tabsPerStrip?: number | null
@@ -112,6 +118,8 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
       manufacturer: initialData?.manufacturer ?? '',
       composition: initialData?.composition ?? '',
       drugSchedule: (initialData?.drugSchedule as ProductFormValues['drugSchedule']) ?? 'NONE',
+      storageCondition:
+        (initialData?.storageCondition as ProductFormValues['storageCondition']) ?? undefined,
       isPrescriptionRequired: initialData?.isPrescriptionRequired ?? false,
       unitOfMeasure: initialData?.unitOfMeasure ?? 'Strip',
       tabsPerStrip: initialData?.tabsPerStrip ?? undefined,
@@ -354,6 +362,36 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
             <Label htmlFor="product-rx" className="font-normal">
               Prescription required (Rx)
             </Label>
+          </div>
+          <div className="space-y-1">
+            <Label>Storage Condition</Label>
+            <Select
+              value={watch('storageCondition') ?? 'none'}
+              onValueChange={(v) =>
+                setValue(
+                  'storageCondition',
+                  v === 'none' ? undefined : (v as ProductFormValues['storageCondition']),
+                  {
+                    shouldValidate: true,
+                  }
+                )
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select storage condition" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— None —</SelectItem>
+                {STORAGE_CONDITIONS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.storageCondition && (
+              <p className="text-xs text-destructive">{errors.storageCondition.message}</p>
+            )}
           </div>
         </div>
 

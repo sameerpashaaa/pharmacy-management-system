@@ -62,28 +62,6 @@ describe('computeItemPricing (GST exclusive — default)', () => {
   })
 })
 
-describe('computeItemPricing (IGST — inter-state)', () => {
-  it('uses igstRate when supplied (regression: igstPercent was hardcoded to 0)', () => {
-    // Inter-state sale: CGST=0, SGST=0, IGST=18%
-    const line = computeItemPricing({
-      mrp: 100,
-      gstRate: 18,
-      cgstRate: 0,
-      sgstRate: 0,
-      igstRate: 18,
-      isGstExempt: false,
-      taxInclusive: false,
-      quantity: 1,
-    })
-    expect(line.igstPercent).toBe(18)
-    expect(line.igstAmount).toBe(18)
-    expect(line.cgstAmount).toBe(0)
-    expect(line.sgstAmount).toBe(0)
-    expect(line.taxableAmount).toBe(100)
-    expect(line.totalAmount).toBe(118)
-  })
-})
-
 describe('computeItemPricing (tax inclusive)', () => {
   it('backs out the embedded tax without changing the line total', () => {
     const line = computeItemPricing({

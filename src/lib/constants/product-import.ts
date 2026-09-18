@@ -16,6 +16,7 @@ export const OPTIONAL_CSV_COLUMNS = [
   'manufacturer',
   'composition',
   'drugSchedule',
+  'storageCondition',
   'isPrescriptionRequired',
   'unitOfMeasure',
   'tabsPerStrip',

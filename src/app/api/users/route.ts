@@ -2,7 +2,8 @@ import bcrypt from 'bcryptjs'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 
-import { requirePermission, assertAssignableRoles } from '@/lib/auth/auth-helpers'
+import { assertAssignableRoles, requirePermission } from '@/lib/auth/auth-helpers'
+import { recordPasswordHistory } from '@/lib/auth/password-history'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import prisma from '@/lib/db/prisma'
 import { createUserSchema } from '@/lib/validations/user'
@@ -21,13 +22,19 @@ export async function GET(req: NextRequest) {
 
     if (Number.isNaN(page) || page < 1) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Page must be a positive integer' } },
+        {
+          success: false,
+          error: { code: 'VALIDATION', message: 'Page must be a positive integer' },
+        },
         { status: 400 }
       )
     }
     if (Number.isNaN(limit) || limit < 1 || limit > 100) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Limit must be between 1 and 100' } },
+        {
+          success: false,
+          error: { code: 'VALIDATION', message: 'Limit must be between 1 and 100' },
+        },
         { status: 400 }
       )
     }
@@ -98,21 +105,25 @@ export async function POST(req: NextRequest) {
 
     const hashedPassword = await bcrypt.hash(data.password, 12)
 
-    const user = await prisma.user.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        password: hashedPassword,
-        phone: data.phone,
-        branchId: data.branchId,
-        isActive: data.isActive,
-        userRoles: {
-          create: data.roleIds.map((roleId) => ({ roleId })),
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          name: data.name,
+          email: data.email,
+          password: hashedPassword,
+          phone: data.phone,
+          branchId: data.branchId,
+          isActive: data.isActive,
+          userRoles: {
+            create: data.roleIds.map((roleId) => ({ roleId })),
+          },
         },
-      },
-      include: {
-        userRoles: { include: { role: true } },
-      },
+        include: {
+          userRoles: { include: { role: true } },
+        },
+      })
+      await recordPasswordHistory(tx, created.id, hashedPassword)
+      return created
     })
 
     // Audit
@@ -126,7 +137,10 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({ success: true, data: user, message: 'User created successfully' }, { status: 201 })
+    return NextResponse.json(
+      { success: true, data: user, message: 'User created successfully' },
+      { status: 201 }
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ success: false, error: { code: 'ERROR', message } }, { status: 400 })

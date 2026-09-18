@@ -26,7 +26,12 @@
 // Rollback and concurrency are exercised against a real Postgres
 // in `sales-service.integration.test.ts`.
 // ─────────────────────────────────────────────────────────────
-import type { PaymentMethod, PaymentStatus } from '@prisma/client'
+import {
+  GstTxType,
+  type NarcoticMovementType,
+  type PaymentMethod,
+  type PaymentStatus,
+} from '@prisma/client'
 import { Prisma } from '@prisma/client'
 
 import {
@@ -62,6 +67,7 @@ export interface CreateSaleItemInput {
   barcode?: string
   sku?: string
   quantity: number
+  looseUnits?: number
   discountPercent?: number
 }
 
@@ -76,6 +82,42 @@ export interface CreditCustomerInput {
   phone?: string
 }
 
+export interface ScheduleH1CaptureInput {
+  patientName: string
+  patientAddress: string
+  patientPhone?: string
+  doctorName: string
+  doctorRegNo: string
+}
+
+interface H1RegisterRow {
+  productId: string
+  batchId: string
+  medicineName: string
+  batchNumber: string
+  quantityGiven: number
+  patientName: string
+  patientAddress: string
+  patientPhone?: string
+  doctorName: string
+  doctorRegNo: string
+  createdById: string
+}
+
+interface NarcoticRegisterRow {
+  branchId: string
+  productId: string
+  batchId: string
+  movementType: NarcoticMovementType
+  quantityOut: number
+  balanceQuantity: number
+  referenceType: string
+  patientName: string
+  doctorName: string
+  doctorRegNo: string
+  enteredById: string
+}
+
 export interface CreateSaleCommand {
   branchId: string
   items: CreateSaleItemInput[]
@@ -85,6 +127,7 @@ export interface CreateSaleCommand {
   customer?: CreditCustomerInput
   prescriptionId?: string
   notes?: string
+  h1Capture?: ScheduleH1CaptureInput
 }
 
 const saleProductSelect = {
@@ -103,6 +146,7 @@ const saleProductSelect = {
   isGstExempt: true,
   hsnCode: true,
   unitOfMeasure: true,
+  tabsPerStrip: true,
 } as const
 
 type SaleProduct = Prisma.ProductGetPayload<{ select: typeof saleProductSelect }>
@@ -262,6 +306,8 @@ export interface PosProductRow {
   isGstExempt: boolean
   additionalBarcodes: string[]
   availableQuantity: number
+  tabsPerStrip?: number | null
+  rackCode?: string | null
   categoryName?: string | null
   manufacturer?: string | null
   composition?: string | null
@@ -305,6 +351,7 @@ export async function searchPosProducts(
       sku: true,
       barcode: true,
       unitOfMeasure: true,
+      tabsPerStrip: true,
       mrp: true,
       gstRate: true,
       cgstRate: true,
@@ -318,6 +365,7 @@ export async function searchPosProducts(
       composition: true,
       packSize: true,
       imageUrl: true,
+      rack: { select: { code: true, shelfNumber: true } },
       categories: {
         take: 1,
         select: {
@@ -341,6 +389,7 @@ export async function searchPosProducts(
     sku: p.sku,
     barcode: p.barcode,
     unitOfMeasure: p.unitOfMeasure,
+    tabsPerStrip: p.tabsPerStrip ?? null,
     mrp: Number(p.mrp),
     gstRate: Number(p.gstRate),
     cgstRate: Number(p.cgstRate),
@@ -352,6 +401,7 @@ export async function searchPosProducts(
     isGstExempt: p.isGstExempt,
     additionalBarcodes: p.barcodes.map((b) => b.barcode).filter((b) => b !== p.barcode),
     availableQuantity: availableByProduct.get(p.id) ?? 0,
+    rackCode: p.rack ? `${p.rack.code}/${p.rack.shelfNumber}` : null,
     categoryName: p.categories[0]?.category.name ?? null,
     manufacturer: p.manufacturer ?? null,
     composition: p.composition ?? null,
@@ -540,7 +590,8 @@ export async function createSale(
   // ─── Policy gates (server authority) ─────────────────────────
   const isSuperUser = actor.roles?.includes('owner') || actor.roles?.includes('admin')
   const hasDiscount = isSuperUser || permissions.includes(PERMISSIONS.SALES_DISCOUNT)
-  const hasDiscountOverride = isSuperUser || permissions.includes(PERMISSIONS.SALES_DISCOUNT_OVERRIDE)
+  const hasDiscountOverride =
+    isSuperUser || permissions.includes(PERMISSIONS.SALES_DISCOUNT_OVERRIDE)
   const hasCredit = isSuperUser || permissions.includes(PERMISSIONS.SALES_CREDIT)
 
   for (const line of command.items) {
@@ -628,15 +679,35 @@ export async function createSale(
         const pricingLines: ItemPricingRow[] = []
         const saleItemInputs: Prisma.SaleItemCreateWithoutSaleInput[] = []
         const movements: InventoryMovementInput[] = []
+        const h1Registers: H1RegisterRow[] = []
+        const narcoticRegisters: NarcoticRegisterRow[] = []
+
+        const requiresH1 = resolved.some(
+          (r) => r.product.drugSchedule === 'H1' || r.product.drugSchedule === 'NARCOTIC_NDPS'
+        )
+        if (requiresH1 && !command.h1Capture) {
+          throw new Error('Schedule H1 / Narcotic drugs require patient and doctor details')
+        }
 
         for (const { product, input } of resolved) {
           const quantity = input.quantity
+          // Inventory is accounted in sale units (strips/bottles). Loose-unit
+          // (tablet-level) dispensing would require base-unit inventory and is
+          // not supported: fail closed instead of mis-deducting stock.
+          if ((input.looseUnits ?? 0) > 0) {
+            throw new Error(`Loose-unit dispensing is not supported for ${product.name}`)
+          }
+          const totalBaseQty = quantity
+          const billableQuantity = quantity
+          if (totalBaseQty <= 0) {
+            throw new Error(`Quantity must be positive for ${product.name}`)
+          }
           const inventory = await tx.inventory.findUnique({
             where: { productId_branchId: { productId: product.id, branchId: branch.id } },
           })
           if (!inventory)
             throw new Error(`Insufficient available stock: ${product.name} (available 0)`)
-          if (inventory.availableQuantity < quantity) {
+          if (inventory.availableQuantity < totalBaseQty) {
             throw new Error(
               `Insufficient available stock: ${product.name} (available ${inventory.availableQuantity})`
             )
@@ -666,8 +737,8 @@ export async function createSale(
           })
 
           const allocation = settings.fefoEnabled
-            ? allocateFefo(filterEligibleBatches(batchRows as FefoBatchCandidate[]), quantity)
-            : allocateByCreationDate(batchRows, quantity)
+            ? allocateFefo(filterEligibleBatches(batchRows as FefoBatchCandidate[]), totalBaseQty)
+            : allocateByCreationDate(batchRows, totalBaseQty)
 
           if (allocation.status !== 'success') {
             throw new Error(
@@ -719,11 +790,57 @@ export async function createSale(
               quantity: a.allocatedQuantity,
               unitPrice: Number(batch.mrp),
             })
+
+            if (
+              command.h1Capture &&
+              (product.drugSchedule === 'H1' || product.drugSchedule === 'NARCOTIC_NDPS')
+            ) {
+              h1Registers.push({
+                productId: product.id,
+                batchId: batch.id,
+                medicineName: product.name,
+                batchNumber: batch.batchNumber,
+                quantityGiven: a.allocatedQuantity,
+                patientName: command.h1Capture.patientName,
+                patientAddress: command.h1Capture.patientAddress,
+                patientPhone: command.h1Capture.patientPhone,
+                doctorName: command.h1Capture.doctorName,
+                doctorRegNo: command.h1Capture.doctorRegNo,
+                createdById: actor.id,
+              })
+
+              if (product.drugSchedule === 'NARCOTIC_NDPS') {
+                // Fetch previous narcotic register balance for this branch + product
+                const prevNarcotic = await tx.narcoticRegister.findFirst({
+                  where: {
+                    branchId: branch.id,
+                    productId: product.id,
+                  },
+                  orderBy: { entryDate: 'desc' },
+                  select: { balanceQuantity: true },
+                })
+                const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
+                narcoticRegisters.push({
+                  branchId: branch.id,
+                  productId: product.id,
+                  batchId: batch.id,
+                  movementType: 'SALES_DISPENSE',
+                  quantityOut: a.allocatedQuantity,
+                  balanceQuantity: prevBalance - a.allocatedQuantity,
+                  referenceType: 'SALE',
+                  patientName: command.h1Capture.patientName,
+                  doctorName: command.h1Capture.doctorName,
+                  doctorRegNo: command.h1Capture.doctorRegNo,
+                  enteredById: actor.id,
+                })
+              }
+            }
           }
 
           // Aggregate product-branch inventory deduction (CAS by updatedAt).
-          const afterTotal = inventory.totalQuantity - quantity
-          const afterAvailable = inventory.availableQuantity - quantity
+          const afterTotal = inventory.totalQuantity - totalBaseQty
+          const afterAvailable = inventory.availableQuantity - totalBaseQty
           if (afterAvailable < 0) {
             throw new Error('Conflict: stock changed concurrently, please retry')
           }
@@ -738,11 +855,11 @@ export async function createSale(
             inventoryId: inventory.id,
             quantityBefore: inventory.totalQuantity,
             quantityAfter: afterTotal,
-            quantity: -quantity,
+            quantity: -totalBaseQty,
           })
 
           const pricing = computeItemPricing({
-            quantity,
+            quantity: billableQuantity,
             mrp: Number(product.mrp),
             gstRate: Number(product.gstRate),
             cgstRate: Number(product.cgstRate),
@@ -759,6 +876,9 @@ export async function createSale(
             productName: product.name,
             productSku: product.sku,
             quantity,
+            billedUnits: quantity,
+            looseUnits: 0,
+            totalBaseQty: quantity,
             unitPrice: pricing.unitPrice,
             discountPercent: pricing.discountPercent,
             discountAmount: pricing.discountAmount,
@@ -849,6 +969,16 @@ export async function createSale(
           }
         }
 
+        if (h1Registers.length > 0) {
+          const h1Data = h1Registers.map((r) => ({ ...r, saleId: sale.id }))
+          await tx.scheduleH1Register.createMany({ data: h1Data })
+        }
+
+        if (narcoticRegisters.length > 0) {
+          const narcData = narcoticRegisters.map((r) => ({ ...r, referenceId: sale.id }))
+          await tx.narcoticRegister.createMany({ data: narcData })
+        }
+
         await postGstTransactionForSale(sale.id, tx)
 
         for (const m of movements) {
@@ -890,12 +1020,7 @@ export async function createSale(
   )
 }
 
-
-export async function cancelSale(
-  saleId: string,
-  reason: string,
-  actor: SaleActor
-): Promise<void> {
+export async function cancelSale(saleId: string, reason: string, actor: SaleActor): Promise<void> {
   const permissions = actor.permissions ?? []
   const isSuperUser = actor.roles?.includes('owner') || actor.roles?.includes('admin')
   if (!isSuperUser && !permissions.includes(PERMISSIONS.SALES_VOID)) {
@@ -907,11 +1032,15 @@ export async function cancelSale(
       async (tx) => {
         const sale = await tx.sale.findUnique({
           where: { id: saleId },
-          include: { items: { include: { itemBatches: true } } },
+          include: {
+            items: { include: { itemBatches: true } },
+            payments: true,
+            customer: true,
+          },
         })
         if (!sale) throw new Error('Not Found: sale')
         if (sale.status === 'CANCELLED') throw new Error('Sale is already cancelled')
-        
+
         await assertBranchAccess(actor, sale.branchId)
 
         await tx.sale.update({
@@ -923,6 +1052,7 @@ export async function cancelSale(
           },
         })
 
+        // ─── Restore Inventory & Batches ───────────────────────────
         for (const item of sale.items) {
           const inv = await tx.inventory.findUnique({
             where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
@@ -959,6 +1089,165 @@ export async function cancelSale(
             })
           }
         }
+
+        // ─── Reverse Customer Ledger (credit sales) ────────────────
+        if (sale.customerId && sale.balanceDue.gt(0)) {
+          const customer = await tx.customer.findUnique({
+            where: { id: sale.customerId },
+            select: { outstandingBalance: true },
+          })
+          if (customer) {
+            const newBal = customer.outstandingBalance.sub(new Prisma.Decimal(sale.balanceDue))
+            await tx.customer.update({
+              where: { id: sale.customerId },
+              data: { outstandingBalance: newBal },
+            })
+            await tx.customerLedger.create({
+              data: {
+                customerId: sale.customerId,
+                type: 'CREDIT',
+                amount: new Prisma.Decimal(sale.balanceDue),
+                balance: newBal,
+                description: `Sale cancelled: invoice ${sale.invoiceNumber}`,
+                referenceType: 'SALE_CANCEL',
+                referenceId: sale.id,
+                entryDate: new Date(),
+              },
+            })
+          }
+        }
+
+        // ─── Reverse GST Transactions ──────────────────────────────
+        // Create offsetting NIL_RATED transactions to reverse the original B2B/B2C entries
+        // while preserving the audit trail via the unique constraint on
+        // [referenceType, referenceId, referenceLineId]. We use a distinct
+        // referenceType 'SALE_CANCEL' to avoid uniqueness conflicts.
+        const gstTransactions = await tx.gstTransaction.findMany({
+          where: { referenceType: 'SALE', referenceId: sale.id },
+        })
+        if (gstTransactions.length > 0) {
+          for (const gstTx of gstTransactions) {
+            await tx.gstTransaction.create({
+              data: {
+                branchId: sale.branchId,
+                type: GstTxType.NIL_RATED,
+                referenceType: 'SALE_CANCEL',
+                referenceId: sale.id,
+                referenceLineId: gstTx.referenceLineId,
+                invoiceNumber: sale.invoiceNumber,
+                invoiceDate: sale.saleDate,
+                partyGstin: gstTx.partyGstin,
+                partyName: gstTx.partyName,
+                partyState: gstTx.partyState,
+                hsnCode: gstTx.hsnCode,
+                taxableAmount: gstTx.taxableAmount.neg(),
+                cgstAmount: gstTx.cgstAmount.neg(),
+                sgstAmount: gstTx.sgstAmount.neg(),
+                igstAmount: gstTx.igstAmount.neg(),
+                totalTax: gstTx.totalTax.neg(),
+                totalAmount: gstTx.totalAmount.neg(),
+                returnPeriod: gstTx.returnPeriod,
+                isFiled: false,
+              },
+            })
+          }
+        }
+
+        // ─── Reverse Payments ──────────────────────────────────────
+        // Mark payments as cancelled rather than deleting to preserve audit trail
+        for (const payment of sale.payments) {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: {
+              amount: new Prisma.Decimal(0),
+              reference: `VOIDED: ${payment.reference ?? ''}`.trim(),
+            },
+          })
+        }
+
+        // ─── Reverse Schedule H1 Register ──────────────────────────
+        // Create offsetting entries with negative quantity to maintain
+        // auditable history while correcting the running balance.
+        const h1Registers = await tx.scheduleH1Register.findMany({
+          where: { saleId: sale.id },
+        })
+        if (h1Registers.length > 0) {
+          for (const h1 of h1Registers) {
+            await tx.scheduleH1Register.create({
+              data: {
+                saleId: sale.id,
+                productId: h1.productId,
+                batchId: h1.batchId,
+                patientName: h1.patientName,
+                patientAddress: h1.patientAddress,
+                patientPhone: h1.patientPhone,
+                doctorName: h1.doctorName,
+                doctorRegNo: h1.doctorRegNo,
+                medicineName: h1.medicineName,
+                batchNumber: h1.batchNumber,
+                quantityGiven: -h1.quantityGiven,
+                dispensedDate: new Date(),
+                createdById: actor.id,
+              },
+            })
+          }
+        }
+
+        // ─── Reverse Narcotic Register ─────────────────────────────
+        // Create RETURN_TO_SUPPLIER (credit) entries to restore balance.
+        const narcoticRegisters = await tx.narcoticRegister.findMany({
+          where: { referenceType: 'SALE', referenceId: sale.id },
+        })
+        if (narcoticRegisters.length > 0) {
+          for (const narc of narcoticRegisters) {
+            // Fetch previous narcotic register balance for this branch + product
+            const prevNarcotic = await tx.narcoticRegister.findFirst({
+              where: {
+                branchId: sale.branchId,
+                productId: narc.productId,
+              },
+              orderBy: { entryDate: 'desc' },
+              select: { balanceQuantity: true },
+            })
+            const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
+            await tx.narcoticRegister.create({
+              data: {
+                branchId: sale.branchId,
+                productId: narc.productId,
+                batchId: narc.batchId,
+                movementType: 'RETURN_TO_SUPPLIER',
+                quantityIn: narc.quantityOut,
+                quantityOut: 0,
+                balanceQuantity: prevBalance + narc.quantityOut,
+                referenceType: 'SALE_CANCEL',
+                referenceId: sale.id,
+                patientName: narc.patientName,
+                doctorName: narc.doctorName,
+                doctorRegNo: narc.doctorRegNo,
+                prescriptionNo: narc.prescriptionNo,
+                entryDate: new Date(),
+                enteredById: actor.id,
+              },
+            })
+          }
+        }
+
+        // ─── Audit Log ─────────────────────────────────────────────
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            action: 'SALE_CANCEL',
+            entity: 'Sale',
+            entityId: sale.id,
+            metadata: {
+              invoiceNumber: sale.invoiceNumber,
+              totalAmount: sale.totalAmount,
+              cancelledReason: reason,
+              itemCount: sale.items.length,
+            },
+          },
+        })
       },
       { isolationLevel: 'Serializable', maxWait: 5000, timeout: 15000 }
     )

@@ -97,8 +97,8 @@ export function computeItemPricing(input: ItemPricingInput): ItemPricingRow {
   const exempt = input.isGstExempt
   const cgstPercent = exempt ? 0 : input.cgstRate
   const sgstPercent = exempt ? 0 : input.sgstRate
-  const igstPercent = exempt ? 0 : input.igstRate
-  const taxPercent = exempt ? 0 : input.cgstRate + input.sgstRate + input.igstRate
+  const igstPercent = exempt ? 0 : 0
+  const taxPercent = exempt ? 0 : input.cgstRate + input.sgstRate
 
   if (exempt || taxPercent === 0) {
     return {
@@ -127,7 +127,7 @@ export function computeItemPricing(input: ItemPricingInput): ItemPricingRow {
     const cgstAmount = round2((taxableAmount * cgstPercent) / 100)
     const sgstAmount = round2((taxableAmount * sgstPercent) / 100)
     const igstAmount = round2((taxableAmount * igstPercent) / 100)
-    const taxAmount = round2(cgstAmount + sgstAmount + igstAmount)
+    const taxAmount = round2(cgstAmount + sgstAmount) // intra-state
     return {
       quantity,
       unitPrice,
@@ -153,7 +153,7 @@ export function computeItemPricing(input: ItemPricingInput): ItemPricingRow {
   const cgstAmount = round2((taxableAmount * cgstPercent) / 100)
   const sgstAmount = round2((taxableAmount * sgstPercent) / 100)
   const igstAmount = round2((taxableAmount * igstPercent) / 100)
-  const taxAmount = round2(cgstAmount + sgstAmount + igstAmount)
+  const taxAmount = round2(cgstAmount + sgstAmount)
   return {
     quantity,
     unitPrice,

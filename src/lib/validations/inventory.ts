@@ -70,6 +70,11 @@ export const createAdjustmentSchema = z.object({
     .refine((q) => q !== 0, 'Quantity cannot be zero'),
   reason: z.string().min(2, 'Reason is required (minimum 2 characters)').max(500),
   notes: z.string().max(2000).optional(),
+  evidenceFileId: z.string().optional().nullable(),
+})
+
+export const approveAdjustmentSchema = z.object({
+  evidenceFileId: z.string().optional().nullable(),
 })
 
 export type CreateAdjustmentInput = z.infer<typeof createAdjustmentSchema>

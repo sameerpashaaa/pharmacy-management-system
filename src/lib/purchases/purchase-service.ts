@@ -11,7 +11,11 @@ import type { z } from 'zod'
 
 import prisma from '@/lib/db/prisma'
 import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
-import { assertBranchAccess, resolveBranchScope, type AuthUser } from '@/lib/inventory/branch-access'
+import {
+  assertBranchAccess,
+  resolveBranchScope,
+  type AuthUser,
+} from '@/lib/inventory/branch-access'
 import {
   supplierListQuerySchema,
   purchaseListQuerySchema,
@@ -107,8 +111,8 @@ export async function createSupplier(
   data: CreateSupplierInput,
   actor: AuthUser
 ): Promise<Supplier> {
-  await assertBranchAccess(actor, '')
-
+  // Suppliers are global (no branchId in schema); access is permission-gated
+  // at the route layer, so no branch check applies here.
   const supplier = await prisma.supplier.create({
     data: {
       ...data,
@@ -132,6 +136,8 @@ export async function createSupplier(
 }
 
 export async function getSupplier(id: string, _actor: AuthUser): Promise<Supplier | null> {
+  // Suppliers are global (no branchId in schema); access is permission-gated
+  // at the route layer, so no branch check applies here.
   return prisma.supplier.findUnique({ where: { id } })
 }
 
@@ -143,8 +149,8 @@ export async function updateSupplier(
   const existing = await prisma.supplier.findUnique({ where: { id } })
   if (!existing) throw new Error('Not Found: supplier')
 
-  await assertBranchAccess(actor, '')
-
+  // Suppliers are global (no branchId in schema); access is permission-gated
+  // at the route layer, so no branch check applies here.
   const supplier = await prisma.supplier.update({
     where: { id },
     data,
@@ -170,6 +176,8 @@ export async function listSuppliers(
   data: Supplier[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
+  // Suppliers are global (no branchId in schema); access is permission-gated
+  // at the route layer, so no branch check applies here.
 
   const {
     page = 1,
@@ -341,8 +349,6 @@ export async function createPurchase(
 }
 
 export async function getPurchase(id: string, actor: AuthUser): Promise<PurchaseWithItems | null> {
-  await assertBranchAccess(actor, '')
-
   const purchase = await prisma.purchase.findUnique({
     where: { id },
     include: {
@@ -364,6 +370,9 @@ export async function getPurchase(id: string, actor: AuthUser): Promise<Purchase
     },
   })
 
+  if (!purchase) return null
+  await assertBranchAccess(actor, purchase.branchId)
+
   return purchase
 }
 
@@ -374,8 +383,6 @@ export async function listPurchases(
   data: PurchaseWithItems[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
-  await assertBranchAccess(actor, '')
-
   const {
     page = 1,
     limit = 20,
@@ -387,9 +394,10 @@ export async function listPurchases(
     sortOrder = 'desc',
   } = purchaseListQuerySchema.parse(params)
 
+  const scope = await resolveBranchScope(actor, branchId)
+
   const where: Prisma.PurchaseWhereInput = {}
-  const scopeBranchId = await resolveBranchScope(actor, branchId)
-  if (scopeBranchId) where.branchId = scopeBranchId
+  if (scope) where.branchId = scope
   if (supplierId) where.supplierId = supplierId
   if (status) where.status = status
   if (search) {
@@ -579,6 +587,33 @@ export async function createGrn(
       const product = await tx.product.findUnique({ where: { id: poItem.productId } })
       if (!product) throw new Error(`Product not found: ${poItem.productId}`)
 
+      // Quarantine evaluation (service-level enforcement; must not rely on
+      // API/UI validation alone). Non-conforming goods are received as
+      // BLOCKED so FEFO/sales can never allocate them.
+      let blockedReason: string | null = null
+      if (item.qualityCheckPassed === false) {
+        const notes = item.qualityCheckNotes?.trim()
+        blockedReason = `Quality check failed${notes ? `: ${notes}` : ' (no details provided)'}`
+      } else {
+        const storageCondition = product.storageCondition
+        const isColdChain =
+          storageCondition === 'DEEP_FREEZE' || storageCondition === 'REFRIGERATED'
+        const tempLog = item.coldChainTempLog?.trim() || null
+        if (isColdChain && !tempLog) {
+          blockedReason = 'Missing required cold-chain temperature log for cold-chain product'
+        } else if (tempLog) {
+          // Same acceptability rule as the API validation: a provided log
+          // must be numeric and within 2–8 °C. Invalid input fails closed.
+          const temp = parseFloat(tempLog)
+          if (Number.isNaN(temp) || temp < 2 || temp > 8) {
+            throw new Error(
+              'Validation: Invalid cold chain temperature. Must be a numeric value between 2 and 8 °C'
+            )
+          }
+        }
+      }
+      const batchStatus = blockedReason ? 'BLOCKED' : 'ACTIVE'
+
       // Create batch
       const batch = await tx.batch.create({
         data: {
@@ -591,7 +626,8 @@ export async function createGrn(
           quantity: item.receivedQuantity,
           reservedQuantity: 0,
           soldQuantity: 0,
-          status: 'ACTIVE',
+          status: batchStatus,
+          blockedReason,
           supplierRef: item.batchNumber,
           purchaseId: command.purchaseId,
           branchId: command.branchId,
@@ -646,6 +682,36 @@ export async function createGrn(
         },
       })
 
+      // ─── Narcotic Register — PURCHASE_RECEIPT ──────────────────────
+      if (product.drugSchedule === 'NARCOTIC_NDPS') {
+        // Fetch previous narcotic register balance for this branch + product
+        const prevNarcotic = await tx.narcoticRegister.findFirst({
+          where: {
+            branchId: command.branchId,
+            productId: poItem.productId,
+          },
+          orderBy: { entryDate: 'desc' },
+          select: { balanceQuantity: true },
+        })
+        const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
+        await tx.narcoticRegister.create({
+          data: {
+            branchId: command.branchId,
+            productId: poItem.productId,
+            batchId: batch.id,
+            movementType: 'PURCHASE_RECEIPT',
+            quantityIn: item.receivedQuantity,
+            quantityOut: 0,
+            balanceQuantity: prevBalance + item.receivedQuantity,
+            referenceType: 'PURCHASE',
+            referenceId: command.purchaseId,
+            enteredById: actor.id,
+            entryDate: command.grnDate,
+          },
+        })
+      }
+
       // Update purchase item received quantity with CAS (concurrency-safe)
       const piRes = await tx.purchaseItem.updateMany({
         where: {
@@ -660,13 +726,17 @@ export async function createGrn(
         )
       }
 
-      // Batch status log
+      // Batch status log (birth convention: X → X; quarantined batches are
+      // born BLOCKED with the quarantine reason recorded)
       await tx.batchStatusLog.create({
         data: {
           batchId: batch.id,
-          fromStatus: 'ACTIVE',
-          toStatus: 'ACTIVE',
-          reason: `Received via GRN ${command.grnNumber}`,
+          fromStatus: batchStatus,
+          toStatus: batchStatus,
+          reason:
+            batchStatus === 'BLOCKED'
+              ? `Quarantined at receipt via GRN ${command.grnNumber}: ${blockedReason}`
+              : `Received via GRN ${command.grnNumber}`,
           changedById: actor.id,
         },
       })
@@ -825,8 +895,6 @@ export async function listGrns(
   }[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
-  await assertBranchAccess(actor, '')
-
   const {
     page = 1,
     limit = 20,
@@ -836,6 +904,8 @@ export async function listGrns(
     sortBy = 'grnDate',
     sortOrder = 'desc',
   } = grnListQuerySchema.parse(params)
+
+  const scope = await resolveBranchScope(actor, branchId)
 
   // Map GRN sort fields to Purchase fields
   const sortByMap: Record<string, string> = {
@@ -847,8 +917,7 @@ export async function listGrns(
 
   // GRN info is stored on purchase records
   const where: Prisma.PurchaseWhereInput = { status: { in: ['PARTIALLY_RECEIVED', 'RECEIVED'] } }
-  const scopeBranchId = await resolveBranchScope(actor, branchId)
-  if (scopeBranchId) where.branchId = scopeBranchId
+  if (scope) where.branchId = scope
   if (purchaseId) where.id = purchaseId
   if (search) {
     where.OR = [
@@ -902,13 +971,13 @@ export async function threeWayMatch(
   data: z.infer<typeof threeWayMatchSchema>,
   actor: AuthUser
 ): Promise<ThreeWayMatchResult> {
-  await assertBranchAccess(actor, '')
-
   const purchase = await prisma.purchase.findUnique({
     where: { id: data.purchaseId },
     include: { items: true },
   })
   if (!purchase) throw new Error('Not Found: purchase order')
+
+  await assertBranchAccess(actor, purchase.branchId)
 
   const mismatches: ThreeWayMatchResult['mismatches'] = []
   const itemMap = new Map(purchase.items.map((i) => [i.id, i]))
@@ -987,7 +1056,16 @@ export async function recordSupplierPayment(
   data: z.infer<typeof supplierPaymentSchema>,
   actor: AuthUser
 ): Promise<{ payment: Payment; ledgerEntry: { id: string; balance: Prisma.Decimal } }> {
-  await assertBranchAccess(actor, '')
+  // Suppliers are global; only scope-check when the payment links a
+  // branch-scoped purchase.
+  if (data.purchaseId) {
+    const linked = await prisma.purchase.findUnique({
+      where: { id: data.purchaseId },
+      select: { branchId: true },
+    })
+    if (!linked) throw new Error('Not Found: purchase order')
+    await assertBranchAccess(actor, linked.branchId)
+  }
 
   const supplier = await prisma.supplier.findUnique({ where: { id: data.supplierId } })
   if (!supplier) throw new Error('Not Found: supplier')
@@ -1057,13 +1135,13 @@ export async function createPurchaseReturn(
   actor: AuthUser
 ): Promise<PurchaseReturn> {
   await ensureDefaultLedgers()
-  await assertBranchAccess(actor, '')
 
   const purchase = await prisma.purchase.findUnique({
     where: { id: data.purchaseId },
     include: { items: true, supplier: true },
   })
   if (!purchase) throw new Error('Not Found: purchase order')
+  await assertBranchAccess(actor, purchase.branchId)
   if (!['RECEIVED', 'INVOICED', 'PARTIALLY_RECEIVED'].includes(purchase.status)) {
     throw new Error('Purchase must be received before creating a return')
   }
@@ -1222,20 +1300,22 @@ export async function listPurchaseReturns(
   })[]
   pagination: { page: number; limit: number; total: number; pages: number }
 }> {
-  await assertBranchAccess(actor, '')
-
   const {
     page = 1,
     limit = 20,
     search,
+    branchId,
     supplierId,
     status,
     sortBy = 'returnDate',
     sortOrder = 'desc',
   } = purchaseReturnListQuerySchema.parse(params)
-  const scopeBranchId = await resolveBranchScope(actor)
+
+  const scope = await resolveBranchScope(actor, branchId)
+
   const where: Prisma.PurchaseReturnWhereInput = {}
-  if (scopeBranchId) where.purchase = { branchId: scopeBranchId }
+  // PurchaseReturn carries no branchId of its own; scope through its purchase.
+  if (scope) where.purchase = { branchId: scope }
   if (supplierId) where.supplierId = supplierId
   if (status) where.status = status
   if (search) {
@@ -1271,17 +1351,16 @@ export async function getPurchaseReturn(
   id: string,
   actor: AuthUser
 ): Promise<PurchaseReturnWithDetails | null> {
-  await assertBranchAccess(actor, '')
-
   const purchaseReturn = await prisma.purchaseReturn.findUnique({
     where: { id },
     include: {
       supplier: { select: { id: true, name: true } },
-      purchase: { select: { id: true, purchaseNumber: true } },
+      purchase: { select: { id: true, purchaseNumber: true, branchId: true } },
     },
   })
 
   if (!purchaseReturn) return null
+  await assertBranchAccess(actor, purchaseReturn.purchase.branchId)
 
   const items = await prisma.purchaseReturnItem.findMany({
     where: { purchaseReturnId: id },
@@ -1322,10 +1401,13 @@ export async function updatePurchaseReturn(
   data: z.infer<typeof updatePurchaseReturnSchema>,
   actor: AuthUser
 ): Promise<PurchaseReturn> {
-  const existing = await prisma.purchaseReturn.findUnique({ where: { id } })
+  const existing = await prisma.purchaseReturn.findUnique({
+    where: { id },
+    include: { purchase: { select: { branchId: true } } },
+  })
   if (!existing) throw new Error('Not Found: purchase return')
 
-  await assertBranchAccess(actor, '')
+  await assertBranchAccess(actor, existing.purchase.branchId)
 
   const validTransitions: Record<string, string[]> = {
     PENDING: ['APPROVED', 'CANCELLED'],
@@ -1382,8 +1464,6 @@ export async function getPurchaseReturnById(
     })
   | null
 > {
-  await assertBranchAccess(actor, '')
-
   const purchaseReturn = await prisma.purchaseReturn.findUnique({
     where: { id },
     include: {
@@ -1394,6 +1474,7 @@ export async function getPurchaseReturnById(
           purchaseNumber: true,
           invoiceNumber: true,
           purchaseDate: true,
+          branchId: true,
         },
       },
       items: true,
@@ -1401,6 +1482,7 @@ export async function getPurchaseReturnById(
   })
 
   if (!purchaseReturn) return null
+  await assertBranchAccess(actor, purchaseReturn.purchase.branchId)
 
   const productIds = purchaseReturn.items.map((i) => i.productId)
   const products = await prisma.product.findMany({

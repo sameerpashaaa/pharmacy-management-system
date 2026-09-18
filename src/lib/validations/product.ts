@@ -2,9 +2,47 @@ import { z } from 'zod'
 
 // ─── Drug Schedule Enum ───────────────────────────────────────
 
-export const DrugScheduleEnum = z.enum(['NONE', 'H', 'H1', 'X', 'G', 'J'])
+export const DrugScheduleEnum = z.enum(['NONE', 'H', 'H1', 'X', 'G', 'J', 'NARCOTIC_NDPS'])
 
 export type DrugSchedule = z.infer<typeof DrugScheduleEnum>
+
+// ─── Storage Condition ────────────────────────────────────────
+
+export const StorageConditionEnum = z.enum([
+  'DEEP_FREEZE',
+  'REFRIGERATED',
+  'COOL',
+  'ROOM_TEMPERATURE',
+  'CONTROLLED_ROOM_TEMP',
+])
+
+export type StorageCondition = z.infer<typeof StorageConditionEnum>
+
+export const STORAGE_CONDITION_LABELS: Record<StorageCondition, string> = {
+  DEEP_FREEZE: 'Deep Freeze -25°C to -15°C',
+  REFRIGERATED: 'Refrigerated +2°C to +8°C',
+  COOL: 'Cool +8°C to +15°C',
+  ROOM_TEMPERATURE: 'Room Temperature +15°C to +25°C',
+  CONTROLLED_ROOM_TEMP: 'Controlled Room Temp +20°C to +25°C',
+}
+
+const DISPLAY_TO_ENUM: Record<string, StorageCondition> = Object.fromEntries(
+  Object.entries(STORAGE_CONDITION_LABELS).map(([k, v]) => [v, k as StorageCondition])
+) as Record<string, StorageCondition>
+
+function toStorageCondition(val: unknown): unknown {
+  if (val === null || val === undefined) return undefined
+  const s = String(val).trim()
+  if (s === '') return undefined
+  if ((StorageConditionEnum.options as readonly string[]).includes(s)) return s
+  if (s in DISPLAY_TO_ENUM) return DISPLAY_TO_ENUM[s]
+  return s
+}
+
+export const storageConditionSchema = z.preprocess(
+  toStorageCondition,
+  StorageConditionEnum.optional()
+)
 
 // ─── Barcode Schema ───────────────────────────────────────────
 
@@ -61,6 +99,7 @@ export const createProductSchema = z.object({
   manufacturer: z.string().max(100).optional(),
   composition: z.string().max(1000).optional(),
   drugSchedule: DrugScheduleEnum.default('NONE'),
+  storageCondition: storageConditionSchema.optional(),
   isPrescriptionRequired: z.boolean().default(false),
   unitOfMeasure: z.string().min(1).max(20).default('Strip'),
   tabsPerStrip: z.number().int().positive().optional(),
@@ -74,6 +113,7 @@ export const createProductSchema = z.object({
   mrp: z.number().min(0).max(999999.99).step(0.01),
   ptr: z.number().min(0).max(999999.99).step(0.01).optional(),
   costPrice: z.number().min(0).max(999999.99).step(0.01).optional(),
+  dpcoCeiling: z.number().min(0).max(999999.99).step(0.01).optional(),
   minStockLevel: z.number().int().min(0).default(10),
   maxStockLevel: z.number().int().min(0).optional(),
   reorderLevel: z.number().int().min(0).default(20),
@@ -148,6 +188,7 @@ export const productImportRowSchema = z.object({
   manufacturer: z.string().max(100).optional(),
   composition: z.string().max(1000).optional(),
   drugSchedule: coerceEnum(['NONE', 'H', 'H1', 'X', 'G', 'J'] as const).default('NONE'),
+  storageCondition: z.preprocess(toStorageCondition, StorageConditionEnum.optional()),
   isPrescriptionRequired: coerceBoolean.default(false),
   unitOfMeasure: z.string().min(1).max(20).default('Strip'),
   tabsPerStrip: coerceOptionalNumber(z.number().int().positive()),

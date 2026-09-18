@@ -6,6 +6,7 @@ import type { InventoryMovement, Prisma, StockAdjustment } from '@prisma/client'
 import { allocateFefo, filterEligibleBatches } from '@/lib/batches/fefo'
 import type { FefoBatchCandidate } from '@/lib/batches/fefo'
 import prisma from '@/lib/db/prisma'
+import { getApprovalPolicy, getTierForQuantity } from '@/lib/settings/settings-service'
 
 import type { AuthUser } from './branch-access'
 import { assertBranchAccess } from './branch-access'
@@ -15,8 +16,11 @@ import { assertBranchAccess } from './branch-access'
 /**
  * Adjustments with |quantity| <= this value are auto-approved (self-approval).
  * Source: Stock_Management_Module.md §4 "≤ 10 units Pharmacist self-approval".
+ * @deprecated Use getApprovalPolicy() thresholds; kept as fallback default for selfMax.
  */
 export const AUTO_APPROVE_THRESHOLD = 10
+
+export type ApprovalTier = 'SELF' | 'MANAGER' | 'CHIEF'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -76,6 +80,8 @@ export interface AdjustmentRow {
   reason: string
   notes: string | null
   status: StockAdjustment['status']
+  requiredTier: StockAdjustment['requiredTier']
+  evidenceFileId: string | null
   approvedById: string | null
   approvedAt: Date | null
   createdById: string
@@ -102,6 +108,42 @@ function isUniqueConstraintError(e: unknown): boolean {
   return (
     typeof e === 'object' && e !== null && 'code' in e && (e as { code?: string }).code === 'P2002'
   )
+}
+
+async function hasPermission(user: AuthUser, permission: string): Promise<boolean> {
+  if (user.permissions?.includes(permission)) return true
+  if (user.roles?.includes('owner')) return true
+  // Fallback to DB lookup when session permissions not provided (e.g., tests)
+  const userRecord = await prisma.user.findUnique({
+    where: { id: user.id },
+    include: {
+      userRoles: {
+        include: { role: { include: { rolePermissions: { include: { permission: true } } } } },
+      },
+    },
+  })
+  if (!userRecord) return false
+  const perms = userRecord.userRoles.flatMap((ur) =>
+    ur.role.rolePermissions.map((rp) => rp.permission.code)
+  )
+  if (userRecord.userRoles.some((ur) => ur.role.name === 'owner')) return true
+  return perms.includes(permission)
+}
+
+async function assertTierPermission(user: AuthUser, tier: ApprovalTier): Promise<void> {
+  if (tier === 'SELF') return // self-approval does not require separate permission beyond inventory:adjust (already checked at create)
+  if (tier === 'MANAGER') {
+    if (await hasPermission(user, 'inventory:approve_adjustment')) return
+    throw new Error(
+      "Forbidden: requires permission 'inventory:approve_adjustment' for Manager tier"
+    )
+  }
+  if (tier === 'CHIEF') {
+    if (await hasPermission(user, 'inventory:approve_adjustment_chief')) return
+    throw new Error(
+      "Forbidden: requires permission 'inventory:approve_adjustment_chief' for Chief tier"
+    )
+  }
 }
 
 // ─── Read: Inventory List ─────────────────────────────────────
@@ -544,6 +586,8 @@ const adjustmentSelect = {
   reason: true,
   notes: true,
   status: true,
+  requiredTier: true,
+  evidenceFileId: true,
   approvedById: true,
   approvedAt: true,
   createdById: true,
@@ -561,6 +605,8 @@ export interface AdjustmentSummary {
   reason: string
   notes: string | null
   status: StockAdjustment['status']
+  requiredTier: StockAdjustment['requiredTier']
+  evidenceFileId: string | null
   approvedById: string | null
   approvedAt: Date | null
   createdById: string
@@ -576,6 +622,7 @@ export type CreateAdjustmentInput = {
   quantity: number
   reason: string
   notes?: string
+  evidenceFileId?: string | null
 }
 
 export async function createAdjustment(
@@ -603,9 +650,15 @@ export async function createAdjustment(
     }
   }
 
-  const autoApprove = Math.abs(data.quantity) <= AUTO_APPROVE_THRESHOLD
+  const policy = await getApprovalPolicy()
+  const tier = getTierForQuantity(data.quantity, policy) as ApprovalTier
 
-  if (autoApprove) {
+  if (data.evidenceFileId) {
+    const file = await prisma.file.findUnique({ where: { id: data.evidenceFileId } })
+    if (!file) throw new Error('Not Found: evidence file')
+  }
+
+  if (tier === 'SELF') {
     try {
       const result = await prisma.$transaction(async (tx) => {
         const adjustment = await tx.stockAdjustment.create({
@@ -618,6 +671,8 @@ export async function createAdjustment(
             reason: data.reason,
             notes: data.notes ?? null,
             status: 'PENDING',
+            requiredTier: 'SELF',
+            evidenceFileId: data.evidenceFileId ?? null,
             createdById: user.id,
           },
         })
@@ -636,7 +691,7 @@ export async function createAdjustment(
     }
   }
 
-  // Pending adjustment (requires supervisor approval)
+  // Pending adjustment (requires manager/chief approval) — freeze required tier
   const adjustment = await prisma.stockAdjustment.create({
     data: {
       branchId: data.branchId,
@@ -647,6 +702,8 @@ export async function createAdjustment(
       reason: data.reason,
       notes: data.notes ?? null,
       status: 'PENDING',
+      requiredTier: tier,
+      evidenceFileId: data.evidenceFileId ?? null,
       createdById: user.id,
     },
     select: adjustmentSelect,
@@ -659,7 +716,8 @@ export async function createAdjustment(
 
 export async function approveAdjustment(
   adjustmentId: string,
-  user: AuthUser
+  user: AuthUser,
+  evidenceFileId?: string | null
 ): Promise<AdjustmentSummary> {
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -669,6 +727,47 @@ export async function approveAdjustment(
       if (adjustment.status !== 'PENDING') {
         throw new Error(`Conflict: adjustment is ${adjustment.status.toLowerCase()}, not pending`)
       }
+      // Determine required tier — use persisted tier, fallback to computed for legacy rows
+      let requiredTier = adjustment.requiredTier as ApprovalTier | null
+      if (!requiredTier) {
+        const policy = await getApprovalPolicy()
+        requiredTier = getTierForQuantity(adjustment.quantity, policy) as ApprovalTier
+      }
+      await assertTierPermission(user, requiredTier)
+
+      // Chief tier requires evidence file
+      let finalEvidenceFileId = adjustment.evidenceFileId ?? null
+      if (requiredTier === 'CHIEF') {
+        const providedEvidence = evidenceFileId ?? finalEvidenceFileId
+        if (!providedEvidence)
+          throw new Error('Validation: evidence file is required for Chief approval')
+        const file = await tx.file.findUnique({ where: { id: providedEvidence } })
+        if (!file) throw new Error('Not Found: evidence file')
+        const existingUse = await tx.stockAdjustment.findFirst({
+          where: { evidenceFileId: providedEvidence, id: { not: adjustment.id } },
+        })
+        if (existingUse)
+          throw new Error('Conflict: evidence file already used for another adjustment')
+        finalEvidenceFileId = providedEvidence
+        if (finalEvidenceFileId !== adjustment.evidenceFileId) {
+          await tx.stockAdjustment.update({
+            where: { id: adjustment.id },
+            data: { evidenceFileId: finalEvidenceFileId },
+          })
+          // Refresh adjustment for applyStockAdjustment (evidence not needed there but keep consistent)
+          adjustment.evidenceFileId = finalEvidenceFileId
+        }
+      } else if (evidenceFileId && evidenceFileId !== finalEvidenceFileId) {
+        // Manager/Self tier should not receive evidence, but allow attaching if provided for audit
+        const file = await tx.file.findUnique({ where: { id: evidenceFileId } })
+        if (!file) throw new Error('Not Found: evidence file')
+        await tx.stockAdjustment.update({
+          where: { id: adjustment.id },
+          data: { evidenceFileId },
+        })
+        adjustment.evidenceFileId = evidenceFileId
+      }
+
       await applyStockAdjustment(tx, adjustment, user.id)
       return tx.stockAdjustment.findUniqueOrThrow({
         where: { id: adjustmentId },
@@ -697,6 +796,12 @@ export async function rejectAdjustment(
     if (adjustment.status !== 'PENDING') {
       throw new Error(`Conflict: adjustment is ${adjustment.status.toLowerCase()}, not pending`)
     }
+    let requiredTier = adjustment.requiredTier as ApprovalTier | null
+    if (!requiredTier) {
+      const policy = await getApprovalPolicy()
+      requiredTier = getTierForQuantity(adjustment.quantity, policy) as ApprovalTier
+    }
+    await assertTierPermission(user, requiredTier)
     await tx.stockAdjustment.updateMany({
       where: { id: adjustmentId, status: 'PENDING' },
       data: { status: 'REJECTED' },

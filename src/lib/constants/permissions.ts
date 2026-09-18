@@ -27,6 +27,7 @@ export const PERMISSIONS = {
   INVENTORY_READ: 'inventory:read',
   INVENTORY_ADJUST: 'inventory:adjust',
   INVENTORY_APPROVE_ADJUSTMENT: 'inventory:approve_adjustment',
+  INVENTORY_APPROVE_ADJUSTMENT_CHIEF: 'inventory:approve_adjustment_chief',
 
   // Batches
   BATCHES_READ: 'batches:read',
@@ -70,6 +71,12 @@ export const PERMISSIONS = {
   SUPPLIERS_READ: 'suppliers:read',
   SUPPLIERS_UPDATE: 'suppliers:update',
   SUPPLIERS_PAYMENTS: 'suppliers:payments',
+
+  // Doctors
+  DOCTORS_CREATE: 'doctors:create',
+  DOCTORS_READ: 'doctors:read',
+  DOCTORS_UPDATE: 'doctors:update',
+  DOCTORS_DELETE: 'doctors:delete',
 
   // Finance
   FINANCE_READ: 'finance:read',

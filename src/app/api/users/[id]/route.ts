@@ -2,10 +2,11 @@ import bcrypt from 'bcryptjs'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 
-import { requirePermission, assertAssignableRoles } from '@/lib/auth/auth-helpers'
+import { assertAssignableRoles, requirePermission } from '@/lib/auth/auth-helpers'
+import { isPasswordReused, recordPasswordHistory } from '@/lib/auth/password-history'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import prisma from '@/lib/db/prisma'
-import { updateUserSchema } from '@/lib/validations/user'
+import { passwordSchema, updateUserSchema } from '@/lib/validations/user'
 
 type RouteParams = { params: { id: string } }
 
@@ -33,7 +34,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     })
 
     if (!user) {
-      return NextResponse.json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } }, { status: 404 })
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'User not found' } },
+        { status: 404 }
+      )
     }
 
     return NextResponse.json({ success: true, data: user })
@@ -53,28 +57,62 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     const user = await prisma.user.findUnique({ where: { id: params.id } })
     if (!user) {
-      return NextResponse.json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } }, { status: 404 })
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'User not found' } },
+        { status: 404 }
+      )
     }
 
-    // Handle password change
-    let password: string | undefined
+    // Handle password change (validated against policy + last-5 history)
     const bodyWithPwd = body as { password?: string }
+    let newPasswordHash: string | undefined
     if (bodyWithPwd.password) {
-      password = await bcrypt.hash(bodyWithPwd.password, 12)
+      const parsed = passwordSchema.safeParse(bodyWithPwd.password)
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VALIDATION',
+              message: parsed.error.errors[0]?.message ?? 'Invalid password',
+            },
+          },
+          { status: 400 }
+        )
+      }
+      if (await isPasswordReused(params.id, bodyWithPwd.password)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VALIDATION',
+              message: 'Password must not match any of the last 5 passwords',
+            },
+          },
+          { status: 400 }
+        )
+      }
+      newPasswordHash = await bcrypt.hash(bodyWithPwd.password, 12)
     }
 
     // Handle role updates
     if (data.roleIds) {
       if (data.roleIds.length === 0) {
         return NextResponse.json(
-          { success: false, error: { code: 'VALIDATION', message: 'At least one role is required' } },
+          {
+            success: false,
+            error: { code: 'VALIDATION', message: 'At least one role is required' },
+          },
           { status: 400 }
         )
       }
       await assertAssignableRoles(data.roleIds)
 
       // Prevent removing the last active owner account, including self-demotion.
-      const ownerRole = await prisma.role.findUnique({ where: { name: 'owner' }, select: { id: true } })
+      const ownerRole = await prisma.role.findUnique({
+        where: { name: 'owner' },
+        select: { id: true },
+      })
       if (ownerRole && !data.roleIds.includes(ownerRole.id)) {
         const isOwner = await prisma.userRole.findFirst({
           where: { userId: params.id, roleId: ownerRole.id },
@@ -85,7 +123,10 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
           })
           if (ownerCount <= 1) {
             return NextResponse.json(
-              { success: false, error: { code: 'CONFLICT', message: 'Cannot remove the last owner account' } },
+              {
+                success: false,
+                error: { code: 'CONFLICT', message: 'Cannot remove the last owner account' },
+              },
               { status: 409 }
             )
           }
@@ -105,14 +146,16 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
           ...(data.phone !== undefined && { phone: data.phone }),
           ...(data.isActive !== undefined && { isActive: data.isActive }),
           ...(data.branchId !== undefined && { branchId: data.branchId }),
-          ...(password && { password }),
+          ...(newPasswordHash && { password: newPasswordHash }),
           ...(data.roleIds && {
             userRoles: { create: data.roleIds.map((roleId) => ({ roleId })) },
           }),
         },
         include: { userRoles: { include: { role: true } } },
       })
-
+      if (newPasswordHash) {
+        await recordPasswordHistory(tx, params.id, newPasswordHash)
+      }
       return result
     })
 
@@ -144,7 +187,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     }
 
     // Prevent deactivating the last active owner account.
-    const ownerRole = await prisma.role.findUnique({ where: { name: 'owner' }, select: { id: true } })
+    const ownerRole = await prisma.role.findUnique({
+      where: { name: 'owner' },
+      select: { id: true },
+    })
     if (ownerRole && user.isActive) {
       const isOwner = await prisma.userRole.findFirst({
         where: { userId: params.id, roleId: ownerRole.id },
@@ -155,7 +201,10 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
         })
         if (ownerCount <= 1) {
           return NextResponse.json(
-            { success: false, error: { code: 'CONFLICT', message: 'Cannot deactivate the last owner account' } },
+            {
+              success: false,
+              error: { code: 'CONFLICT', message: 'Cannot deactivate the last owner account' },
+            },
             { status: 409 }
           )
         }

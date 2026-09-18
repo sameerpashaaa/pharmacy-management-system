@@ -2,26 +2,7 @@ import { GstTxType, Prisma } from '@prisma/client'
 
 import prisma from '@/lib/db/prisma'
 import { assertBranchAccess, type AuthUser } from '@/lib/inventory/branch-access'
-
-export interface GstSyncInput {
-  branchId?: string
-  from?: string
-  to?: string
-}
-
-export interface GstReportQuery {
-  branchId?: string
-  from?: string
-  to?: string
-  type?: GstTxType
-  returnPeriod?: string
-  filed?: boolean
-}
-
-export interface FileGstPeriodInput {
-  returnPeriod: string
-  branchId?: string
-}
+import type { FileGstPeriodInput, GstReportQuery, GstSyncInput } from '@/lib/validations/finance'
 
 function formatReturnPeriod(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -151,10 +132,11 @@ export async function postGstTransactionForPurchase(
   return createdTransactions
 }
 
-export async function syncMissingGstTransactions(
-  params: Partial<GstSyncInput>,
-  actor: AuthUser
-) {
+export async function syncMissingGstTransactions(params: Partial<GstSyncInput>, actor: AuthUser) {
+  // NOTE: input is validated with gstSyncSchema by all HTTP entry points
+  // (see src/app/api/gst/sync/route.ts). The service itself must stay free
+  // of runtime zod imports: importing zod here breaks the production
+  // webpack build ("Cannot get final name for export 'z' of zod").
   const query = params
   if (query.branchId) await assertBranchAccess(actor, query.branchId)
   const branchId = query.branchId ?? actor.branchId ?? undefined
@@ -235,13 +217,13 @@ export async function syncMissingGstTransactions(
   }
 }
 
-export async function getGstr1Report(
-  params: Partial<GstReportQuery>,
-  actor: AuthUser
-) {
+export async function getGstr1Report(params: Partial<GstReportQuery>, actor: AuthUser) {
+  // NOTE: validated with gstReportQuerySchema by the HTTP entry points (see
+  // src/app/api/gst/reports/*). No runtime zod import here (webpack build).
   const query = params
   if (query.branchId) await assertBranchAccess(actor, query.branchId)
   const branchId = query.branchId ?? actor.branchId ?? undefined
+  const limit = query.limit ?? 1000
 
   const where: Prisma.GstTransactionWhereInput = {
     referenceType: 'SALE',
@@ -263,12 +245,12 @@ export async function getGstr1Report(
     prisma.gstTransaction.findMany({
       where: { ...where, type: GstTxType.B2B },
       orderBy: { invoiceDate: 'desc' },
-      take: 100,
+      take: limit,
     }),
     prisma.gstTransaction.findMany({
       where: { ...where, type: GstTxType.B2C },
       orderBy: { invoiceDate: 'desc' },
-      take: 100,
+      take: limit,
     }),
     prisma.gstTransaction.groupBy({
       by: ['hsnCode'],
@@ -351,10 +333,9 @@ export async function getGstr1Report(
   }
 }
 
-export async function getGstr3bReport(
-  params: Partial<GstReportQuery>,
-  actor: AuthUser
-) {
+export async function getGstr3bReport(params: Partial<GstReportQuery>, actor: AuthUser) {
+  // NOTE: validated with gstReportQuerySchema by the HTTP entry points (see
+  // src/app/api/gst/reports/*). No runtime zod import here (webpack build).
   const query = params
   if (query.branchId) await assertBranchAccess(actor, query.branchId)
   const branchId = query.branchId ?? actor.branchId ?? undefined
@@ -447,10 +428,9 @@ export async function getGstr3bReport(
   }
 }
 
-export async function fileGstReturnPeriod(
-  params: FileGstPeriodInput,
-  actor: AuthUser
-) {
+export async function fileGstReturnPeriod(params: FileGstPeriodInput, actor: AuthUser) {
+  // NOTE: validated with fileGstPeriodSchema by the HTTP entry point (see
+  // src/app/api/gst/file/route.ts). No runtime zod import here (webpack build).
   const input = params
   if (input.branchId) await assertBranchAccess(actor, input.branchId)
   const branchId = input.branchId ?? actor.branchId ?? undefined
