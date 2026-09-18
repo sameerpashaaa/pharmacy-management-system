@@ -14,6 +14,10 @@
 // protection, ±2% three-way matching, supplier payments + ledger,
 // purchase returns + inventory reversal, and branch/org isolation.
 // ─────────────────────────────────────────────────────────────
+import { NarcoticMovementType } from '@prisma/client'
+
+import { POST as purchaseReturnsPOST } from '@/app/api/purchase-returns/route'
+import { requirePermission } from '@/lib/auth/auth-helpers'
 import { filterEligibleBatches } from '@/lib/batches/fefo'
 import prisma from '@/lib/db/prisma'
 import type { AuthUser } from '@/lib/inventory/branch-access'
@@ -36,6 +40,12 @@ import {
   type CreatePurchaseCommand,
 } from '@/lib/purchases/purchase-service'
 import { createSupplierSchema } from '@/lib/validations/purchase'
+
+jest.mock('@/lib/auth/auth-helpers', () => ({
+  requirePermission: jest.fn(),
+}))
+
+const mockedPermission = requirePermission as jest.Mock
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 
@@ -82,6 +92,7 @@ const TBLS = [
   'purchase_returns',
   'purchase_items',
   'purchases',
+  'narcotic_register',
   'batches',
   'inventory',
   'product_barcodes',
@@ -1839,5 +1850,467 @@ describeDb('Purchase management integration (real Postgres)', () => {
     expect(batch.status).toBe('ACTIVE')
     expect(batch.blockedReason).toBeNull()
     expectFefoEligible(batch, true)
+  })
+
+  // ── D2-C: narcotic supplier-return register ────────────────────
+
+  async function narcoticProduct(): Promise<string> {
+    const p = await prisma.product.create({
+      data: {
+        name: 'Morphine 10mg',
+        sku: 'NAR-001',
+        barcode: '99010001',
+        mrp: 100,
+        gstRate: 0,
+        cgstRate: 0,
+        sgstRate: 0,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: fx.userAId,
+      },
+    })
+    return p.id
+  }
+
+  async function receiveNarcotic(
+    productId: string,
+    batchNumber: string,
+    grnNumber: string,
+    receivedQuantity = 100
+  ): Promise<{ purchaseId: string; itemId: string; batchId: string }> {
+    const { id: purchaseId, itemId } = await orderPurchase(fx, {
+      items: [
+        {
+          productId,
+          orderedQuantity: receivedQuantity,
+          unitCost: 10,
+          discountPercent: 0,
+          taxPercent: 0,
+        },
+      ],
+    })
+    await createGrn(
+      {
+        purchaseId,
+        branchId: fx.branchA,
+        grnNumber,
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: itemId,
+            receivedQuantity,
+            batchNumber,
+            expiryDate: inDays(300),
+            purchasePrice: 10,
+            mrp: 100,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      fx.branchAUser
+    )
+    const batch = await prisma.batch.findUniqueOrThrow({
+      where: { productId_batchNumber: { productId, batchNumber } },
+    })
+    return { purchaseId, itemId, batchId: batch.id }
+  }
+
+  function narcoticReturnInput(
+    purchaseId: string,
+    itemId: string,
+    quantity: number,
+    batchId: string | undefined,
+    returnNumber: string
+  ) {
+    return {
+      purchaseId,
+      supplierId: fx.supplierId,
+      returnNumber,
+      // Fixed +2s offset keeps register entryDate ordering deterministic:
+      // the GRN receipt row (grnDate = now) always sorts before return rows.
+      returnDate: new Date(Date.now() + 2000).toISOString(),
+      reason: 'Narcotic audit return',
+      items: [
+        {
+          purchaseItemId: itemId,
+          quantity,
+          unitCost: 10,
+          reason: 'Expired stock',
+          ...(batchId !== undefined ? { batchId } : {}),
+        },
+      ],
+    }
+  }
+
+  async function narcoticRows(productId: string) {
+    return prisma.narcoticRegister.findMany({
+      where: { productId, branchId: fx.branchA },
+      orderBy: { entryDate: 'asc' },
+    })
+  }
+
+  async function narcoticReturnRows(productId: string) {
+    return prisma.narcoticRegister.findMany({
+      where: {
+        productId,
+        branchId: fx.branchA,
+        movementType: NarcoticMovementType.RETURN_TO_SUPPLIER,
+      },
+      orderBy: { entryDate: 'asc' },
+    })
+  }
+
+  it('D2-C-1: narcotic supplier return creates a RETURN_TO_SUPPLIER register row', async () => {
+    const productId = await narcoticProduct()
+    const { purchaseId, itemId, batchId } = await receiveNarcotic(
+      productId,
+      'BT-NAR-1',
+      'GRN-NAR-1'
+    )
+
+    const ret = await createPurchaseReturn(
+      narcoticReturnInput(purchaseId, itemId, 5, batchId, 'PR-NAR-1'),
+      fx.globalActor
+    )
+    expect(ret.status).toBe('PENDING')
+
+    // GRN receipt row + the new return row.
+    const rows = await narcoticRows(productId)
+    expect(rows).toHaveLength(2)
+    expect(rows[0].movementType).toBe(NarcoticMovementType.PURCHASE_RECEIPT)
+    expect(rows[0].balanceQuantity).toBe(100)
+
+    const retRows = await narcoticReturnRows(productId)
+    expect(retRows).toHaveLength(1)
+    expect(retRows[0].movementType).toBe(NarcoticMovementType.RETURN_TO_SUPPLIER)
+    expect(retRows[0].referenceType).toBe('PURCHASE_RETURN')
+    expect(retRows[0].referenceId).toBe(ret.id)
+    expect(retRows[0].productId).toBe(productId)
+    expect(retRows[0].batchId).toBe(batchId)
+    expect(retRows[0].quantityIn).toBe(0)
+    expect(retRows[0].quantityOut).toBe(5)
+  })
+
+  it('D2-C-2: narcotic return decrements the running balance (120 -> 115)', async () => {
+    const productId = await narcoticProduct()
+    // Receiving 120 makes the GRN receipt row itself the 120 previous balance.
+    const { purchaseId, itemId, batchId } = await receiveNarcotic(
+      productId,
+      'BT-NAR-2',
+      'GRN-NAR-2',
+      120
+    )
+
+    await createPurchaseReturn(
+      narcoticReturnInput(purchaseId, itemId, 5, batchId, 'PR-NAR-2'),
+      fx.globalActor
+    )
+
+    const rows = await narcoticRows(productId)
+    expect(rows).toHaveLength(2)
+    expect(rows[0].movementType).toBe(NarcoticMovementType.PURCHASE_RECEIPT)
+    expect(rows[0].balanceQuantity).toBe(120)
+    expect(rows[1].movementType).toBe(NarcoticMovementType.RETURN_TO_SUPPLIER)
+    expect(rows[1].quantityOut).toBe(5)
+    expect(rows[1].balanceQuantity).toBe(115)
+  })
+
+  it('D2-C-3: physical inventory state stays synchronized on narcotic return', async () => {
+    const productId = await narcoticProduct()
+    const { purchaseId, itemId, batchId } = await receiveNarcotic(
+      productId,
+      'BT-NAR-3',
+      'GRN-NAR-3'
+    )
+
+    const ret = await createPurchaseReturn(
+      narcoticReturnInput(purchaseId, itemId, 10, batchId, 'PR-NAR-3'),
+      fx.globalActor
+    )
+
+    const inv = await inventoryFor(productId, fx.branchA)
+    expect(inv?.totalQuantity).toBe(90)
+    expect(inv?.availableQuantity).toBe(90)
+
+    const batch = await prisma.batch.findUniqueOrThrow({ where: { id: batchId } })
+    expect(batch.quantity).toBe(90)
+
+    const movement = await prisma.inventoryMovement.findFirst({
+      where: { referenceType: 'PURCHASE_RETURN', referenceId: ret.id },
+    })
+    expect(movement).not.toBeNull()
+    expect(movement?.type).toBe('OUT')
+    expect(movement?.quantity).toBe(10)
+
+    const retRows = await narcoticReturnRows(productId)
+    expect(retRows).toHaveLength(1)
+    expect(retRows[0].quantityOut).toBe(10)
+  })
+
+  it('D2-C-4: narcotic supplier return without batchId is rejected with no durable mutation', async () => {
+    const productId = await narcoticProduct()
+    const { purchaseId, itemId, batchId } = await receiveNarcotic(
+      productId,
+      'BT-NAR-4',
+      'GRN-NAR-4'
+    )
+    const supplierBefore = await prisma.supplier.findUniqueOrThrow({
+      where: { id: fx.supplierId },
+    })
+
+    await expect(
+      createPurchaseReturn(
+        narcoticReturnInput(purchaseId, itemId, 5, undefined, 'PR-NAR-4'),
+        fx.globalActor
+      )
+    ).rejects.toThrow('Batch ID is required for narcotic supplier returns')
+
+    expect(await prisma.purchaseReturn.count({ where: { purchaseId } })).toBe(0)
+    expect(await prisma.purchaseReturnItem.count()).toBe(0)
+    const inv = await inventoryFor(productId, fx.branchA)
+    expect(inv?.totalQuantity).toBe(100)
+    expect(inv?.availableQuantity).toBe(100)
+    expect((await prisma.batch.findUniqueOrThrow({ where: { id: batchId } })).quantity).toBe(100)
+    expect(
+      await prisma.inventoryMovement.count({ where: { referenceType: 'PURCHASE_RETURN' } })
+    ).toBe(0)
+    // Only the GRN receipt row exists; no RETURN_TO_SUPPLIER row was written.
+    expect(await narcoticReturnRows(productId)).toHaveLength(0)
+    expect(
+      await prisma.supplierLedger.count({
+        where: { supplierId: fx.supplierId, referenceType: 'PURCHASE_RETURN' },
+      })
+    ).toBe(0)
+    const supplierAfter = await prisma.supplier.findUniqueOrThrow({
+      where: { id: fx.supplierId },
+    })
+    expect(supplierAfter.outstandingBalance.toString()).toBe(
+      supplierBefore.outstandingBalance.toString()
+    )
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'PURCHASE_RETURN_CREATE', entity: 'PurchaseReturn' },
+      })
+    ).toBe(0)
+  })
+
+  it('D2-C-5: opening +100, receipt +20, return -5 yields balance 115', async () => {
+    const productId = await narcoticProduct()
+
+    // Seed the opening entry first so the GRN receipt itself chains off it
+    // (100), then the return chains off the receipt (120 -> 115).
+    const openingBatch = await prisma.batch.create({
+      data: {
+        productId,
+        batchNumber: 'BT-NAR-5-OPEN',
+        expiryDate: inDays(300),
+        purchasePrice: 10,
+        mrp: 100,
+        quantity: 0,
+        branchId: fx.branchA,
+      },
+    })
+    await prisma.narcoticRegister.create({
+      data: {
+        branchId: fx.branchA,
+        productId,
+        batchId: openingBatch.id,
+        movementType: NarcoticMovementType.OPENING_BALANCE,
+        quantityIn: 100,
+        quantityOut: 0,
+        balanceQuantity: 100,
+        referenceType: 'OPENING',
+        referenceId: 'seed-opening-5',
+        enteredById: fx.userAId,
+        entryDate: new Date(Date.now() - 20000),
+      },
+    })
+
+    const { purchaseId, itemId, batchId } = await receiveNarcotic(
+      productId,
+      'BT-NAR-5',
+      'GRN-NAR-5',
+      20
+    )
+
+    await createPurchaseReturn(
+      narcoticReturnInput(purchaseId, itemId, 5, batchId, 'PR-NAR-5'),
+      fx.globalActor
+    )
+
+    const rows = await narcoticRows(productId)
+    expect(rows).toHaveLength(3)
+    expect(rows.map((r) => r.movementType)).toEqual([
+      NarcoticMovementType.OPENING_BALANCE,
+      NarcoticMovementType.PURCHASE_RECEIPT,
+      NarcoticMovementType.RETURN_TO_SUPPLIER,
+    ])
+    expect(rows.map((r) => r.balanceQuantity)).toEqual([100, 120, 115])
+    expect(rows[2].quantityOut).toBe(5)
+  })
+
+  it('D2-C-6: RETURNS_CREATE permission is required for supplier return creation', async () => {
+    mockedPermission.mockRejectedValueOnce(
+      new Error("Forbidden: requires permission 'returns:create'")
+    )
+    const res = await purchaseReturnsPOST(
+      new Request('http://localhost/api/purchase-returns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          purchaseId: 'po-1',
+          supplierId: fx.supplierId,
+          returnDate: new Date().toISOString(),
+          reason: 'No permission',
+          items: [{ purchaseItemId: 'pi-1', quantity: 1, unitCost: 10, reason: 'Nope' }],
+        }),
+      }) as unknown as Parameters<typeof purchaseReturnsPOST>[0]
+    )
+    expect(res.status).toBe(403)
+    expect(await prisma.purchaseReturn.count()).toBe(0)
+  })
+
+  it('D2-C-7: cross-organization supplier return creation is denied', async () => {
+    const productId = await narcoticProduct()
+    const { purchaseId, itemId, batchId } = await receiveNarcotic(
+      productId,
+      'BT-NAR-7',
+      'GRN-NAR-7'
+    )
+
+    await expect(
+      createPurchaseReturn(
+        narcoticReturnInput(purchaseId, itemId, 5, batchId, 'PR-NAR-7'),
+        fx.otherOrgUser
+      )
+    ).rejects.toThrow('Forbidden')
+    expect(await prisma.purchaseReturn.count({ where: { purchaseId } })).toBe(0)
+    // The GRN receipt row predates the denied call; no return row was written.
+    expect(await narcoticReturnRows(productId)).toHaveLength(0)
+  })
+
+  it('D2-C-8: partial narcotic return decrements stock, batch, and balance proportionally', async () => {
+    const productId = await narcoticProduct()
+    const { purchaseId, itemId, batchId } = await receiveNarcotic(
+      productId,
+      'BT-NAR-8',
+      'GRN-NAR-8'
+    )
+
+    const ret = await createPurchaseReturn(
+      narcoticReturnInput(purchaseId, itemId, 30, batchId, 'PR-NAR-8'),
+      fx.globalActor
+    )
+    expect(ret.totalAmount.toNumber()).toBe(300)
+
+    const inv = await inventoryFor(productId, fx.branchA)
+    expect(inv?.totalQuantity).toBe(70)
+    expect(inv?.availableQuantity).toBe(70)
+    expect((await prisma.batch.findUniqueOrThrow({ where: { id: batchId } })).quantity).toBe(70)
+
+    // GRN receipt row (balance 100) plus the partial-return row (100 - 30).
+    const rows = await narcoticRows(productId)
+    expect(rows).toHaveLength(2)
+    expect(rows[0].movementType).toBe(NarcoticMovementType.PURCHASE_RECEIPT)
+    expect(rows[0].balanceQuantity).toBe(100)
+    expect(rows[1].movementType).toBe(NarcoticMovementType.RETURN_TO_SUPPLIER)
+    expect(rows[1].quantityOut).toBe(30)
+    expect(rows[1].balanceQuantity).toBe(70)
+  })
+
+  it('D2-C-9: duplicate returnNumber is rejected by the existing unique constraint', async () => {
+    const productId = await narcoticProduct()
+    const { purchaseId, itemId, batchId } = await receiveNarcotic(
+      productId,
+      'BT-NAR-9',
+      'GRN-NAR-9'
+    )
+
+    await createPurchaseReturn(
+      narcoticReturnInput(purchaseId, itemId, 5, batchId, 'PR-NAR-DUP'),
+      fx.globalActor
+    )
+    await expect(
+      createPurchaseReturn(
+        narcoticReturnInput(purchaseId, itemId, 5, batchId, 'PR-NAR-DUP'),
+        fx.globalActor
+      )
+    ).rejects.toThrow(/Unique constraint failed/)
+
+    expect(await prisma.purchaseReturn.count({ where: { returnNumber: 'PR-NAR-DUP' } })).toBe(1)
+  })
+
+  it('D2-C-10: mid-transaction failure rolls back the entire supplier return', async () => {
+    const productId = await narcoticProduct()
+    const { purchaseId, itemId, batchId } = await receiveNarcotic(
+      productId,
+      'BT-NAR-10',
+      'GRN-NAR-10'
+    )
+    const supplierBefore = await prisma.supplier.findUniqueOrThrow({
+      where: { id: fx.supplierId },
+    })
+
+    // First item is a valid narcotic return (writes its register row in-tx);
+    // the second item references a nonexistent batch, failing at the batch
+    // decrement after the narcotic write. The whole transaction must roll back.
+    await expect(
+      createPurchaseReturn(
+        {
+          purchaseId,
+          supplierId: fx.supplierId,
+          returnNumber: 'PR-NAR-10',
+          returnDate: new Date().toISOString(),
+          reason: 'Rollback probe',
+          items: [
+            {
+              purchaseItemId: itemId,
+              quantity: 5,
+              unitCost: 10,
+              reason: 'Valid narcotic line',
+              batchId,
+            },
+            {
+              purchaseItemId: itemId,
+              quantity: 5,
+              unitCost: 10,
+              reason: 'Bogus batch line',
+              batchId: 'batch-does-not-exist',
+            },
+          ],
+        },
+        fx.globalActor
+      )
+    ).rejects.toThrow()
+
+    expect(await prisma.purchaseReturn.count({ where: { purchaseId } })).toBe(0)
+    expect(await prisma.purchaseReturnItem.count()).toBe(0)
+    const inv = await inventoryFor(productId, fx.branchA)
+    expect(inv?.totalQuantity).toBe(100)
+    expect(inv?.availableQuantity).toBe(100)
+    expect((await prisma.batch.findUniqueOrThrow({ where: { id: batchId } })).quantity).toBe(100)
+    expect(
+      await prisma.inventoryMovement.count({ where: { referenceType: 'PURCHASE_RETURN' } })
+    ).toBe(0)
+    expect(
+      await prisma.supplierLedger.count({
+        where: { supplierId: fx.supplierId, referenceType: 'PURCHASE_RETURN' },
+      })
+    ).toBe(0)
+    const supplierAfter = await prisma.supplier.findUniqueOrThrow({
+      where: { id: fx.supplierId },
+    })
+    expect(supplierAfter.outstandingBalance.toString()).toBe(
+      supplierBefore.outstandingBalance.toString()
+    )
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'PURCHASE_RETURN_CREATE', entity: 'PurchaseReturn' },
+      })
+    ).toBe(0)
+    // Only the GRN receipt row survives; the in-transaction return row rolled back.
+    const rows = await narcoticRows(productId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].movementType).toBe(NarcoticMovementType.PURCHASE_RECEIPT)
   })
 })
