@@ -12,7 +12,7 @@ export interface OpeningBalanceInput {
   reason: string
   batchNumber: string
   expiryDate: Date
-  manufacturingDate: Date | null | undefined
+  manufacturingDate?: Date | null
   purchasePrice: number
   mrp: number
   supplierRef?: string

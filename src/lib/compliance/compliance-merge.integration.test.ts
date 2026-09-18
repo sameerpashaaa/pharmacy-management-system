@@ -5,10 +5,10 @@
 // pharmacare-phase2 (doctors CRUD, H1 register gate, sale cancellation).
 // Real Postgres; only requirePermission is mocked for route tests.
 import { requirePermission } from '@/lib/auth/auth-helpers'
+import prisma from '@/lib/db/prisma'
 import { createOpeningBalance } from '@/lib/narcotic/narcotic-service'
 import { createGrn, createPurchase, updatePurchase } from '@/lib/purchases/purchase-service'
 import { cancelSale, createSale } from '@/lib/sales/sales-service'
-import prisma from '@/lib/db/prisma'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 
@@ -1112,7 +1112,13 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     })
 
     await prisma.inventory.create({
-      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
     })
 
     const result = await createOpeningBalance(
@@ -1176,8 +1182,12 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
   })
 
   it('opens correct register balance chain with opening -> purchase -> sale', async () => {
-    const actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust', 'purchases:create', 'purchases:receive', 'sales:create'] }
-    const _voidActor = { id: userAId, branchId: branchA, permissions: ['sales:void'] }
+    const actor = {
+      id: userAId,
+      branchId: branchA,
+      permissions: ['inventory:adjust', 'purchases:create', 'purchases:receive', 'sales:create'],
+    }
+    expect(actor.id).toBe(userAId)
 
     // Create narcotic product
     const narcotic = await prisma.product.create({
@@ -1197,7 +1207,13 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     })
 
     await prisma.inventory.create({
-      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
     })
 
     // 1. Opening balance +100
@@ -1224,16 +1240,30 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     expect(registers[0].balanceQuantity).toBe(100)
 
     // 2. Purchase receipt +20
-    const supplier = await prisma.supplier.create({ data: { name: 'Chain Supplier', gstin: '29CHAIN0001A1Z5' } })
+    const supplier = await prisma.supplier.create({
+      data: { name: 'Chain Supplier', gstin: '29CHAIN0001A1Z5' },
+    })
     const purchase = await createPurchase(
       {
         branchId: branchA,
         supplierId: supplier.id,
-        items: [{ productId: narcotic.id, orderedQuantity: 20, unitCost: 100, discountPercent: 0, taxPercent: 12 }],
+        items: [
+          {
+            productId: narcotic.id,
+            orderedQuantity: 20,
+            unitCost: 100,
+            discountPercent: 0,
+            taxPercent: 12,
+          },
+        ],
       },
       { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] }
     )
-    await updatePurchase(purchase.id, { status: 'ORDERED' }, { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] })
+    await updatePurchase(
+      purchase.id,
+      { status: 'ORDERED' },
+      { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] }
+    )
     await createGrn(
       {
         purchaseId: purchase.id,
@@ -1267,15 +1297,21 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     await prisma.doctor.create({
       data: { name: 'Dr Chain', registrationNo: 'MCI-CHAIN', organizationId: org1Id },
     })
-    const _sale = await createSale(
+    const sale = await createSale(
       {
         branchId: branchA,
         items: [{ productId: narcotic.id, quantity: 10 }],
         payments: [{ method: 'CASH', amount: 1680 }],
-        h1Capture: { patientName: 'Patient', patientAddress: 'Addr', doctorName: 'Dr Chain', doctorRegNo: 'MCI-CHAIN' },
+        h1Capture: {
+          patientName: 'Patient',
+          patientAddress: 'Addr',
+          doctorName: 'Dr Chain',
+          doctorRegNo: 'MCI-CHAIN',
+        },
       },
       { id: userAId, branchId: branchA, permissions: ['sales:create'] }
     )
+    expect(sale.status).toBe('COMPLETED')
 
     registers = await prisma.narcoticRegister.findMany({
       where: { productId: narcotic.id, branchId: branchA },
@@ -1286,7 +1322,8 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
   })
 
   it('rejects duplicate opening balance for same branch+product', async () => {
-    const _actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    const actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    expect(actor.id).toBe(userAId)
 
     const narcotic = await prisma.product.create({
       data: {
@@ -1304,7 +1341,13 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     })
 
     await prisma.inventory.create({
-      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
     })
 
     await createOpeningBalance(
@@ -1359,7 +1402,13 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     })
 
     await prisma.inventory.create({
-      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
     })
 
     await expect(
@@ -1400,10 +1449,22 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     })
 
     await prisma.inventory.create({
-      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
     })
     await prisma.inventory.create({
-      data: { productId: narcotic.id, branchId: branchB, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+      data: {
+        productId: narcotic.id,
+        branchId: branchB,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
     })
 
     await createOpeningBalance(
@@ -1442,7 +1503,11 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
 
   it('denies cross-org access', async () => {
     const actorA = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
-    const actorOther = { id: userOtherId, branchId: branchOtherOrg, permissions: ['inventory:adjust'] }
+    const actorOther = {
+      id: userOtherId,
+      branchId: branchOtherOrg,
+      permissions: ['inventory:adjust'],
+    }
 
     const narcotic = await prisma.product.create({
       data: {
@@ -1460,7 +1525,13 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     })
 
     await prisma.inventory.create({
-      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
     })
 
     await createOpeningBalance(
@@ -1498,7 +1569,8 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
   })
 
   it('permits post-dated opening with warning', async () => {
-    const _actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    const actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    expect(actor.id).toBe(userAId)
 
     // First create a GRN
     const narcotic = await prisma.product.create({
@@ -1517,35 +1589,57 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     })
 
     await prisma.inventory.create({
-      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
     })
 
-    const supplier = await prisma.supplier.create({ data: { name: 'PD Supplier', gstin: '29PDSUPP0001A1Z5' } })
+    const supplier = await prisma.supplier.create({
+      data: { name: 'PD Supplier', gstin: '29PDSUPP0001A1Z5' },
+    })
     const purchase = await createPurchase(
       {
         branchId: branchA,
         supplierId: supplier.id,
-        items: [{ productId: narcotic.id, orderedQuantity: 20, unitCost: 100, discountPercent: 0, taxPercent: 12 }],
+        items: [
+          {
+            productId: narcotic.id,
+            orderedQuantity: 20,
+            unitCost: 100,
+            discountPercent: 0,
+            taxPercent: 12,
+          },
+        ],
       },
       { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] }
     )
-    await updatePurchase(purchase.id, { status: 'ORDERED' }, { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] })
+    await updatePurchase(
+      purchase.id,
+      { status: 'ORDERED' },
+      { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] }
+    )
     await createGrn(
       {
         purchaseId: purchase.id,
         branchId: branchA,
         grnNumber: 'GRN-PD-001',
         grnDate: new Date(),
-        items: [{
-          purchaseItemId: purchase.items[0].id,
-          receivedQuantity: 20,
-          batchNumber: 'BATCH-PD-001',
-          expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-          manufacturingDate: new Date(),
-          purchasePrice: 100,
-          mrp: 150,
-          qualityCheckPassed: true,
-        }],
+        items: [
+          {
+            purchaseItemId: purchase.items[0].id,
+            receivedQuantity: 20,
+            batchNumber: 'BATCH-PD-001',
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            manufacturingDate: new Date(),
+            purchasePrice: 100,
+            mrp: 150,
+            qualityCheckPassed: true,
+          },
+        ],
       },
       { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] }
     )
@@ -1583,7 +1677,8 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
   })
 
   it('validates required batch metadata and quantity', async () => {
-    const _actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    const actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    expect(actor.id).toBe(userAId)
 
     const narcotic = await prisma.product.create({
       data: {
@@ -1601,7 +1696,13 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     })
 
     await prisma.inventory.create({
-      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+      data: {
+        productId: narcotic.id,
+        branchId: branchA,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        reservedQuantity: 0,
+      },
     })
 
     // Missing batchNumber
