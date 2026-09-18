@@ -5,9 +5,10 @@
 // pharmacare-phase2 (doctors CRUD, H1 register gate, sale cancellation).
 // Real Postgres; only requirePermission is mocked for route tests.
 import { requirePermission } from '@/lib/auth/auth-helpers'
-import prisma from '@/lib/db/prisma'
+import { createOpeningBalance } from '@/lib/narcotic/narcotic-service'
 import { createGrn, createPurchase, updatePurchase } from '@/lib/purchases/purchase-service'
 import { cancelSale, createSale } from '@/lib/sales/sales-service'
+import prisma from '@/lib/db/prisma'
 
 const HAS_DB = Boolean(process.env.DATABASE_URL)
 
@@ -55,8 +56,11 @@ const describeDb = HAS_DB ? describe : describe.skip
 
 describeDb('Merge verification: compliance + cancellation (real Postgres)', () => {
   let branchA: string
+  let branchB: string
   let branchOtherOrg: string
   let userAId: string
+  let userBId: string
+  let userOtherId: string
   let h1ProductId: string
   let org1Id: string
 
@@ -78,6 +82,22 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
       data: { name: 'MGU', email: 'mgu@merge.test', branchId: bA.id },
     })
     userAId = userA.id
+
+    // Additional users for branch isolation and cross-org tests
+    const bB = await prisma.branch.create({
+      data: { organizationId: org1.id, name: 'MG-B', code: 'MGB', invoicePrefix: 'INV' },
+    })
+    branchB = bB.id
+
+    const userB = await prisma.user.create({
+      data: { name: 'MGU-B', email: 'mgub@merge.test', branchId: bB.id },
+    })
+    userBId = userB.id
+
+    const userOther = await prisma.user.create({
+      data: { name: 'Other', email: 'other@merge.test', branchId: branchOtherOrg },
+    })
+    userOtherId = userOther.id
 
     const mkProduct = (sku: string, drugSchedule: 'NONE' | 'H1') =>
       prisma.product.create({
@@ -150,7 +170,7 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
 
     // Other organization cannot see it
     const otherUser = await prisma.user.create({
-      data: { name: 'Other', email: 'other@merge.test', branchId: branchOtherOrg },
+      data: { name: 'Other', email: 'other2@merge.test', branchId: branchOtherOrg },
     })
     mockedRequirePermission.mockResolvedValue({ id: otherUser.id, branchId: branchOtherOrg })
     const { GET: GET_BY_ID } = await import('@/app/api/doctors/[id]/route')
@@ -1068,5 +1088,574 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     })
     expect(ccBatch.status).toBe('BLOCKED')
     expect(ccBatch.blockedReason).toContain('cold-chain temperature log')
+  })
+
+  // ── D2-A: Narcotic Opening Balance ────────────────────────────
+
+  it('creates a valid first opening balance with real batch', async () => {
+    const actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+
+    // Create narcotic product
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'Opening Balance Narcotic',
+        sku: 'OB-NARC',
+        barcode: '99OBNARC',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+    })
+
+    const result = await createOpeningBalance(
+      {
+        branchId: branchA,
+        productId: narcotic.id,
+        quantity: 100,
+        reason: 'Initial stock declaration',
+        batchNumber: 'OB-INIT-001',
+        expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000), // 10 years
+        manufacturingDate: new Date(),
+        purchasePrice: 100,
+        mrp: 150,
+        supplierRef: 'OPENING',
+      },
+      actor
+    )
+
+    // Verify NarcoticRegister
+    const registers = await prisma.narcoticRegister.findMany({
+      where: { referenceType: 'OPENING_BALANCE', referenceId: result.openingBalanceId },
+    })
+    expect(registers.length).toBe(1)
+    expect(registers[0].movementType).toBe('OPENING_BALANCE')
+    expect(registers[0].quantityIn).toBe(100)
+    expect(registers[0].quantityOut).toBe(0)
+    expect(registers[0].balanceQuantity).toBe(100)
+    expect(registers[0].referenceType).toBe('OPENING_BALANCE')
+
+    // Verify Inventory
+    const inventory = await prisma.inventory.findUniqueOrThrow({
+      where: { productId_branchId: { productId: narcotic.id, branchId: branchA } },
+    })
+    expect(inventory.totalQuantity).toBe(100)
+    expect(inventory.availableQuantity).toBe(100)
+
+    // Verify real Batch was created
+    const batch = await prisma.batch.findUniqueOrThrow({
+      where: { id: registers[0].batchId },
+    })
+    expect(batch.quantity).toBe(100)
+    expect(batch.status).toBe('ACTIVE')
+    expect(Number(batch.purchasePrice)).toBe(100)
+    expect(Number(batch.mrp)).toBe(150)
+    expect(batch.expiryDate.getTime()).toBeGreaterThan(Date.now())
+
+    // Verify InventoryMovement
+    const movement = await prisma.inventoryMovement.findFirst({
+      where: { referenceType: 'OPENING_BALANCE', referenceId: result.openingBalanceId },
+    })
+    expect(movement).toBeTruthy()
+    expect(movement!.type).toBe('IN')
+    expect(movement!.quantity).toBe(100)
+
+    // Verify AuditLog
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'NARCOTIC_OPENING_BALANCE_CREATE', entityId: registers[0].id },
+    })
+    expect(audit).toBeTruthy()
+    expect(audit!.metadata).toMatchObject({ openingId: expect.any(String), quantity: 100 })
+  })
+
+  it('opens correct register balance chain with opening -> purchase -> sale', async () => {
+    const actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust', 'purchases:create', 'purchases:receive', 'sales:create'] }
+    const _voidActor = { id: userAId, branchId: branchA, permissions: ['sales:void'] }
+
+    // Create narcotic product
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'Chain Narcotic',
+        sku: 'CHAIN-NARC',
+        barcode: '99CHAIN',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        isPrescriptionRequired: false,
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+    })
+
+    // 1. Opening balance +100
+    await createOpeningBalance(
+      {
+        branchId: branchA,
+        productId: narcotic.id,
+        quantity: 100,
+        reason: 'Initial declaration',
+        batchNumber: 'OB-CHAIN-001',
+        expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+        manufacturingDate: new Date(),
+        purchasePrice: 100,
+        mrp: 150,
+      },
+      { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    )
+
+    let registers = await prisma.narcoticRegister.findMany({
+      where: { productId: narcotic.id, branchId: branchA },
+      orderBy: { entryDate: 'asc' },
+    })
+    expect(registers.length).toBe(1)
+    expect(registers[0].balanceQuantity).toBe(100)
+
+    // 2. Purchase receipt +20
+    const supplier = await prisma.supplier.create({ data: { name: 'Chain Supplier', gstin: '29CHAIN0001A1Z5' } })
+    const purchase = await createPurchase(
+      {
+        branchId: branchA,
+        supplierId: supplier.id,
+        items: [{ productId: narcotic.id, orderedQuantity: 20, unitCost: 100, discountPercent: 0, taxPercent: 12 }],
+      },
+      { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] }
+    )
+    await updatePurchase(purchase.id, { status: 'ORDERED' }, { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] })
+    await createGrn(
+      {
+        purchaseId: purchase.id,
+        branchId: branchA,
+        grnNumber: 'GRN-CHAIN-001',
+        grnDate: new Date(),
+        items: [
+          {
+            purchaseItemId: purchase.items[0].id,
+            receivedQuantity: 20,
+            batchNumber: 'BATCH-CHAIN-001',
+            expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            manufacturingDate: new Date(),
+            purchasePrice: 100,
+            mrp: 150,
+            qualityCheckPassed: true,
+          },
+        ],
+      },
+      { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] }
+    )
+
+    registers = await prisma.narcoticRegister.findMany({
+      where: { productId: narcotic.id, branchId: branchA },
+      orderBy: { entryDate: 'asc' },
+    })
+    expect(registers.length).toBe(2)
+    expect(registers[1].balanceQuantity).toBe(120)
+
+    // 3. Sale -10
+    await prisma.doctor.create({
+      data: { name: 'Dr Chain', registrationNo: 'MCI-CHAIN', organizationId: org1Id },
+    })
+    const _sale = await createSale(
+      {
+        branchId: branchA,
+        items: [{ productId: narcotic.id, quantity: 10 }],
+        payments: [{ method: 'CASH', amount: 1680 }],
+        h1Capture: { patientName: 'Patient', patientAddress: 'Addr', doctorName: 'Dr Chain', doctorRegNo: 'MCI-CHAIN' },
+      },
+      { id: userAId, branchId: branchA, permissions: ['sales:create'] }
+    )
+
+    registers = await prisma.narcoticRegister.findMany({
+      where: { productId: narcotic.id, branchId: branchA },
+      orderBy: { entryDate: 'asc' },
+    })
+    expect(registers.length).toBe(3)
+    expect(registers[2].balanceQuantity).toBe(110)
+  })
+
+  it('rejects duplicate opening balance for same branch+product', async () => {
+    const _actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'Duplicate Narcotic',
+        sku: 'DUP-NARC',
+        barcode: '99DUPNARC',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+    })
+
+    await createOpeningBalance(
+      {
+        branchId: branchA,
+        productId: narcotic.id,
+        quantity: 50,
+        reason: 'First opening',
+        batchNumber: 'OB-DUP-001',
+        expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+        manufacturingDate: new Date(),
+        purchasePrice: 100,
+        mrp: 150,
+      },
+      { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    )
+
+    await expect(
+      createOpeningBalance(
+        {
+          branchId: branchA,
+          productId: narcotic.id,
+          quantity: 50,
+          reason: 'Second opening',
+          batchNumber: 'OB-DUP-002',
+          expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+          manufacturingDate: new Date(),
+          purchasePrice: 100,
+          mrp: 150,
+        },
+        { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+      )
+    ).rejects.toThrow('already exists')
+  })
+
+  it('requires INVENTORY_ADJUST permission', async () => {
+    const noPermActor = { id: userAId, branchId: branchA, permissions: ['sales:create'] }
+
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'Perm Narcotic',
+        sku: 'PERM-NARC',
+        barcode: '99PERMNARC',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+    })
+
+    await expect(
+      createOpeningBalance(
+        {
+          branchId: branchA,
+          productId: narcotic.id,
+          quantity: 10,
+          reason: 'Test',
+          batchNumber: 'OB-PERM-001',
+          expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+          manufacturingDate: new Date(),
+          purchasePrice: 100,
+          mrp: 150,
+        },
+        noPermActor
+      )
+    ).rejects.toThrow('inventory:adjust')
+  })
+
+  it('enforces branch isolation', async () => {
+    const actorA = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    const actorB = { id: userBId, branchId: branchB, permissions: ['inventory:adjust'] }
+
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'Branch Narcotic',
+        sku: 'BR-NARC',
+        barcode: '99BRNARC',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+    })
+    await prisma.inventory.create({
+      data: { productId: narcotic.id, branchId: branchB, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+    })
+
+    await createOpeningBalance(
+      {
+        branchId: branchA,
+        productId: narcotic.id,
+        quantity: 100,
+        reason: 'Branch A opening',
+        batchNumber: 'OB-BR-001',
+        expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+        manufacturingDate: new Date(),
+        purchasePrice: 100,
+        mrp: 150,
+      },
+      actorA
+    )
+
+    // Actor from branch B should not be able to create opening for branch A
+    await expect(
+      createOpeningBalance(
+        {
+          branchId: branchA,
+          productId: narcotic.id,
+          quantity: 50,
+          reason: 'Unauthorized',
+          batchNumber: 'OB-BR-002',
+          expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+          manufacturingDate: new Date(),
+          purchasePrice: 100,
+          mrp: 150,
+        },
+        actorB
+      )
+    ).rejects.toThrow('branch mismatch')
+  })
+
+  it('denies cross-org access', async () => {
+    const actorA = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    const actorOther = { id: userOtherId, branchId: branchOtherOrg, permissions: ['inventory:adjust'] }
+
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'CrossOrg Narcotic',
+        sku: 'CO-NARC',
+        barcode: '99CONARC',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+    })
+
+    await createOpeningBalance(
+      {
+        branchId: branchA,
+        productId: narcotic.id,
+        quantity: 100,
+        reason: 'Org 1 opening',
+        batchNumber: 'OB-CO-001',
+        expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+        manufacturingDate: new Date(),
+        purchasePrice: 100,
+        mrp: 150,
+      },
+      actorA
+    )
+
+    // Actor from different org cannot access branch A
+    await expect(
+      createOpeningBalance(
+        {
+          branchId: branchA,
+          productId: narcotic.id,
+          quantity: 50,
+          reason: 'Unauthorized',
+          batchNumber: 'OB-CO-002',
+          expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+          manufacturingDate: new Date(),
+          purchasePrice: 100,
+          mrp: 150,
+        },
+        actorOther
+      )
+    ).rejects.toThrow('branch')
+  })
+
+  it('permits post-dated opening with warning', async () => {
+    const _actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+
+    // First create a GRN
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'Postdated Narcotic',
+        sku: 'PD-NARC',
+        barcode: '99PDNARC',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+    })
+
+    const supplier = await prisma.supplier.create({ data: { name: 'PD Supplier', gstin: '29PDSUPP0001A1Z5' } })
+    const purchase = await createPurchase(
+      {
+        branchId: branchA,
+        supplierId: supplier.id,
+        items: [{ productId: narcotic.id, orderedQuantity: 20, unitCost: 100, discountPercent: 0, taxPercent: 12 }],
+      },
+      { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] }
+    )
+    await updatePurchase(purchase.id, { status: 'ORDERED' }, { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] })
+    await createGrn(
+      {
+        purchaseId: purchase.id,
+        branchId: branchA,
+        grnNumber: 'GRN-PD-001',
+        grnDate: new Date(),
+        items: [{
+          purchaseItemId: purchase.items[0].id,
+          receivedQuantity: 20,
+          batchNumber: 'BATCH-PD-001',
+          expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          manufacturingDate: new Date(),
+          purchasePrice: 100,
+          mrp: 150,
+          qualityCheckPassed: true,
+        }],
+      },
+      { id: userAId, branchId: branchA, permissions: ['purchases:create', 'purchases:receive'] }
+    )
+
+    // Now create opening balance (post-dated relative to GRN)
+    const result = await createOpeningBalance(
+      {
+        branchId: branchA,
+        productId: narcotic.id,
+        quantity: 100,
+        reason: 'Late opening declaration',
+        batchNumber: 'OB-PD-001',
+        expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+        manufacturingDate: new Date(),
+        purchasePrice: 100,
+        mrp: 150,
+      },
+      { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+    )
+
+    // Should succeed but with warning in audit log
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'NARCOTIC_OPENING_BALANCE_CREATE', entityId: result.narcoticRegisterId },
+    })
+    expect(audit).toBeTruthy()
+    expect(audit!.metadata).toMatchObject({ warning: 'POST_DATED_OPENING' })
+
+    // Balance should be correct: 20 (GRN) + 100 (opening) = 120
+    const registers = await prisma.narcoticRegister.findMany({
+      where: { productId: narcotic.id, branchId: branchA },
+      orderBy: { entryDate: 'asc' },
+    })
+    const finalBalance = registers[registers.length - 1].balanceQuantity
+    expect(finalBalance).toBe(120)
+  })
+
+  it('validates required batch metadata and quantity', async () => {
+    const _actor = { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+
+    const narcotic = await prisma.product.create({
+      data: {
+        name: 'Validation Narcotic',
+        sku: 'VAL-NARC',
+        barcode: '99VALNARC',
+        mrp: 150,
+        gstRate: 12,
+        cgstRate: 6,
+        sgstRate: 6,
+        unitOfMeasure: 'Strip',
+        drugSchedule: 'NARCOTIC_NDPS',
+        createdById: userAId,
+      },
+    })
+
+    await prisma.inventory.create({
+      data: { productId: narcotic.id, branchId: branchA, totalQuantity: 0, availableQuantity: 0, reservedQuantity: 0 },
+    })
+
+    // Missing batchNumber
+    await expect(
+      createOpeningBalance(
+        {
+          branchId: branchA,
+          productId: narcotic.id,
+          quantity: 10,
+          reason: 'Test',
+          batchNumber: '',
+          expiryDate: new Date(),
+          manufacturingDate: new Date(),
+          purchasePrice: 100,
+          mrp: 150,
+        },
+        { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+      )
+    ).rejects.toThrow('Batch metadata')
+
+    // Negative quantity
+    await expect(
+      createOpeningBalance(
+        {
+          branchId: branchA,
+          productId: narcotic.id,
+          quantity: -5,
+          reason: 'Test',
+          batchNumber: 'OB-VAL-001',
+          expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+          manufacturingDate: new Date(),
+          purchasePrice: 100,
+          mrp: 150,
+        },
+        { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+      )
+    ).rejects.toThrow('positive')
+
+    // Negative purchasePrice
+    await expect(
+      createOpeningBalance(
+        {
+          branchId: branchA,
+          productId: narcotic.id,
+          quantity: 10,
+          reason: 'Test',
+          batchNumber: 'OB-VAL-002',
+          expiryDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000),
+          manufacturingDate: new Date(),
+          purchasePrice: -10,
+          mrp: 150,
+        },
+        { id: userAId, branchId: branchA, permissions: ['inventory:adjust'] }
+      )
+    ).rejects.toThrow('negative')
   })
 })
