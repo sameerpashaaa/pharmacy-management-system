@@ -123,9 +123,10 @@ export interface CreateSaleCommand {
   items: CreateSaleItemInput[]
   payments: CreateSalePaymentInput[]
   customerId?: string
-  /** Minimal POS customer capture — used only for credit sales. */
+  /** Minimal POS customer capture */
   customer?: CreditCustomerInput
   prescriptionId?: string
+  doctorName?: string
   notes?: string
   h1Capture?: ScheduleH1CaptureInput
 }
@@ -157,7 +158,18 @@ export const saleListItemInclude = {
 } as const
 
 export const saleDetailInclude = {
+  branch: {
+    select: {
+      id: true,
+      name: true,
+      address: true,
+      phone: true,
+      gstin: true,
+      dlNumber: true,
+    },
+  },
   customer: { select: { id: true, name: true, phone: true } },
+  prescription: { select: { prescriptionNumber: true, doctorName: true } },
   createdBy: { select: { id: true, name: true } },
   items: {
     orderBy: { createdAt: 'asc' },
@@ -613,9 +625,6 @@ export async function createSale(
       throw new Error('A customer is required for credit sales')
     }
   }
-  if (command.customer && !usingCredit) {
-    throw new Error('Customer capture is only supported for credit sales')
-  }
 
   const received = cashReceived(command.payments)
 
@@ -931,6 +940,7 @@ export async function createSale(
             balanceDue,
             status: 'COMPLETED',
             paymentStatus,
+            doctorName: command.doctorName ?? null,
             notes: command.notes ?? null,
             createdById: actor.id,
             items: { create: saleItemInputs },

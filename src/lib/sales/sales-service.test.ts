@@ -38,6 +38,7 @@ jest.mock('@/lib/settings/settings-service', () => ({
     fefoEnabled: true,
     negativeStock: false,
     taxInclusive: false,
+    lowStockThreshold: 10,
   },
 }))
 
@@ -65,6 +66,7 @@ const DEFAULT_SETTINGS: PosSettings = {
   fefoEnabled: true,
   negativeStock: false,
   taxInclusive: false,
+  lowStockThreshold: 10,
 }
 
 const actor: SaleActor = {

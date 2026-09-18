@@ -32,6 +32,7 @@ import {
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { Receipt } from '@/components/shared/receipt'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -56,6 +57,67 @@ import { computeItemPricing, computeSaleTotals } from '@/lib/sales/pricing'
 import type { PosSettings } from '@/lib/settings/settings-service'
 import { cn } from '@/lib/utils/cn'
 import { formatCurrency } from '@/lib/utils/currency'
+
+function numberToWords(num: number): string {
+  if (num === 0) return 'Zero'
+  const a = [
+    '',
+    'One ',
+    'Two ',
+    'Three ',
+    'Four ',
+    'Five ',
+    'Six ',
+    'Seven ',
+    'Eight ',
+    'Nine ',
+    'Ten ',
+    'Eleven ',
+    'Twelve ',
+    'Thirteen ',
+    'Fourteen ',
+    'Fifteen ',
+    'Sixteen ',
+    'Seventeen ',
+    'Eighteen ',
+    'Nineteen ',
+  ]
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+  const n = String(Math.floor(num)).padStart(9, '0')
+  if (!/^(\d{2})(\d{2})(\d{2})(\d{3})$/.test(n)) return String(num)
+  const match = n.match(/^(\d{2})(\d{2})(\d{2})(\d{3})$/)
+  if (!match) return String(num)
+  let str = ''
+  str +=
+    Number(match[1]) !== 0
+      ? (a[Number(match[1])] ||
+          b[match[1][0] as unknown as number] + ' ' + a[match[1][1] as unknown as number]) +
+        'Crore '
+      : ''
+  str +=
+    Number(match[2]) !== 0
+      ? (a[Number(match[2])] ||
+          b[match[2][0] as unknown as number] + ' ' + a[match[2][1] as unknown as number]) + 'Lakh '
+      : ''
+  str +=
+    Number(match[3]) !== 0
+      ? (a[Number(match[3])] ||
+          b[match[3][0] as unknown as number] + ' ' + a[match[3][1] as unknown as number]) +
+        'Thousand '
+      : ''
+  str +=
+    Number(match[4]) !== 0
+      ? (a[Number(match[4][0])] ||
+          b[match[4][0] as unknown as number] + ' ' + a[match[4][0] as unknown as number]) +
+        (Number(match[4][0]) !== 0 ? 'Hundred ' : '') +
+        (Number(match[4].substring(1)) !== 0
+          ? 'and ' +
+            (a[Number(match[4].substring(1))] ||
+              b[match[4][1] as unknown as number] + ' ' + a[match[4][2] as unknown as number])
+          : '')
+      : ''
+  return str.trim() + ' Only'
+}
 
 interface PosUser {
   id: string
@@ -218,10 +280,14 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   ])
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+  const [doctorName, setDoctorName] = useState('')
   const [prescriptionId, setPrescriptionId] = useState('')
   const [approvedPrescriptions, setApprovedPrescriptions] = useState<
     { id: string; prescriptionNumber: string | null; patientName: string }[]
   >([])
+  const [isRxVerified, setIsRxVerified] = useState(false)
+  const [customDiscountRows, setCustomDiscountRows] = useState<Record<string, boolean>>({})
+  const [isSearchFocused, setIsSearchFocused] = useState(false)
 
   const [h1PatientName, setH1PatientName] = useState('')
   const [h1PatientAddress, setH1PatientAddress] = useState('')
@@ -239,12 +305,31 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   const [completedSale, setCompletedSale] = useState<
     | (Record<string, unknown> & {
         invoiceNumber: string
+        branch?: {
+          name: string
+          address: string | null
+          phone: string | null
+          gstin: string | null
+          dlNumber: string | null
+        }
         items: {
           productName: string
+          hsnCode: string | null
           quantity: number
           unitPrice: string | number
+          mrp: string | number
           discountPercent: string | number
+          discountAmount: string | number
+          taxPercent: string | number
+          cgstPercent: string | number
+          sgstPercent: string | number
+          igstPercent: string | number
+          taxAmount: string | number
           totalAmount: string | number
+          itemBatches?: {
+            batch: { batchNumber: string; expiryDate: string | Date }
+            quantity: number
+          }[]
         }[]
         payments: { method: string; amount: string | number }[]
         subtotal: string | number
@@ -257,8 +342,10 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
         amountPaid: string | number
         balanceDue: string | number
         paymentStatus: string
-        customer: { name: string } | null
+        customer: { name: string; phone?: string | null } | null
+        prescription?: { prescriptionNumber: string | null; doctorName: string | null } | null
         saleDate: string
+        createdBy?: { id: string; name: string } | null
       })
     | null
   >(null)
@@ -575,6 +662,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
     setCustomerName('')
     setCustomerPhone('')
     setPrescriptionId('')
+    setIsRxVerified(false)
     setH1PatientName('')
     setH1PatientAddress('')
     setH1PatientPhone('')
@@ -589,9 +677,20 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       return
     }
 
+    if (e.altKey && e.key >= '1' && e.key <= '9') {
+      const index = parseInt(e.key, 10) - 1
+      if (displayedProducts[index]) {
+        e.preventDefault()
+        addToCart(displayedProducts[index])
+      }
+      return
+    }
+
     if (e.key === 'Enter') {
       const term = search.trim().toLowerCase()
       if (!term) return
+
+      const isBarcodeFormat = /^\d{6,}$/.test(term)
 
       // 1. Look for exact barcode match
       const exactBarcode = products.find(
@@ -602,6 +701,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       if (exactBarcode) {
         addToCart(exactBarcode)
         setSearch('')
+        if (isBarcodeFormat) toast.success(`Scanned: ${exactBarcode.name}`)
         return
       }
 
@@ -609,6 +709,14 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       const exactSku = products.find((p) => p.sku.toLowerCase() === term)
       if (exactSku) {
         addToCart(exactSku)
+        setSearch('')
+        if (isBarcodeFormat) toast.success(`Scanned: ${exactSku.name}`)
+        return
+      }
+
+      if (isBarcodeFormat) {
+        toast.error(`Barcode not found: ${term}`)
+        // Optional: clear search if it was a failed scan
         setSearch('')
         return
       }
@@ -763,10 +871,6 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       toast.error('Customer required for credit sales')
       return
     }
-    if (!usingCredit && customerName.trim()) {
-      toast.error('Customer capture is only supported for credit sales')
-      return
-    }
     const realPayments = payments.filter((p) => p.method !== CREDIT)
     const hasRealMoney = realPayments.some((p) => (p.amount || 0) > 0)
     if (!usingCredit && !hasRealMoney) {
@@ -791,9 +895,10 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
             amount: p.amount,
             ...(p.reference ? { reference: p.reference } : {}),
           })),
-        ...(usingCredit && customerName
+        ...(customerName
           ? { customer: { name: customerName, ...(customerPhone ? { phone: customerPhone } : {}) } }
           : {}),
+        ...(doctorName.trim() ? { doctorName: doctorName.trim() } : {}),
         ...(prescriptionId.trim() ? { prescriptionId: prescriptionId.trim() } : {}),
         ...(notes ? { notes } : {}),
         ...(needsH1Capture
@@ -894,25 +999,6 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
     }
   }, [cart, heldLabel, loadHeldBills, toast])
 
-  const loadHeldBill = useCallback(
-    async (id: string) => {
-      const bill = heldBills.find((b) => b.id === id)
-      if (!bill) return
-      const data = bill.cartData as { items?: CartLine[] } | Array<CartLine> | null
-      let items: CartLine[] = []
-      if (Array.isArray(data)) items = data
-      else if (data?.items) items = data.items
-      if (items.length === 0) {
-        toast.error('Held bill is empty')
-        return
-      }
-      setCart(items)
-      setHeldOpen(false)
-      toast.success('Held bill loaded')
-    },
-    [heldBills, toast]
-  )
-
   const deleteHeldBill = useCallback(
     async (id: string) => {
       try {
@@ -929,6 +1015,27 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
       }
     },
     [toast]
+  )
+
+  const loadHeldBill = useCallback(
+    async (id: string) => {
+      const bill = heldBills.find((b) => b.id === id)
+      if (!bill) return
+      const data = bill.cartData as { items?: CartLine[] } | Array<CartLine> | null
+      let items: CartLine[] = []
+      if (Array.isArray(data)) items = data
+      else if (data?.items) items = data.items
+      if (items.length === 0) {
+        toast.error('Held bill is empty')
+        return
+      }
+      setCart(items)
+      setHeldOpen(false)
+      toast.success('Held bill loaded')
+      // Delete from held bills queue once resumed
+      void deleteHeldBill(id)
+    },
+    [heldBills, toast, deleteHeldBill]
   )
 
   useEffect(() => {
@@ -1026,7 +1133,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
 
   // ─── Full POS Interface ─────────────────────────────────────
   return (
-    <div className="absolute inset-0 z-40 flex flex-col overflow-hidden bg-background lg:flex-row">
+    <div className="absolute inset-0 z-40 flex flex-col overflow-hidden bg-background lg:flex-row print:hidden">
       {/* ─── Center / Left: Search & Medicine Grid ──────────── */}
       <div className="flex min-h-0 flex-1 flex-col border-b lg:border-b-0 lg:border-r">
         {/* Top Header & Search Bar */}
@@ -1041,6 +1148,8 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setIsSearchFocused(false)}
                 placeholder="Search name, SKU, generic formula or scan barcode…"
                 className="h-10 border-border/80 bg-background pl-9 pr-9 text-sm font-normal text-foreground shadow-inner placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary"
                 autoFocus
@@ -1232,12 +1341,13 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           {/* Product Cards Grid */}
           {!fetchError && displayedProducts.length > 0 && (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {displayedProducts.map((p) => {
+              {displayedProducts.map((p, index) => {
                 const outOfStock = p.availableQuantity <= 0
                 const inCartQty = cartQuantities.get(p.id) || 0
                 const isRx = p.isPrescriptionRequired || RX_SCHEDULES.has(p.drugSchedule)
                 const MedIcon = getMedicineIcon(p.unitOfMeasure, p.categoryName)
-                const isLowStock = p.availableQuantity > 0 && p.availableQuantity <= 10
+                const threshold = config?.lowStockThreshold ?? 10
+                const isLowStock = p.availableQuantity > 0 && p.availableQuantity <= threshold
 
                 return (
                   <button
@@ -1255,6 +1365,11 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                         'cursor-not-allowed bg-muted/40 opacity-60 hover:border-border hover:shadow-none'
                     )}
                   >
+                    {isSearchFocused && index < 9 && (
+                      <div className="absolute -left-2 -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background shadow-md">
+                        {index + 1}
+                      </div>
+                    )}
                     {/* Top Row: Unit Badge, Rx Badge & Cart Count */}
                     <div className="flex items-start justify-between gap-1">
                       <div className="flex flex-wrap items-center gap-1">
@@ -1318,8 +1433,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
                           {p.availableQuantity} left
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                          <Check className="h-3 w-3" />
+                        <span className="inline-flex items-center text-[10px] font-medium text-muted-foreground">
                           {p.availableQuantity} in stock
                         </span>
                       )}
@@ -1463,23 +1577,74 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
 
                   {/* Discount Input */}
                   <div className="flex items-center gap-1">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={c.discountPercent || ''}
-                      onChange={(e) => setDiscount(c.productId, Number(e.target.value))}
-                      placeholder="0"
-                      className="h-7 w-14 text-right text-xs tabular-nums"
-                      disabled={!canDiscount}
-                      aria-label={`Discount % for ${c.name}`}
-                    />
-                    <span className="text-[11px] text-muted-foreground">% off</span>
+                    {(() => {
+                      const presets = [0, 5, 10, 15]
+                      const isCustom =
+                        customDiscountRows[c.productId] ||
+                        (c.discountPercent !== 0 && !presets.includes(c.discountPercent))
+
+                      if (isCustom) {
+                        return (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={c.discountPercent || ''}
+                              onChange={(e) => setDiscount(c.productId, Number(e.target.value))}
+                              placeholder="0"
+                              className="h-7 w-14 text-right text-xs tabular-nums"
+                              disabled={!canDiscount}
+                              aria-label={`Discount % for ${c.name}`}
+                            />
+                            <span className="text-[11px] text-muted-foreground">% off</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="ml-1 h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => {
+                                setCustomDiscountRows((prev) => ({ ...prev, [c.productId]: false }))
+                                setDiscount(c.productId, 0)
+                              }}
+                            >
+                              &times;
+                            </Button>
+                          </div>
+                        )
+                      }
+
+                      return (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {presets.map((pct) => (
+                            <Badge
+                              key={pct}
+                              variant={c.discountPercent === pct ? 'default' : 'outline'}
+                              className={`cursor-pointer px-1.5 py-0 text-[10px] ${c.discountPercent === pct ? 'border-transparent bg-primary/20 text-primary hover:bg-primary/30' : 'text-muted-foreground hover:bg-muted'}`}
+                              onClick={() => {
+                                if (canDiscount) setDiscount(c.productId, pct)
+                              }}
+                            >
+                              {pct}%
+                            </Badge>
+                          ))}
+                          <Badge
+                            variant="outline"
+                            className="cursor-pointer px-1.5 py-0 text-[10px] text-muted-foreground hover:bg-muted"
+                            onClick={() =>
+                              setCustomDiscountRows((prev) => ({ ...prev, [c.productId]: true }))
+                            }
+                          >
+                            Custom
+                          </Badge>
+                        </div>
+                      )
+                    })()}
                   </div>
 
                   {/* Line Total */}
                   <div className="text-right">
                     <span className="text-xs font-bold tabular-nums text-foreground">
+                      {billableQuantity} &times; {formatCurrency(c.mrp)} ={' '}
                       {formatCurrency(
                         billableQuantity * c.mrp * (1 - (c.discountPercent || 0) / 100)
                       )}
@@ -1509,12 +1674,29 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           })}
         </div>
 
+        {cart.some((c) => c.isPrescriptionRequired) && !isRxVerified && (
+          <div className="mx-4 mt-2 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+            <span className="flex items-center gap-2 text-xs font-medium text-amber-800">
+              <AlertTriangle className="h-4 w-4" />
+              Prescription required for some items
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 border-amber-300 bg-white text-xs text-amber-700 hover:bg-amber-100 hover:text-amber-800"
+              onClick={() => setIsRxVerified(true)}
+            >
+              Verify Rx
+            </Button>
+          </div>
+        )}
+
         {/* Bill Summary & Charge Section */}
         <div className="space-y-3 border-t bg-muted/10 p-4">
-          <dl className="space-y-1.5 text-xs">
+          <dl className="space-y-1.5 text-sm">
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Subtotal</dt>
-              <dd className="font-medium tabular-nums">
+              <dd className="font-medium tabular-nums text-foreground">
                 {formatCurrency(pricing.totals.subtotal)}
               </dd>
             </div>
@@ -1558,7 +1740,14 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
             className="h-11 w-full gap-2 text-sm font-bold shadow-md"
             size="lg"
             onClick={() => openPayment()}
-            disabled={cart.length === 0}
+            disabled={
+              cart.length === 0 || (cart.some((c) => c.isPrescriptionRequired) && !isRxVerified)
+            }
+            title={
+              cart.some((c) => c.isPrescriptionRequired) && !isRxVerified
+                ? 'Prescription verification required'
+                : undefined
+            }
           >
             <Calculator className="h-4 w-4" />
             Charge {formatCurrency(pricing.totals.totalAmount)}
@@ -1651,27 +1840,33 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
               </Button>
             </div>
 
-            {payments.some((p) => p.method === CREDIT) && config.requireCustomerForCredit && (
-              <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-                  <Badge variant="outline" className="bg-primary/10 text-[10px]">
-                    Credit Sale — Customer Details Required
-                  </Badge>
-                </div>
-                <Input
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Customer Full Name *"
-                  className="h-8 bg-background text-xs"
-                />
+            <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                <Badge variant="outline" className="bg-primary/10 text-[10px]">
+                  Patient / Doctor Details
+                </Badge>
+              </div>
+              <Input
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Patient Full Name"
+                className="h-8 bg-background text-xs"
+              />
+              <div className="flex gap-2">
                 <Input
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   placeholder="Phone Number (optional)"
-                  className="h-8 bg-background text-xs"
+                  className="h-8 flex-1 bg-background text-xs"
+                />
+                <Input
+                  value={doctorName}
+                  onChange={(e) => setDoctorName(e.target.value)}
+                  placeholder="Doctor Name (optional)"
+                  className="h-8 flex-1 bg-background text-xs"
                 />
               </div>
-            )}
+            </div>
 
             {needsPrescription && (
               <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50/80 p-3 dark:bg-amber-950/30">
@@ -1807,8 +2002,8 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
 
       {/* ─── Printable Receipt Dialog ───────────────────────── */}
       <Dialog open={completedSale !== null} onOpenChange={(v) => !v && setCompletedSale(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader className="print:hidden">
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-emerald-600" />
               Sale Completed Successfully
@@ -1819,71 +2014,125 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           </DialogHeader>
 
           {completedSale && (
-            <div className="rounded-lg border bg-muted/5 p-4 font-sans">
-              <div className="mb-3 border-b pb-2 text-center">
-                <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  PharmaCare
-                </div>
-                <div className="text-sm font-bold text-foreground">
-                  {String(completedSale.invoiceNumber ?? '')}
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {new Date(String(completedSale.saleDate ?? '')).toLocaleString()}
-                  {completedSale.customer ? ` · ${completedSale.customer.name}` : ''}
-                </div>
+            <>
+              <style>{`
+                @media print {
+                  @page {
+                    size: A4;
+                    margin: 10mm;
+                  }
+                  html, body {
+                    height: auto !important;
+                    overflow: visible !important;
+                    background: white !important;
+                  }
+                  aside, header, nav, footer, .sidebar {
+                    display: none !important;
+                  }
+                  div[data-radix-dialog-overlay], .print\\:hidden {
+                    display: none !important;
+                  }
+                  [role="dialog"] {
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    transform: none !important;
+                    max-width: 100% !important;
+                    width: 100% !important;
+                    height: auto !important;
+                    max-height: none !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    overflow: visible !important;
+                    background: transparent !important;
+                  }
+                  #print-receipt {
+                    width: 100%;
+                    overflow: visible !important;
+                  }
+                  * {
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                  }
+                }
+              `}</style>
+              <div id="print-receipt">
+                <Receipt
+                  data={{
+                    receiptNo: String(completedSale.invoiceNumber ?? ''),
+                    date: new Date(String(completedSale.saleDate ?? '')),
+                    organization: {
+                      name: completedSale.branch?.name || 'PharmaCare',
+                      address: completedSale.branch?.address || undefined,
+                      phone: completedSale.branch?.phone || undefined,
+                      gstin: completedSale.branch?.gstin || undefined,
+                      dlNumber: completedSale.branch?.dlNumber || undefined,
+                    },
+                    customer: {
+                      name: completedSale.customer?.name || 'Walk-in',
+                      phone: completedSale.customer?.phone || undefined,
+                      doctorName: completedSale.prescription?.doctorName || undefined,
+                    },
+                    pharmacist: {
+                      name: completedSale.createdBy?.name || 'Staff',
+                    },
+                    items:
+                      (
+                        completedSale.items as Array<{
+                          productSku?: string
+                          hsnCode?: string
+                          productName: string
+                          quantity: number
+                          totalAmount: number | string
+                          mrp: number | string
+                          itemBatches?: Array<{
+                            quantity: number
+                            batch: { batchNumber: string; expiryDate: string } | null
+                          }>
+                        }>
+                      )?.flatMap((it) => {
+                        const batches = it.itemBatches?.length
+                          ? it.itemBatches
+                          : [{ quantity: it.quantity, batch: null }]
+                        return batches.map((b) => {
+                          const batchRatio = b.quantity / it.quantity
+                          const lineTotal = Number(it.totalAmount) * batchRatio
+                          return {
+                            code: it.productSku ?? it.hsnCode ?? 'ITEM',
+                            description: it.productName,
+                            batch: b.batch?.batchNumber ?? undefined,
+                            expiry: b.batch
+                              ? new Date(b.batch.expiryDate).toLocaleDateString(undefined, {
+                                  month: 'short',
+                                  year: 'numeric',
+                                })
+                              : undefined,
+                            qty: b.quantity,
+                            rate: Number(it.mrp),
+                            amount: lineTotal,
+                          }
+                        })
+                      }) ?? [],
+                    summary: {
+                      subtotal: Number(completedSale.subtotal),
+                      discount: Number(completedSale.discountAmount),
+                      subtotalLessDiscount:
+                        Number(completedSale.subtotal) - Number(completedSale.discountAmount),
+                      taxLabel: Number(completedSale.taxAmount) > 0 ? 'GST Included' : 'Exempt',
+                      totalTax: Number(completedSale.taxAmount),
+                      balanceDue: Number(completedSale.totalAmount),
+                    },
+                    paymentMethod: completedSale.payments?.[0]?.method || 'CASH',
+                    notes: `Amount in words: Rupees ${numberToWords(Number(completedSale.totalAmount))}. Goods once sold will not be taken back or exchanged. E.&O.E.`,
+                  }}
+                />
               </div>
-
-              <div className="space-y-1 text-xs">
-                {completedSale.items?.map((it, idx) => (
-                  <div key={idx} className="flex justify-between gap-2">
-                    <span className="truncate">
-                      {it.productName} × {it.quantity}
-                    </span>
-                    <span className="font-medium tabular-nums">
-                      {formatCurrency(it.totalAmount)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-3 space-y-1 border-t border-dashed pt-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="font-medium tabular-nums">
-                    {formatCurrency(completedSale.subtotal)}
-                  </span>
-                </div>
-                {Number(completedSale.discountAmount) > 0 && (
-                  <div className="flex justify-between font-medium text-emerald-600">
-                    <span>Discount</span>
-                    <span className="tabular-nums">
-                      −{formatCurrency(completedSale.discountAmount)}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">GST</span>
-                  <span className="font-medium tabular-nums">
-                    {formatCurrency(completedSale.taxAmount)}
-                  </span>
-                </div>
-                <div className="flex justify-between border-t pt-1 text-sm font-bold">
-                  <span>Total Paid</span>
-                  <span className="tabular-nums text-primary">
-                    {formatCurrency(completedSale.totalAmount)}
-                  </span>
-                </div>
-                {Number(completedSale.balanceDue) > 0 && (
-                  <div className="flex justify-between font-semibold text-destructive">
-                    <span>Balance Due</span>
-                    <span className="tabular-nums">{formatCurrency(completedSale.balanceDue)}</span>
-                  </div>
-                )}
-              </div>
-            </div>
+            </>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2 sm:gap-0 print:hidden">
             <Button variant="outline" size="sm" onClick={() => setCompletedSale(null)}>
               New Transaction
             </Button>

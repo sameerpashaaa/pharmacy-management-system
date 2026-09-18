@@ -117,9 +117,16 @@ const columns: ColumnDef<SalesRow>[] = [
     id: 'actions',
     header: '',
     cell: ({ row }) => (
-      <Button asChild variant="ghost" size="sm">
-        <Link href={ROUTES.SALE(row.original.id)}>View</Link>
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button asChild variant="outline" size="sm">
+          <Link href={ROUTES.SALE(row.original.id)}>View</Link>
+        </Button>
+        <Button asChild variant="outline" size="sm" className="hidden sm:flex">
+          <Link href={`${ROUTES.SALE(row.original.id)}?print=true`} target="_blank">
+            Print
+          </Link>
+        </Button>
+      </div>
     ),
   },
 ]

@@ -9,7 +9,7 @@ echo  =========================================
 echo.
 
 :: Step 1: Check / Start PostgreSQL
-echo [1/3] Checking PostgreSQL...
+echo [1/4] Checking PostgreSQL...
 sc query postgresql-x64-18 | find "RUNNING" >nul 2>&1
 if %errorlevel% == 0 (
     echo       PostgreSQL is already running.
@@ -27,7 +27,7 @@ if %errorlevel% == 0 (
 
 :: Step 2: Verify DB connection
 echo.
-echo [2/3] Verifying database connection...
+echo [2/4] Verifying database connection...
 set PGPASSWORD=admin123
 pg_isready -U postgres -h localhost -p 5432 >nul 2>&1
 if %errorlevel% neq 0 (
@@ -37,10 +37,29 @@ if %errorlevel% neq 0 (
 )
 echo       Database is accepting connections.
 
-:: Step 3: Apply any pending Prisma migrations
+:: Step 3: Clear corrupted .next cache (fixes EINVAL readlink crash)
 echo.
-echo [3/3] Applying Prisma migrations (if any)...
+echo [3/4] Clearing .next build cache...
+if exist ".next" (
+    rmdir /s /q ".next" 2>nul
+    if exist ".next" (
+        echo  [WARN] Could not fully clear .next cache. Continuing anyway...
+    ) else (
+        echo       .next cache cleared successfully.
+    )
+) else (
+    echo       No .next cache found. Skipping.
+)
+
+:: Step 4: Apply any pending Prisma migrations
+echo.
+echo [4/4] Applying Prisma migrations (if any)...
 call npx prisma migrate deploy
+if %errorlevel% neq 0 (
+    echo  [ERROR] Prisma migration failed.
+    pause
+    exit /b 1
+)
 echo       Migrations done.
 
 :: Launch Next.js dev server
@@ -55,5 +74,8 @@ echo   Manager  ^: manager@pharmacare.local / Manager@123
 echo.
 echo   Press Ctrl+C to stop the server.
 echo.
+
+:: Open browser automatically after a short delay
+start "" cmd /c "timeout /t 5 >nul && start http://localhost:3000"
 
 npm run dev

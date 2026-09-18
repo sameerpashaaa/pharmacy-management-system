@@ -1,16 +1,36 @@
-﻿import type { Metadata } from 'next'
+import type { Metadata } from 'next'
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
-export const metadata: Metadata = { title: 'Add New Customer' }
+import { CustomerForm } from '@/components/customers/customer-form'
+import { Button } from '@/components/ui/button'
+import { can, getSession } from '@/lib/auth/auth-helpers'
+import { PERMISSIONS } from '@/lib/constants/permissions'
+import { ROUTES } from '@/lib/constants/routes'
 
-export default function AddNewCustomerPage() {
+export const metadata: Metadata = { title: 'New Customer' }
+
+export default async function NewCustomerPage() {
+  const [canCreate, session] = await Promise.all([can(PERMISSIONS.CUSTOMERS_CREATE), getSession()])
+
+  if (!canCreate || !session?.user) {
+    redirect(ROUTES.CUSTOMERS)
+  }
+
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Add New Customer</h1>
-        <p className="text-muted-foreground">Add a new customer to the system</p>
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <Button asChild variant="outline" size="sm">
+          <Link href={ROUTES.CUSTOMERS}>&larr; Back</Link>
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">New Customer</h1>
+          <p className="text-muted-foreground">Add a new customer to the database</p>
+        </div>
       </div>
-      <div className="flex h-64 items-center justify-center rounded-lg border-2 border-dashed border-muted">
-        <p className="text-muted-foreground">Coming in Phase 5</p>
+
+      <div className="mx-auto max-w-3xl rounded-lg border bg-card p-6 shadow-sm">
+        <CustomerForm />
       </div>
     </div>
   )

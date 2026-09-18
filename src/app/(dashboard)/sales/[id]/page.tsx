@@ -2,8 +2,8 @@ import { RotateCcw } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { Suspense } from 'react'
 
-import { PAYMENT_STATUS_META, SALE_STATUS_META } from '@/components/sales/sales-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +16,26 @@ import { formatCurrency } from '@/lib/utils/currency'
 import { formatDateTime } from '@/lib/utils/date'
 
 import { SaleActionButtons } from './sale-action-buttons'
+
+const SALE_STATUS_META: Record<
+  string,
+  { label: string; variant: 'success' | 'warning' | 'destructive' | 'secondary' | 'default' }
+> = {
+  COMPLETED: { label: 'Completed', variant: 'success' },
+  CANCELLED: { label: 'Cancelled', variant: 'destructive' },
+  PARTIALLY_RETURNED: { label: 'Partially Returned', variant: 'warning' },
+  FULLY_RETURNED: { label: 'Fully Returned', variant: 'secondary' },
+}
+
+const PAYMENT_STATUS_META: Record<
+  string,
+  { label: string; variant: 'success' | 'warning' | 'info' | 'outline' | 'default' }
+> = {
+  PAID: { label: 'Paid', variant: 'success' },
+  PARTIAL: { label: 'Partial', variant: 'warning' },
+  CREDIT: { label: 'Credit', variant: 'info' },
+  OVERPAID: { label: 'Overpaid', variant: 'outline' },
+}
 
 export const metadata: Metadata = { title: 'Sale Details' }
 
@@ -81,7 +101,12 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
               </Link>
             </Button>
           )}
-          <SaleActionButtons saleId={sale.id} canCancel={canCancel && sale.status === 'COMPLETED'} />
+          <Suspense fallback={<div className="h-9 w-[200px]" />}>
+            <SaleActionButtons
+              saleId={sale.id}
+              canCancel={canCancel && sale.status === 'COMPLETED'}
+            />
+          </Suspense>
           <Button asChild variant="outline" size="sm">
             <Link href={ROUTES.SALES}>Back to sales</Link>
           </Button>

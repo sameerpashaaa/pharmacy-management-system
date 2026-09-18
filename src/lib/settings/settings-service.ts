@@ -21,6 +21,7 @@ export interface PosSettings {
   fefoEnabled: boolean
   negativeStock: boolean
   taxInclusive: boolean
+  lowStockThreshold: number
 }
 
 /** Defaults mirror prisma/seeds/settings.ts (POS, inventory, GST categories). */
@@ -34,6 +35,7 @@ export const DEFAULT_POS_SETTINGS: PosSettings = {
   fefoEnabled: true,
   negativeStock: false,
   taxInclusive: false,
+  lowStockThreshold: 10,
 }
 
 export interface ApprovalPolicy {
@@ -110,6 +112,11 @@ export async function getPosSettings(): Promise<PosSettings> {
     fefoEnabled: pickBoolean(map, 'inventory.fefo_enabled', DEFAULT_POS_SETTINGS.fefoEnabled),
     negativeStock: pickBoolean(map, 'inventory.negative_stock', DEFAULT_POS_SETTINGS.negativeStock),
     taxInclusive: pickBoolean(map, 'gst.tax_inclusive', DEFAULT_POS_SETTINGS.taxInclusive),
+    lowStockThreshold: pickNumber(
+      map,
+      'pos.low_stock_threshold',
+      DEFAULT_POS_SETTINGS.lowStockThreshold
+    ),
   }
 }
 

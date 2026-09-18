@@ -82,7 +82,7 @@ export const createSaleSchema = z.object({
     .min(1, 'At least one payment is required')
     .max(20, 'Cannot exceed 20 payments'),
   customerId: z.string().optional(),
-  // Minimal POS customer capture — accepted only for credit sales.
+  // Minimal POS customer capture
   customer: z
     .object({
       name: z.string().min(1, 'Customer name is required').max(120),
@@ -90,6 +90,7 @@ export const createSaleSchema = z.object({
     })
     .optional(),
   prescriptionId: z.string().optional(),
+  doctorName: z.string().max(120, 'Doctor name cannot exceed 120 characters').optional(),
   notes: z.string().max(1000, 'Notes cannot exceed 1000 characters').optional(),
   h1Capture: z
     .object({

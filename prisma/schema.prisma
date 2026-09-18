@@ -599,6 +599,7 @@ model Sale {
   balanceDue         Decimal       @default(0) @db.Decimal(12, 2)
   status             SaleStatus    @default(COMPLETED)
   paymentStatus      PaymentStatus @default(PAID)
+  doctorName         String?
   notes              String?
   upiQrData          String?
   thermalSlipPrinted Boolean       @default(false)

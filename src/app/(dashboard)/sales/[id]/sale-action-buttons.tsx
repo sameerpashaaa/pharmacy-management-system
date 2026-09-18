@@ -1,8 +1,8 @@
 'use client'
 
 import { Printer, XCircle } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect } from 'react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -18,18 +18,24 @@ import { useToast } from '@/lib/hooks/use-toast'
 
 import { cancelSaleAction } from './sale-actions'
 
-export function SaleActionButtons({
-  saleId,
-  canCancel,
-}: {
-  saleId: string
-  canCancel: boolean
-}) {
+export function SaleActionButtons({ saleId, canCancel }: { saleId: string; canCancel: boolean }) {
   const [isCancelOpen, setIsCancelOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const toast = useToast()
   const router = useRouter()
+
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    if (searchParams.get('print') === 'true') {
+      // Small delay to ensure styles/content are fully loaded
+      const timer = setTimeout(() => {
+        window.print()
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [searchParams])
 
   const handlePrint = () => {
     // A simple window.print() approach for receipt. In reality, you'd open a receipt template.
@@ -62,7 +68,11 @@ export function SaleActionButtons({
           Print Receipt
         </Button>
         {canCancel && (
-          <Button variant="destructive" onClick={() => setIsCancelOpen(true)} className="print:hidden">
+          <Button
+            variant="destructive"
+            onClick={() => setIsCancelOpen(true)}
+            className="print:hidden"
+          >
             <XCircle className="mr-2 h-4 w-4" />
             Cancel Sale
           </Button>
@@ -74,7 +84,8 @@ export function SaleActionButtons({
           <DialogHeader>
             <DialogTitle>Cancel Sale</DialogTitle>
             <DialogDescription>
-              Are you sure you want to cancel this sale? This action cannot be undone. Inventory will be restored.
+              Are you sure you want to cancel this sale? This action cannot be undone. Inventory
+              will be restored.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
