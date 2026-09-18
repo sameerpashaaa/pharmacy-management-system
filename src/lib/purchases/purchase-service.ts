@@ -684,6 +684,17 @@ export async function createGrn(
 
       // ─── Narcotic Register — PURCHASE_RECEIPT ──────────────────────
       if (product.drugSchedule === 'NARCOTIC_NDPS') {
+        // Fetch previous narcotic register balance for this branch + product
+        const prevNarcotic = await tx.narcoticRegister.findFirst({
+          where: {
+            branchId: command.branchId,
+            productId: poItem.productId,
+          },
+          orderBy: { entryDate: 'desc' },
+          select: { balanceQuantity: true },
+        })
+        const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
         await tx.narcoticRegister.create({
           data: {
             branchId: command.branchId,
@@ -692,7 +703,7 @@ export async function createGrn(
             movementType: 'PURCHASE_RECEIPT',
             quantityIn: item.receivedQuantity,
             quantityOut: 0,
-            balanceQuantity: afterAvailable,
+            balanceQuantity: prevBalance + item.receivedQuantity,
             referenceType: 'PURCHASE',
             referenceId: command.purchaseId,
             enteredById: actor.id,

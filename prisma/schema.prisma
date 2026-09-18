@@ -1376,7 +1376,7 @@ model NarcoticRegister {
   quantityIn      Int                  @default(0)
   quantityOut     Int                  @default(0)
   balanceQuantity Int
-  referenceType   String // 'SALE' | 'PURCHASE' | 'RETURN'
+  referenceType   String
   referenceId     String
   patientName     String?
   doctorName      String?
@@ -1390,6 +1390,8 @@ model NarcoticRegister {
 
   @@index([branchId, entryDate])
   @@index([productId])
+  @@index([branchId, productId, entryDate])
+  @@unique([referenceType, referenceId, productId, batchId])
   @@map("narcotic_register")
 }
 

@@ -807,13 +807,24 @@ export async function createSale(
               })
 
               if (product.drugSchedule === 'NARCOTIC_NDPS') {
+                // Fetch previous narcotic register balance for this branch + product
+                const prevNarcotic = await tx.narcoticRegister.findFirst({
+                  where: {
+                    branchId: branch.id,
+                    productId: product.id,
+                  },
+                  orderBy: { entryDate: 'desc' },
+                  select: { balanceQuantity: true },
+                })
+                const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
                 narcoticRegisters.push({
                   branchId: branch.id,
                   productId: product.id,
                   batchId: batch.id,
                   movementType: 'SALES_DISPENSE',
                   quantityOut: a.allocatedQuantity,
-                  balanceQuantity: 0,
+                  balanceQuantity: prevBalance - a.allocatedQuantity,
                   referenceType: 'SALE',
                   patientName: command.h1Capture.patientName,
                   doctorName: command.h1Capture.doctorName,
@@ -827,13 +838,6 @@ export async function createSale(
           // Aggregate product-branch inventory deduction (CAS by updatedAt).
           const afterTotal = inventory.totalQuantity - totalBaseQty
           const afterAvailable = inventory.availableQuantity - totalBaseQty
-          let runningNarcoticBalance = inventory.availableQuantity
-          for (let i = narcoticRegisters.length - 1; i >= 0; i -= 1) {
-            const entry = narcoticRegisters[i]
-            if (entry.productId !== product.id) break
-            runningNarcoticBalance -= entry.quantityOut
-            entry.balanceQuantity = runningNarcoticBalance
-          }
           if (afterAvailable < 0) {
             throw new Error('Conflict: stock changed concurrently, please retry')
           }
@@ -1192,6 +1196,17 @@ export async function cancelSale(saleId: string, reason: string, actor: SaleActo
         })
         if (narcoticRegisters.length > 0) {
           for (const narc of narcoticRegisters) {
+            // Fetch previous narcotic register balance for this branch + product
+            const prevNarcotic = await tx.narcoticRegister.findFirst({
+              where: {
+                branchId: sale.branchId,
+                productId: narc.productId,
+              },
+              orderBy: { entryDate: 'desc' },
+              select: { balanceQuantity: true },
+            })
+            const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
             await tx.narcoticRegister.create({
               data: {
                 branchId: sale.branchId,
@@ -1200,7 +1215,7 @@ export async function cancelSale(saleId: string, reason: string, actor: SaleActo
                 movementType: 'RETURN_TO_SUPPLIER',
                 quantityIn: narc.quantityOut,
                 quantityOut: 0,
-                balanceQuantity: 0, // Will be computed by report logic
+                balanceQuantity: prevBalance + narc.quantityOut,
                 referenceType: 'SALE_CANCEL',
                 referenceId: sale.id,
                 patientName: narc.patientName,
