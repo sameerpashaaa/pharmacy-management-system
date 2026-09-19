@@ -231,6 +231,34 @@ describe('POST /api/purchases/:id/grn', () => {
     expect(res.status).toBe(201)
     expect(body.data.grn.grnNumber).toBe('GRN-1')
   })
+
+  it('rejects date-only GRN dates (YYYY-MM-DD) with 400 VALIDATION', async () => {
+    mockedPermission.mockResolvedValueOnce(manager())
+    const res = await grnPOST(
+      makeReq('http://localhost/api/purchases/po1/grn', {
+        purchaseId: 'po1',
+        branchId: 'br-1',
+        grnNumber: 'GRN-1',
+        grnDate: '2026-09-19',
+        items: [
+          {
+            purchaseItemId: 'pi1',
+            receivedQuantity: 10,
+            batchNumber: 'BT-1',
+            expiryDate: '2027-09-19',
+            purchasePrice: 5,
+            mrp: 10,
+            qualityCheckPassed: true,
+          },
+        ],
+      }),
+      { params: { id: 'po1' } }
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe('VALIDATION')
+    expect(mockedGrn.createGrn).not.toHaveBeenCalled()
+  })
 })
 
 describe('GET/POST /api/suppliers', () => {
