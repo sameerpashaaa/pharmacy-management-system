@@ -57,6 +57,10 @@ jest.mock('@/lib/db/prisma', () => ({
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    narcoticRegister: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+    },
   },
 }))
 
@@ -88,6 +92,10 @@ const prismaMock = prisma as unknown as {
   batch: {
     findUnique: jest.Mock
     update: jest.Mock
+  }
+  narcoticRegister: {
+    findFirst: jest.Mock
+    create: jest.Mock
   }
   creditNote: {
     create: jest.Mock
@@ -151,6 +159,7 @@ describe('Sale Return Service', () => {
           unitPrice: 10,
           totalAmount: 100,
           itemBatches: [{ batchId: 'batch-1', quantity: 10 }],
+          product: { drugSchedule: 'GENERAL' },
         },
       ],
       customer: { id: 'cust-1', name: 'John Doe' },
@@ -288,6 +297,158 @@ describe('Sale Return Service', () => {
           mockActor
         )
       ).rejects.toThrow('Cannot return items for a cancelled sale')
+    })
+
+    it('writes a narcotic register entry for a narcotic RESTOCK return', async () => {
+      const narcSale = {
+        ...mockSale,
+        items: [
+          {
+            ...mockSale.items[0],
+            productId: 'prod-narc',
+            product: { drugSchedule: 'NARCOTIC_NDPS' },
+          },
+        ],
+      }
+      prismaMock.sale.findUnique.mockResolvedValue(narcSale)
+      prismaMock.saleReturn.create.mockResolvedValue({ id: 'ret-1' })
+      prismaMock.inventory.upsert.mockResolvedValue({ id: 'inv-1', totalQuantity: 10 })
+      prismaMock.narcoticRegister.findFirst.mockResolvedValue({ balanceQuantity: 90 })
+      prismaMock.saleItem.findMany.mockResolvedValue([
+        { id: 'item-1', quantity: 10, returnedQuantity: 3 },
+      ])
+      prismaMock.saleReturn.findUnique.mockResolvedValue({
+        id: 'ret-1',
+        returnNumber: 'SR-1',
+        status: 'REFUNDED',
+      })
+
+      await createSaleReturn(
+        {
+          saleId: 'sale-1',
+          reason: 'Customer returned narcotic strip',
+          refundMethod: 'CASH',
+          items: [
+            {
+              saleItemId: 'item-1',
+              quantity: 3,
+              restockDecision: 'RESTOCK',
+              batchId: 'batch-1',
+            },
+          ],
+        },
+        mockActor
+      )
+
+      expect(prismaMock.narcoticRegister.create).toHaveBeenCalledWith({
+        data: {
+          branchId: 'branch-1',
+          productId: 'prod-narc',
+          batchId: 'batch-1',
+          movementType: 'RETURN_TO_SUPPLIER',
+          quantityIn: 3,
+          quantityOut: 0,
+          balanceQuantity: 93,
+          referenceType: 'SALE_RETURN',
+          referenceId: 'ret-1',
+          enteredById: mockActor.id,
+          entryDate: expect.any(Date),
+        },
+      })
+    })
+
+    it('aggregates multiple narcotic RESTOCK lines into one register entry', async () => {
+      const narcSale = {
+        ...mockSale,
+        items: [
+          {
+            ...mockSale.items[0],
+            id: 'item-1',
+            productId: 'prod-narc',
+            product: { drugSchedule: 'NARCOTIC_NDPS' },
+          },
+          {
+            ...mockSale.items[0],
+            id: 'item-2',
+            productId: 'prod-narc',
+            product: { drugSchedule: 'NARCOTIC_NDPS' },
+          },
+        ],
+      }
+      prismaMock.sale.findUnique.mockResolvedValue(narcSale)
+      prismaMock.saleReturn.create.mockResolvedValue({ id: 'ret-1' })
+      prismaMock.inventory.upsert.mockResolvedValue({ id: 'inv-1', totalQuantity: 10 })
+      prismaMock.narcoticRegister.findFirst.mockResolvedValue({ balanceQuantity: 90 })
+      prismaMock.saleItem.findMany.mockResolvedValue([
+        { id: 'item-1', quantity: 10, returnedQuantity: 2 },
+        { id: 'item-2', quantity: 10, returnedQuantity: 1 },
+      ])
+      prismaMock.saleReturn.findUnique.mockResolvedValue({
+        id: 'ret-1',
+        returnNumber: 'SR-1',
+        status: 'REFUNDED',
+      })
+
+      await createSaleReturn(
+        {
+          saleId: 'sale-1',
+          reason: 'Two strips returned',
+          refundMethod: 'CASH',
+          items: [
+            {
+              saleItemId: 'item-1',
+              quantity: 2,
+              restockDecision: 'RESTOCK',
+              batchId: 'batch-1',
+            },
+            {
+              saleItemId: 'item-2',
+              quantity: 1,
+              restockDecision: 'RESTOCK',
+              batchId: 'batch-1',
+            },
+          ],
+        },
+        mockActor
+      )
+
+      expect(prismaMock.narcoticRegister.create).toHaveBeenCalledTimes(1)
+      expect(prismaMock.narcoticRegister.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          productId: 'prod-narc',
+          batchId: 'batch-1',
+          quantityIn: 3,
+          balanceQuantity: 93,
+        }),
+      })
+    })
+
+    it('rejects a narcotic RESTOCK return without a resolvable batch', async () => {
+      const narcSale = {
+        ...mockSale,
+        items: [
+          {
+            ...mockSale.items[0],
+            productId: 'prod-narc',
+            itemBatches: [],
+            product: { drugSchedule: 'NARCOTIC_NDPS' },
+          },
+        ],
+      }
+      prismaMock.sale.findUnique.mockResolvedValue(narcSale)
+
+      await expect(
+        createSaleReturn(
+          {
+            saleId: 'sale-1',
+            reason: 'Return',
+            refundMethod: 'CASH',
+            items: [{ saleItemId: 'item-1', quantity: 1, restockDecision: 'RESTOCK' }],
+          },
+          mockActor
+        )
+      ).rejects.toThrow('Batch ID is required for narcotic customer returns')
+      expect(prismaMock.saleReturn.create).not.toHaveBeenCalled()
     })
   })
 

@@ -75,6 +75,7 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
       items: {
         include: {
           itemBatches: true,
+          product: { select: { drugSchedule: true } },
         },
       },
       customer: true,
@@ -106,6 +107,7 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
     unitPrice: number
     totalAmount: number
     restockDecision: 'RESTOCK' | 'QUARANTINE' | 'DAMAGE_WRITE_OFF'
+    isNarcotic: boolean
     batchId: string | null
   }[] = []
 
@@ -126,7 +128,18 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
     const lineTotal = Math.round(netUnit * line.quantity * 100) / 100
     returnTotalAmount += lineTotal
 
+    const restockDecision = line.restockDecision ?? 'RESTOCK'
     const resolvedBatchId = line.batchId ?? saleItem.itemBatches[0]?.batchId ?? null
+    const isNarcotic = saleItem.product?.drugSchedule === 'NARCOTIC_NDPS'
+
+    // ─── Narcotic fail-closed batch requirement ─────────────────
+    // A narcotic RESTOCK restores narcotic stock and requires a
+    // D2-G register entry, which must reference a batch. Reject
+    // unresolvable batches before any durable mutation (mirrors the
+    // D2-C principle for narcotic supplier returns).
+    if (isNarcotic && restockDecision === 'RESTOCK' && !resolvedBatchId) {
+      throw new Error('Batch ID is required for narcotic customer returns')
+    }
 
     processedLines.push({
       saleItemId: line.saleItemId,
@@ -134,7 +147,8 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
       quantity: line.quantity,
       unitPrice: netUnit,
       totalAmount: lineTotal,
-      restockDecision: line.restockDecision ?? 'RESTOCK',
+      restockDecision,
+      isNarcotic,
       batchId: resolvedBatchId,
     })
   }
@@ -267,6 +281,62 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
           })
         }
       }
+    }
+
+    // ─── Narcotic Register — SALE_RETURN (RESTOCK only) ─────────
+    // Restocking a narcotic return extends the D2-G balance chain the
+    // same way D1 cancellation does: credit the branch+product balance
+    // by the returned quantity inside the same transaction. Quantities
+    // are aggregated per productId + batchId so the NarcoticRegister
+    // @@unique([referenceType, referenceId, productId, batchId]) cannot
+    // be violated by multiple lines of the same product/batch within
+    // one SaleReturn. Only RESTOCK restores physical stock, so
+    // QUARANTINE / DAMAGE_WRITE_OFF and non-narcotic lines write nothing.
+    const narcoticRestock = new Map<
+      string,
+      { productId: string; batchId: string; quantity: number }
+    >()
+    for (const line of processedLines) {
+      if (!line.isNarcotic || line.restockDecision !== 'RESTOCK' || !line.batchId) continue
+      const key = `${line.productId}:${line.batchId}`
+      const existing = narcoticRestock.get(key)
+      if (existing) {
+        existing.quantity += line.quantity
+      } else {
+        narcoticRestock.set(key, {
+          productId: line.productId,
+          batchId: line.batchId,
+          quantity: line.quantity,
+        })
+      }
+    }
+
+    for (const group of narcoticRestock.values()) {
+      const prevNarcotic = await tx.narcoticRegister.findFirst({
+        where: {
+          branchId: sale.branchId,
+          productId: group.productId,
+        },
+        orderBy: { entryDate: 'desc' },
+        select: { balanceQuantity: true },
+      })
+      const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
+      await tx.narcoticRegister.create({
+        data: {
+          branchId: sale.branchId,
+          productId: group.productId,
+          batchId: group.batchId,
+          movementType: 'RETURN_TO_SUPPLIER',
+          quantityIn: group.quantity,
+          quantityOut: 0,
+          balanceQuantity: prevBalance + group.quantity,
+          referenceType: 'SALE_RETURN',
+          referenceId: saleReturn.id,
+          enteredById: actor.id,
+          entryDate: new Date(),
+        },
+      })
     }
 
     // 4. Update Sale Status

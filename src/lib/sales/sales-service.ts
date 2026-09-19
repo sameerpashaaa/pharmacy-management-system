@@ -1036,6 +1036,9 @@ export async function cancelSale(saleId: string, reason: string, actor: SaleActo
         })
         if (!sale) throw new Error('Not Found: sale')
         if (sale.status === 'CANCELLED') throw new Error('Sale is already cancelled')
+        if (sale.status === 'PARTIALLY_RETURNED' || sale.status === 'FULLY_RETURNED') {
+          throw new Error('Cannot cancel a sale that has been returned')
+        }
 
         await assertBranchAccess(actor, sale.branchId)
 
