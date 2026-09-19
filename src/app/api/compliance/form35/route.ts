@@ -7,25 +7,36 @@ import { ZodError, z } from 'zod'
 import { requirePermission } from '@/lib/auth/auth-helpers'
 import { getScheduleH1Register } from '@/lib/compliance/schedule-h1-service'
 import { PERMISSIONS } from '@/lib/constants/permissions'
+import { resolveBranchScope } from '@/lib/inventory/branch-access'
 
 const form35QuerySchema = z.object({
   startDate: z.string().datetime({ offset: true }).optional(),
   endDate: z.string().datetime({ offset: true }).optional(),
+  branchId: z.string().optional(),
 })
 
 // GET /api/compliance/form35?startDate=&endDate= — Form 35 Schedule H1 PDF export
 export async function GET(req: NextRequest) {
   try {
-    await requirePermission(PERMISSIONS.REPORTS_EXPORT)
+    const user = await requirePermission(PERMISSIONS.REPORTS_EXPORT)
 
     const query = form35QuerySchema.parse(Object.fromEntries(new URL(req.url).searchParams))
     const startDate =
       query.startDate ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const endDate = query.endDate ?? new Date().toISOString()
 
+    const branchId = await resolveBranchScope(user, query.branchId)
+    if (!branchId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'No branch access for this user' } },
+        { status: 403 }
+      )
+    }
+
     const { data } = await getScheduleH1Register({
       startDate,
       endDate,
+      branchId,
       limit: 10000,
     })
 
@@ -77,12 +88,7 @@ export async function GET(req: NextRequest) {
       )
     }
     const message = err instanceof Error ? err.message : 'Unknown error'
-    const status =
-      message === 'Unauthorized'
-        ? 401
-        : message.startsWith('Forbidden')
-          ? 403
-          : 500
+    const status = message === 'Unauthorized' ? 401 : message.startsWith('Forbidden') ? 403 : 500
     return NextResponse.json({ success: false, error: { code: 'ERROR', message } }, { status })
   }
 }
