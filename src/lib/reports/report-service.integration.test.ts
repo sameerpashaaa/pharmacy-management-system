@@ -169,13 +169,60 @@ const HAS_DB = Boolean(process.env.DATABASE_URL)
     expect(exp?.daysToExpiry).toBeLessThanOrEqual(10)
   })
 
-  it('generates narcotic register', async () => {
+  it('generates narcotic register from the authoritative NarcoticRegister rows', async () => {
+    const uniqueId = Date.now().toString()
+    const user = await prisma.user.create({
+      data: { email: `nr-${uniqueId}@example.com`, name: 'NR' },
+    })
+    const product = await prisma.product.create({
+      data: {
+        name: `Report NDPS ${uniqueId}`,
+        sku: `RPT-NDPS-${uniqueId}`,
+        drugSchedule: 'NARCOTIC_NDPS',
+        mrp: 100,
+        createdById: user.id,
+      },
+    })
+    await prisma.inventory.create({
+      data: { branchId, productId: product.id, totalQuantity: 30, availableQuantity: 30 },
+    })
+    const batch = await prisma.batch.create({
+      data: {
+        productId: product.id,
+        branchId,
+        batchNumber: `NDPS-B${uniqueId}`,
+        quantity: 30,
+        expiryDate: addDays(new Date(), 400),
+        purchasePrice: 60,
+        mrp: 100,
+      },
+    })
+    await prisma.narcoticRegister.create({
+      data: {
+        branchId,
+        productId: product.id,
+        batchId: batch.id,
+        movementType: 'PURCHASE_RECEIPT',
+        quantityIn: 30,
+        quantityOut: 0,
+        balanceQuantity: 30,
+        referenceType: 'PURCHASE',
+        referenceId: `PO-NR-${uniqueId}`,
+        entryDate: new Date(),
+        enteredById: user.id,
+      },
+    })
     const res = await ReportService.getNarcoticRegister(branchId)
     expect(res).toBeDefined()
-    // Should contain movements for productA (Schedule X)
-    const narc = res.data.find((r) => r.productName === productA.name)
+    // The report is sourced from NarcoticRegister: the register movement type
+    // and the persisted (authoritative) balance are what the consumer sees.
+    const narc = res.data.find((r) => r.productId === product.id)
     expect(narc).toBeDefined()
-    expect(narc?.type).toBe('IN')
+    expect(narc?.movementType).toBe('PURCHASE_RECEIPT')
+    expect(narc?.quantityIn).toBe(30)
+    expect(narc?.quantityOut).toBe(0)
+    expect(narc?.balanceQuantity).toBe(30)
+    expect(narc?.drugSchedule).toBe('NARCOTIC_NDPS')
   })
 
   it('generates consumption report', async () => {

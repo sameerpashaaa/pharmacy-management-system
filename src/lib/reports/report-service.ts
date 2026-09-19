@@ -146,6 +146,17 @@ export class ReportService {
 
   /**
    * Narcotic Register
+   *
+   * The authoritative source for the narcotic report is the persisted NDPS
+   * register chain (NarcoticRegister), NOT InventoryMovement. Register rows
+   * exist only for NARCOTIC_NDPS products (every register writer is scoped to
+   * that classification), so the report needs no drugSchedule filter — the
+   * register's existence IS the narcotic classification. The persisted
+   * balanceQuantity per movement is authoritative and never recomputed.
+   *
+   * The legacy display fields (type, quantity, quantityBefore, quantityAfter)
+   * are preserved for the existing consumer and derived faithfully from the
+   * register row, not from inventory movements.
    */
   static async getNarcoticRegister(
     branchId: string,
@@ -154,44 +165,53 @@ export class ReportService {
     pagination?: ReportPagination
   ) {
     const { page, limit } = normalizePagination(pagination)
-    const movements = await prisma.inventoryMovement.findMany({
+    const registers = await prisma.narcoticRegister.findMany({
       where: {
-        inventory: {
-          branchId,
-          product: {
-            drugSchedule: {
-              in: ['X', 'H1'],
-            },
-          },
-        },
-        ...(startDate && endDate ? { createdAt: { gte: startDate, lte: endDate } } : {}),
+        branchId,
+        ...(startDate && endDate ? { entryDate: { gte: startDate, lte: endDate } } : {}),
       },
       include: {
-        inventory: {
-          include: {
-            product: true,
-          },
-        },
-        batch: true,
+        product: true,
       },
       orderBy: {
-        createdAt: 'desc',
+        entryDate: 'desc',
       },
     })
 
-    const rows = movements.map((m) => ({
-      id: m.id,
-      date: m.createdAt,
-      type: m.type,
-      referenceType: m.referenceType,
-      referenceId: m.referenceId,
-      productName: m.inventory.product.name,
-      drugSchedule: m.inventory.product.drugSchedule,
-      batchNumber: m.batch?.batchNumber,
-      quantity: m.quantity,
-      quantityBefore: m.quantityBefore,
-      quantityAfter: m.quantityAfter,
-      notes: m.notes,
+    // batchId is a free string on NarcoticRegister (no relation), so resolve
+    // batch labels in one lookup for the movements in this page's result set.
+    const batchIds = Array.from(new Set(registers.map((r) => r.batchId)))
+    const batches = await prisma.batch.findMany({
+      where: { id: { in: batchIds } },
+      select: { id: true, batchNumber: true },
+    })
+    const batchNumberBy = new Map(batches.map((b) => [b.id, b.batchNumber]))
+
+    const rows = registers.map((r) => ({
+      // ─── Authoritative register values (actual schema fields) ───
+      id: r.id,
+      date: r.entryDate,
+      movementType: r.movementType,
+      quantityIn: r.quantityIn,
+      quantityOut: r.quantityOut,
+      balanceQuantity: r.balanceQuantity,
+      referenceType: r.referenceType,
+      referenceId: r.referenceId,
+      branchId: r.branchId,
+      productId: r.productId,
+      productName: r.product.name,
+      drugSchedule: r.product.drugSchedule,
+      batchId: r.batchId,
+      batchNumber: batchNumberBy.get(r.batchId),
+      patientName: r.patientName,
+      doctorName: r.doctorName,
+      doctorRegNo: r.doctorRegNo,
+      prescriptionNo: r.prescriptionNo,
+      // ─── Legacy display fields, derived from the register row ───
+      type: r.movementType,
+      quantity: r.quantityIn + r.quantityOut,
+      quantityBefore: r.balanceQuantity - r.quantityIn + r.quantityOut,
+      quantityAfter: r.balanceQuantity,
     }))
     return { ...paginate(rows, page, limit), page, limit }
   }

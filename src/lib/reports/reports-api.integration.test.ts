@@ -51,6 +51,8 @@ const TRUNCATE_TABLES = [
   'products',
   'customer_ledgers',
   'customers',
+  'narcotic_register',
+  'schedule_h1_register',
   'purchase_items',
   'purchase_return_items',
   'purchase_returns',
@@ -180,22 +182,51 @@ describe('Reports API Integration (Real PostgreSQL)', () => {
       data: {
         name: 'Rpt Narc Product',
         sku: `RPT-NARC-${Date.now()}`,
-        drugSchedule: 'X',
+        drugSchedule: 'NARCOTIC_NDPS',
         mrp: 100,
         createdById: user.id,
       },
     })
     const inv = await prisma.inventory.create({
-      data: { branchId, productId: product.id, totalQuantity: 20, availableQuantity: 20 },
+      data: { branchId, productId: product.id, totalQuantity: 100, availableQuantity: 100 },
     })
+    // A stock movement with NO corresponding register row — under the old
+    // InventoryMovement source this would fake a register entry. The report
+    // must ignore it and read only NarcoticRegister.
     await prisma.inventoryMovement.create({
       data: {
         inventoryId: inv.id,
         type: 'IN',
-        quantity: 20,
+        quantity: 500,
         quantityBefore: 0,
-        quantityAfter: 20,
-        referenceType: 'PURCHASE',
+        quantityAfter: 500,
+        referenceType: 'OTHER',
+      },
+    })
+    const batch = await prisma.batch.create({
+      data: {
+        productId: product.id,
+        branchId,
+        batchNumber: `RPT-NARC-B${Date.now()}`,
+        quantity: 100,
+        expiryDate: new Date('2028-12-31'),
+        purchasePrice: 60,
+        mrp: 100,
+      },
+    })
+    await prisma.narcoticRegister.create({
+      data: {
+        branchId,
+        productId: product.id,
+        batchId: batch.id,
+        movementType: 'OPENING_BALANCE',
+        quantityIn: 100,
+        quantityOut: 0,
+        balanceQuantity: 100,
+        referenceType: 'OPENING_BALANCE',
+        referenceId: `OB-RPT-${Date.now()}`,
+        entryDate: new Date('2026-09-01T00:00:00.000Z'),
+        enteredById: user.id,
       },
     })
     return { productId: product.id }
@@ -362,7 +393,7 @@ describe('Reports API Integration (Real PostgreSQL)', () => {
       expect(res.status).toBe(400)
     })
 
-    it('returns real narcotic register rows', async () => {
+    it('returns real narcotic register rows (from NarcoticRegister)', async () => {
       mockUser(actor)
       await seedNarcoticsFixture()
       const res = await narcoticsGET(
@@ -370,15 +401,26 @@ describe('Reports API Integration (Real PostgreSQL)', () => {
       )
       const json = (await res.json()) as {
         success: boolean
-        data: { productName: string; drugSchedule: string; quantity: number }[]
+        data: {
+          productName: string
+          drugSchedule: string
+          movementType: string
+          quantityIn: number
+          quantityOut: number
+          balanceQuantity: number
+        }[]
         pagination: { total: number }
       }
       expect(res.status).toBe(200)
       expect(json.success).toBe(true)
+      expect(json.pagination.total).toBe(1)
       expect(json.data).toHaveLength(1)
-      expect(json.data[0].drugSchedule).toBe('X')
+      expect(json.data[0].drugSchedule).toBe('NARCOTIC_NDPS')
       expect(json.data[0].productName).toBe('Rpt Narc Product')
-      expect(json.data[0].quantity).toBe(20)
+      expect(json.data[0].movementType).toBe('OPENING_BALANCE')
+      expect(json.data[0].quantityIn).toBe(100)
+      expect(json.data[0].quantityOut).toBe(0)
+      expect(json.data[0].balanceQuantity).toBe(100)
     })
   })
 
