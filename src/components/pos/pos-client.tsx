@@ -466,11 +466,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
             )
             return prev
           }
-          return prev.map((c) =>
-            c.productId === p.id
-              ? { ...c, quantity: c.quantity + 1 }
-              : c
-          )
+          return prev.map((c) => (c.productId === p.id ? { ...c, quantity: c.quantity + 1 } : c))
         }
 
         return [
@@ -685,35 +681,38 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
   )
 
   // ─── Charge / payment dialog controls ──────────────────────
-  const openPayment = useCallback((preferredMethod?: string) => {
-    const method = typeof preferredMethod === 'string' ? preferredMethod : 'CASH'
-    if (cart.length === 0) {
-      toast.error('Cart is empty')
-      return
-    }
-    if (!branchId) {
-      toast.error('A branch is required to bill')
-      return
-    }
-    if (needsH1Capture && (!h1PatientName || !h1DoctorName || !h1DoctorRegNo)) {
-      setH1ModalOpen(true)
-      return
-    }
-    setPayments([{ method, amount: pricing.totals.totalAmount, reference: '' }])
-    setCustomerName('')
-    setCustomerPhone('')
-    setPrescriptionId('')
-    setPayOpen(true)
-  }, [
-    cart.length,
-    branchId,
-    pricing.totals.totalAmount,
-    toast,
-    needsH1Capture,
-    h1PatientName,
-    h1DoctorName,
-    h1DoctorRegNo,
-  ])
+  const openPayment = useCallback(
+    (preferredMethod?: string) => {
+      const method = typeof preferredMethod === 'string' ? preferredMethod : 'CASH'
+      if (cart.length === 0) {
+        toast.error('Cart is empty')
+        return
+      }
+      if (!branchId) {
+        toast.error('A branch is required to bill')
+        return
+      }
+      if (needsH1Capture && (!h1PatientName || !h1DoctorName || !h1DoctorRegNo)) {
+        setH1ModalOpen(true)
+        return
+      }
+      setPayments([{ method, amount: pricing.totals.totalAmount, reference: '' }])
+      setCustomerName('')
+      setCustomerPhone('')
+      setPrescriptionId('')
+      setPayOpen(true)
+    },
+    [
+      cart.length,
+      branchId,
+      pricing.totals.totalAmount,
+      toast,
+      needsH1Capture,
+      h1PatientName,
+      h1DoctorName,
+      h1DoctorRegNo,
+    ]
+  )
 
   const updatePayment = useCallback((i: number, patch: Partial<PaymentEntry>) => {
     setPayments((prev) => prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p)))
@@ -853,6 +852,12 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
     clearCart,
     fetchProducts,
     toast,
+    needsH1Capture,
+    h1PatientName,
+    h1PatientAddress,
+    h1PatientPhone,
+    h1DoctorName,
+    h1DoctorRegNo,
   ])
 
   // ─── Held bills ────────────────────────────────────────────
