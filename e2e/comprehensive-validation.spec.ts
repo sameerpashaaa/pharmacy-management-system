@@ -1,9 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 const USER = 'admin@pharmacare.local'
 const PASS = 'Admin@123'
 
-async function login(page: import('@playwright/test').Page) {
+async function login(page: Page) {
   await page.goto('/login')
   await page.locator('input[type="email"]').fill(USER)
   await page.locator('input[type="password"]').fill(PASS)
@@ -44,9 +44,7 @@ test.describe('Comprehensive validation — affected flows', () => {
     await page.goto('/products')
 
     await expect(page.getByRole('heading', { name: 'Product Catalog' })).toBeVisible()
-    await expect(
-      page.getByRole('textbox', { name: 'Search name, SKU, barcode…' })
-    ).toBeVisible()
+    await expect(page.getByRole('textbox', { name: 'Search name, SKU, barcode…' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Add Product' }).first()).toBeVisible()
   })
 
@@ -68,8 +66,8 @@ test.describe('Comprehensive validation — affected flows', () => {
     // Search input visible
     await expect(page.locator('input[placeholder*="Search name"]')).toBeVisible()
 
-    // Bill section visible
-    await expect(page.getByText('Bill', { exact: true })).toBeVisible()
+    // Active Bill section visible
+    await expect(page.getByRole('heading', { name: 'Active Bill' })).toBeVisible()
   })
 
   test('Batches: list loads, detail loads with branch scoping (R11)', async ({ page }) => {
@@ -89,8 +87,9 @@ test.describe('Comprehensive validation — affected flows', () => {
     // Wait for search results to render
     await page.waitForTimeout(2000)
 
-    // Verify either results or "no products" message
-    const resultsVisible = await page.getByText('Paracetamol').isVisible()
+    // Verify the Paracetamol product card is visible by its name in the product button
+    const productCard = page.getByRole('button', { name: /Paracetamol 500mg/ })
+    const resultsVisible = await productCard.isVisible()
     const noResults = await page.getByText('No products match').isVisible()
     expect(resultsVisible || noResults).toBe(true)
   })
