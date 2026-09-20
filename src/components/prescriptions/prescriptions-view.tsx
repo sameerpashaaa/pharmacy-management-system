@@ -75,50 +75,47 @@ export function PrescriptionsView({
   const [search, setSearch] = useState<string>(searchParams.get('search') ?? '')
   const debouncedSearch = useDebounce(search, 300)
 
-  const fetchPrescriptions = useCallback(
-    async (p: number, s: string, q: string) => {
-      setLoading(true)
-      try {
-        const params = new URLSearchParams({
-          page: String(p),
-          limit: '20',
-        })
-        if (s && s !== 'ALL') params.set('status', s)
-        if (q.trim()) params.set('search', q.trim())
+  const fetchPrescriptions = useCallback(async (p: number, s: string, q: string) => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({
+        page: String(p),
+        limit: '20',
+      })
+      if (s && s !== 'ALL') params.set('status', s)
+      if (q.trim()) params.set('search', q.trim())
 
-        const res = await fetch(`/api/prescriptions?${params.toString()}`)
-        const json = (await res.json()) as ApiResponse
-        if (json.success && json.data && json.pagination) {
-          const mapped: PrescriptionRow[] = json.data.map((rx) => ({
-            id: rx.id,
-            prescriptionNumber: rx.prescriptionNumber,
-            patientName: rx.patientName,
-            patientAge: rx.patientAge,
-            patientPhone: rx.patientPhone,
-            doctorName: rx.doctorName,
-            doctorRegNumber: rx.doctorRegNumber,
-            prescriptionDate: rx.prescriptionDate,
-            status: rx.status,
-            imagesCount: rx.images?.length ?? 0,
-            approvedBy: rx.approvedBy ?? null,
-            approvedAt: rx.approvedAt ?? null,
-            createdAt: rx.createdAt,
-          }))
-          setRows(mapped)
-          setPage(json.pagination.page)
-          setTotalPages(json.pagination.pages)
-          setTotal(json.pagination.total)
-        } else {
-          toast.error('Failed to load prescriptions')
-        }
-      } catch {
+      const res = await fetch(`/api/prescriptions?${params.toString()}`)
+      const json = (await res.json()) as ApiResponse
+      if (json.success && json.data && json.pagination) {
+        const mapped: PrescriptionRow[] = json.data.map((rx) => ({
+          id: rx.id,
+          prescriptionNumber: rx.prescriptionNumber,
+          patientName: rx.patientName,
+          patientAge: rx.patientAge,
+          patientPhone: rx.patientPhone,
+          doctorName: rx.doctorName,
+          doctorRegNumber: rx.doctorRegNumber,
+          prescriptionDate: rx.prescriptionDate,
+          status: rx.status,
+          imagesCount: rx.images?.length ?? 0,
+          approvedBy: rx.approvedBy ?? null,
+          approvedAt: rx.approvedAt ?? null,
+          createdAt: rx.createdAt,
+        }))
+        setRows(mapped)
+        setPage(json.pagination.page)
+        setTotalPages(json.pagination.pages)
+        setTotal(json.pagination.total)
+      } else {
         toast.error('Failed to load prescriptions')
-      } finally {
-        setLoading(false)
       }
-    },
-    [toast]
-  )
+    } catch {
+      toast.error('Failed to load prescriptions')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     void fetchPrescriptions(1, status, debouncedSearch)
