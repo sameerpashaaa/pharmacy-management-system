@@ -114,6 +114,7 @@ const PERMISSIONS = [
   { code: 'customers:create', name: 'Create Customers', module: 'customers', action: 'create' },
   { code: 'customers:read', name: 'View Customers', module: 'customers', action: 'read' },
   { code: 'customers:update', name: 'Update Customers', module: 'customers', action: 'update' },
+  { code: 'customers:delete', name: 'Delete Customers', module: 'customers', action: 'delete' },
   {
     code: 'customers:payments',
     name: 'Record Customer Payments',

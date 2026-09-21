@@ -371,16 +371,19 @@ test.describe('Full Application E2E Audit - Sequential', () => {
     }
   })
 
-  test('Customers: verify Phase 5 placeholder', async () => {
+  test('Customers: list renders rows and new page shows the form', async () => {
     const { page, context } = await loginFresh()
     try {
       await page.goto('/customers')
       await waitForHydration(page)
-      await expect(page.locator('text=/Coming in Phase 5/i')).toBeVisible()
+      await expect(page.locator('h1', { hasText: 'Customer Management' })).toBeVisible()
+      // List renders table with at least one row (the seeded Ledger Customer)
+      await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 })
 
       await page.goto('/customers/new')
       await waitForHydration(page)
-      await expect(page.locator('text=/Coming in Phase 5/i')).toBeVisible()
+      await expect(page.locator('h1', { hasText: 'Add New Customer' })).toBeVisible()
+      await expect(page.locator('label[for="name"]')).toBeVisible()
     } finally {
       await closeContext(context)
     }

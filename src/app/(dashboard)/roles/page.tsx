@@ -1,17 +1,25 @@
-﻿import type { Metadata } from 'next'
+import type { Metadata } from 'next'
+
+import { RolesView } from '@/components/roles/roles-view'
+import { requirePermission } from '@/lib/auth/auth-helpers'
+import { PERMISSIONS } from '@/lib/constants/permissions'
 
 export const metadata: Metadata = { title: 'Roles & Permissions' }
 
-export default function RolesPermissionsPage() {
+export const dynamic = 'force-dynamic'
+
+export default async function RolesPermissionsPage() {
+  await requirePermission(PERMISSIONS.ROLES_MANAGE)
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Roles & Permissions</h1>
-        <p className="text-muted-foreground">Manage user roles and permission assignments</p>
+        <p className="text-muted-foreground">
+          Manage roles, system and custom. Assign permission sets to roles.
+        </p>
       </div>
-      <div className="flex h-64 items-center justify-center rounded-lg border-2 border-dashed border-muted">
-        <p className="text-muted-foreground">Coming in Phase 1 (Active)</p>
-      </div>
+      <RolesView />
     </div>
   )
 }
