@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   ScrollText,
   Shield,
+  Building,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -40,6 +41,10 @@ type NavItem = {
   href?: string
   icon: React.ElementType
   permission?: string
+  children?: NavChild[]
+}
+
+type NavChild = Omit<NavItem, 'children'> & {
   children?: Omit<NavItem, 'children'>[]
 }
 
@@ -145,7 +150,20 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'Users', href: ROUTES.USERS, icon: Users, permission: 'users:read' },
       { label: 'Roles', href: ROUTES.ROLES, icon: Shield, permission: 'roles:manage' },
       { label: 'Audit Logs', href: ROUTES.AUDIT, icon: ScrollText, permission: 'audit:read' },
-      { label: 'Settings', href: ROUTES.SETTINGS, icon: Settings, permission: 'settings:read' },
+      {
+        label: 'Settings',
+        icon: Settings,
+        permission: 'settings:read',
+        children: [
+          { label: 'Overview', href: ROUTES.SETTINGS, icon: Settings, permission: 'settings:read' },
+          {
+            label: 'Organization',
+            href: ROUTES.SETTINGS_ORGANIZATION,
+            icon: Building,
+            permission: 'organization:update',
+          },
+        ],
+      },
     ],
   },
 ]
