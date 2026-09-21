@@ -10,7 +10,6 @@ import { Separator } from '@/components/ui/separator'
 import { can, getSession } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { ROUTES } from '@/lib/constants/routes'
-import prisma from '@/lib/db/prisma'
 import { getPrescriptionById } from '@/lib/prescriptions/prescription-service'
 import { PRESCRIPTION_STATUS_META } from '@/lib/prescriptions/status-meta'
 import { formatCurrency } from '@/lib/utils/currency'
@@ -48,15 +47,6 @@ export default async function PrescriptionDetailPage({ params }: PrescriptionPag
   } catch {
     notFound()
   }
-
-  // The Prisma schema's `approvedBy` relation is misconfigured against
-  // `customerId`, so we resolve the actual customer separately.
-  const linkedCustomer = rx.customerId
-    ? await prisma.customer.findUnique({
-        where: { id: rx.customerId },
-        select: { id: true, name: true },
-      })
-    : null
 
   const statusMeta = PRESCRIPTION_STATUS_META[rx.status]
 
@@ -114,7 +104,7 @@ export default async function PrescriptionDetailPage({ params }: PrescriptionPag
                   href={ROUTES.CUSTOMER(rx.customerId)}
                   className="font-medium text-primary hover:underline"
                 >
-                  {linkedCustomer?.name ?? 'View Customer'}
+                  {rx.customer?.name ?? 'View Customer'}
                 </Link>
               </div>
             )}

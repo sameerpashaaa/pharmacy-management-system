@@ -44,7 +44,7 @@ interface ApiResponse {
     prescriptionDate: string | null
     status: PrescriptionStatus
     images?: unknown[]
-    approvedBy?: { id: string; name: string } | null
+    customer?: { id: string; name: string } | null
     approvedAt?: string | null
     createdAt: string
   }[]
@@ -99,7 +99,7 @@ export function PrescriptionsView({
           prescriptionDate: rx.prescriptionDate,
           status: rx.status,
           imagesCount: rx.images?.length ?? 0,
-          approvedBy: rx.approvedBy ?? null,
+          customer: rx.customer ?? null,
           approvedAt: rx.approvedAt ?? null,
           createdAt: rx.createdAt,
         }))

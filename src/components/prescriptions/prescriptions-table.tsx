@@ -28,7 +28,7 @@ export interface PrescriptionRow {
   prescriptionDate: string | null
   status: PrescriptionStatus
   imagesCount: number
-  approvedBy: { id: string; name: string } | null
+  customer: { id: string; name: string } | null
   approvedAt: string | null
   createdAt: string
 }
