@@ -11,8 +11,11 @@ import { DataTable } from '@/components/shared/data-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ROUTES } from '@/lib/constants/routes'
+import { PRESCRIPTION_STATUS_META } from '@/lib/prescriptions/status-meta'
 import { formatDateTime } from '@/lib/utils/date'
 import type { PrescriptionStatus } from '@/lib/validations/prescription'
+
+export { PRESCRIPTION_STATUS_META }
 
 export interface PrescriptionRow {
   id: string
@@ -28,20 +31,6 @@ export interface PrescriptionRow {
   approvedBy: { id: string; name: string } | null
   approvedAt: string | null
   createdAt: string
-}
-
-export const PRESCRIPTION_STATUS_META: Record<
-  PrescriptionStatus,
-  {
-    label: string
-    variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info'
-  }
-> = {
-  PENDING: { label: 'Pending Review', variant: 'warning' },
-  APPROVED: { label: 'Approved', variant: 'success' },
-  REJECTED: { label: 'Rejected', variant: 'destructive' },
-  DISPENSED: { label: 'Dispensed', variant: 'info' },
-  EXPIRED: { label: 'Expired', variant: 'secondary' },
 }
 
 const columns: ColumnDef<PrescriptionRow>[] = [

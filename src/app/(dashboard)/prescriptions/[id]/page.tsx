@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { PrescriptionDetailActions } from '@/components/prescriptions/prescription-detail-actions'
-import { PRESCRIPTION_STATUS_META } from '@/components/prescriptions/prescriptions-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,7 +10,9 @@ import { Separator } from '@/components/ui/separator'
 import { can, getSession } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { ROUTES } from '@/lib/constants/routes'
+import prisma from '@/lib/db/prisma'
 import { getPrescriptionById } from '@/lib/prescriptions/prescription-service'
+import { PRESCRIPTION_STATUS_META } from '@/lib/prescriptions/status-meta'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDateTime } from '@/lib/utils/date'
 
@@ -47,6 +48,15 @@ export default async function PrescriptionDetailPage({ params }: PrescriptionPag
   } catch {
     notFound()
   }
+
+  // The Prisma schema's `approvedBy` relation is misconfigured against
+  // `customerId`, so we resolve the actual customer separately.
+  const linkedCustomer = rx.customerId
+    ? await prisma.customer.findUnique({
+        where: { id: rx.customerId },
+        select: { id: true, name: true },
+      })
+    : null
 
   const statusMeta = PRESCRIPTION_STATUS_META[rx.status]
 
@@ -101,10 +111,10 @@ export default async function PrescriptionDetailPage({ params }: PrescriptionPag
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Customer Profile:</span>
                 <Link
-                  href={`/customers/${rx.customerId}`}
+                  href={ROUTES.CUSTOMER(rx.customerId)}
                   className="font-medium text-primary hover:underline"
                 >
-                  {rx.approvedBy?.name ?? 'View Customer'}
+                  {linkedCustomer?.name ?? 'View Customer'}
                 </Link>
               </div>
             )}
@@ -226,7 +236,7 @@ export default async function PrescriptionDetailPage({ params }: PrescriptionPag
                 <div key={s.id} className="flex items-center justify-between py-2">
                   <div>
                     <Link
-                      href={`/sales/${s.id}`}
+                      href={ROUTES.SALE(s.id)}
                       className="font-medium text-primary hover:underline"
                     >
                       {s.invoiceNumber}

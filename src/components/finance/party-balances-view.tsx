@@ -1,6 +1,7 @@
 'use client'
 
 import { Eye, ReceiptIndianRupee, Search } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import * as React from 'react'
 import { toast } from 'sonner'
@@ -33,6 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { ROUTES } from '@/lib/constants/routes'
 import { formatCurrency } from '@/lib/utils/currency'
 
 export interface PartyBalanceRow {
@@ -285,7 +287,18 @@ export function PartyBalancesView({
               ) : (
                 filteredRows.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="font-medium">
+                      {isSupplier ? (
+                        row.name
+                      ) : (
+                        <Link
+                          href={ROUTES.CUSTOMER(row.id)}
+                          className="text-primary hover:underline"
+                        >
+                          {row.name}
+                        </Link>
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {row.phone || row.email || '—'}
                     </TableCell>
