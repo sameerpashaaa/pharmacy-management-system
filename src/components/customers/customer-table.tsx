@@ -6,6 +6,7 @@
 // so we can wire real pagination + delete confirm from the parent.
 // ─────────────────────────────────────────────────────────────
 import { Building2, Edit, Mail, MapPin, Phone, Plus, Power, Search, Trash2 } from 'lucide-react'
+import Link from 'next/link'
 import { useCallback, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { ROUTES } from '@/lib/constants/routes'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useUiStore } from '@/lib/stores/ui-store'
 import { formatCurrency } from '@/lib/utils/currency'
@@ -55,6 +57,7 @@ interface CustomerTableProps {
   onPageChange: (page: number) => void
   onSearch: (query: string) => void
   onAddCustomer?: () => void
+  onViewCustomer?: (customer: CustomerRow) => void
   onEditCustomer?: (customer: CustomerRow) => void
   onRefresh?: () => void
 }
@@ -66,6 +69,7 @@ export function CustomerTable({
   onPageChange,
   onSearch,
   onAddCustomer,
+  onViewCustomer,
   onEditCustomer,
   onRefresh,
 }: CustomerTableProps) {
@@ -189,7 +193,22 @@ export function CustomerTable({
                       <div className="flex items-center gap-2">
                         <Building2 className="h-4 w-4 text-muted-foreground" />
                         <div>
-                          <p className="font-medium">{c.name}</p>
+                          {onViewCustomer ? (
+                            <button
+                              type="button"
+                              onClick={() => onViewCustomer(c)}
+                              className="text-left font-medium text-primary hover:underline"
+                            >
+                              {c.name}
+                            </button>
+                          ) : (
+                            <Link
+                              href={ROUTES.CUSTOMER(c.id)}
+                              className="font-medium text-primary hover:underline"
+                            >
+                              {c.name}
+                            </Link>
+                          )}
                           {c.gstin && (
                             <p className="font-mono text-xs text-muted-foreground">
                               GSTIN: {c.gstin}

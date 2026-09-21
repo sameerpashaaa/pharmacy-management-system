@@ -4,6 +4,7 @@
 // Component — CustomersView
 // Paginated client view of customers with search.
 // ─────────────────────────────────────────────────────────────
+import { useRouter } from 'next/navigation'
 import { useState, useCallback } from 'react'
 
 import { CustomerTable, type CustomerRow } from './customer-table'
@@ -21,6 +22,7 @@ interface CustomersViewProps {
 }
 
 export function CustomersView({ initialData, initialPagination }: CustomersViewProps) {
+  const router = useRouter()
   const [customers, setCustomers] = useState<CustomerRow[]>(initialData)
   const [pagination, setPagination] = useState<PaginationState>(initialPagination)
   const [isLoading, setIsLoading] = useState(false)
@@ -61,6 +63,18 @@ export function CustomersView({ initialData, initialPagination }: CustomersViewP
     void fetchCustomers(1, query)
   }
 
+  function handleView(customer: CustomerRow) {
+    router.push(`/customers/${customer.id}`)
+  }
+
+  function handleEdit(customer: CustomerRow) {
+    router.push(`/customers/${customer.id}`)
+  }
+
+  function handleAdd() {
+    router.push('/customers/new')
+  }
+
   return (
     <CustomerTable
       customers={customers}
@@ -69,6 +83,9 @@ export function CustomersView({ initialData, initialPagination }: CustomersViewP
       onPageChange={handlePageChange}
       onSearch={handleSearch}
       onRefresh={() => void fetchCustomers(pagination.page, searchInput)}
+      onViewCustomer={handleView}
+      onEditCustomer={handleEdit}
+      onAddCustomer={handleAdd}
     />
   )
 }
