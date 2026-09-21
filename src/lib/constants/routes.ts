@@ -86,6 +86,9 @@ export const ROUTES = {
   REPORTS_SALES: '/reports/sales',
   REPORTS_INVENTORY: '/reports/inventory',
 
+  // Compliance
+  COMPLIANCE_FORM35: '/compliance/form35',
+
   // Users & Roles
   USERS: '/users',
   USERS_NEW: '/users/new',
