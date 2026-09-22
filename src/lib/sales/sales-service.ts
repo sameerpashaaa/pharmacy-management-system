@@ -70,6 +70,8 @@ export interface CreateSaleItemInput {
   quantity: number
   looseUnits?: number
   discountPercent?: number
+  /** B2B wholesale: pin to a specific batch instead of FEFO allocation. */
+  batchId?: string
 }
 
 export interface CreateSalePaymentInput {
@@ -726,9 +728,71 @@ export async function createSale(
             orderBy: [{ expiryDate: 'asc' }, { id: 'asc' }],
           })
 
-          const allocation = settings.fefoEnabled
-            ? allocateFefo(filterEligibleBatches(batchRows as FefoBatchCandidate[]), totalBaseQty)
-            : allocateByCreationDate(batchRows, totalBaseQty)
+          // B2B wholesale path: pin to a specific batch and skip FEFO.
+          // Block expired + non-ACTIVE batches so a manager can never sell
+          // stale stock through this override.
+          let allocation: FefoResult
+          if (input.batchId) {
+            const pinned = batchRows.find((b) => b.id === input.batchId)
+            if (!pinned) {
+              const raw = await tx.batch.findUnique({
+                where: { id: input.batchId },
+                select: {
+                  id: true,
+                  productId: true,
+                  branchId: true,
+                  status: true,
+                  expiryDate: true,
+                },
+              })
+              if (!raw) {
+                throw new Error(`Batch ${input.batchId} not found for ${product.name}`)
+              }
+              if (raw.productId !== product.id || raw.branchId !== branch.id) {
+                throw new Error(
+                  `Batch ${input.batchId} does not belong to product ${product.name} at this branch`
+                )
+              }
+              if (raw.status !== 'ACTIVE') {
+                throw new Error(
+                  `Batch ${input.batchId} is ${raw.status.toLowerCase()} and cannot be sold (${product.name})`
+                )
+              }
+              if (raw.expiryDate < new Date()) {
+                throw new Error(
+                  `Batch ${input.batchId} has expired and cannot be sold (${product.name})`
+                )
+              }
+              throw new Error(
+                `Batch ${input.batchId} is not in the active stock pool for ${product.name}`
+              )
+            }
+            const pinnedFree = pinned.quantity - pinned.reservedQuantity - pinned.soldQuantity
+            if (pinnedFree < totalBaseQty) {
+              throw new Error(
+                `Insufficient stock in selected batch ${pinned.batchNumber}: requested ${totalBaseQty}, available ${pinnedFree} (${product.name})`
+              )
+            }
+            allocation = {
+              status: 'success',
+              requestedQuantity: totalBaseQty,
+              allocatedQuantity: totalBaseQty,
+              allocations: [
+                {
+                  batchId: pinned.id,
+                  batchNumber: pinned.batchNumber,
+                  expiryDate: pinned.expiryDate,
+                  allocatedQuantity: totalBaseQty,
+                  availableQuantityBefore: pinnedFree,
+                  remainingQuantity: pinnedFree - totalBaseQty,
+                },
+              ],
+            }
+          } else {
+            allocation = settings.fefoEnabled
+              ? allocateFefo(filterEligibleBatches(batchRows as FefoBatchCandidate[]), totalBaseQty)
+              : allocateByCreationDate(batchRows, totalBaseQty)
+          }
 
           if (allocation.status !== 'success') {
             throw new Error(

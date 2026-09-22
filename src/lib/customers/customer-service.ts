@@ -6,6 +6,7 @@
 // admin-only visibility into that same record space.
 // ─────────────────────────────────────────────────────────────
 import { Prisma } from '@prisma/client'
+import type { CustomerType } from '@prisma/client'
 import type { User } from 'next-auth'
 
 import prisma from '@/lib/db/prisma'
@@ -30,6 +31,7 @@ export interface CustomerRow {
   creditLimit: number
   outstandingBalance: number
   creditDays: number
+  customerType: CustomerType
   isActive: boolean
   notes: string | null
   createdAt: Date
@@ -52,6 +54,7 @@ function serialize(row: {
   creditLimit: Prisma.Decimal
   outstandingBalance: Prisma.Decimal
   creditDays: number
+  customerType: CustomerType
   isActive: boolean
   notes: string | null
   createdAt: Date
@@ -70,6 +73,7 @@ function serialize(row: {
     creditLimit: decimalToNumber(row.creditLimit),
     outstandingBalance: decimalToNumber(row.outstandingBalance),
     creditDays: row.creditDays,
+    customerType: row.customerType,
     isActive: row.isActive,
     notes: row.notes,
     createdAt: row.createdAt,
@@ -140,6 +144,7 @@ export async function createCustomer(
       pincode: input.pincode ?? null,
       creditLimit: new Prisma.Decimal(input.creditLimit ?? 0),
       creditDays: input.creditDays ?? 0,
+      customerType: input.customerType ?? 'RETAIL',
       notes: input.notes ?? null,
       isActive: input.isActive ?? true,
     },
@@ -180,6 +185,7 @@ export async function updateCustomer(
   if (input.pincode !== undefined) data.pincode = input.pincode ?? null
   if (input.creditLimit !== undefined) data.creditLimit = new Prisma.Decimal(input.creditLimit)
   if (input.creditDays !== undefined) data.creditDays = input.creditDays
+  if (input.customerType !== undefined) data.customerType = input.customerType
   if (input.notes !== undefined) data.notes = input.notes ?? null
   if (input.isActive !== undefined) data.isActive = input.isActive
 

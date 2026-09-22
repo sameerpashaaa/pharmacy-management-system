@@ -43,6 +43,7 @@ export const ROUTES = {
 
   // Sales
   SALES: '/sales',
+  SALES_NEW: '/sales/new',
   SALE: (id: string) => `/sales/${id}`,
 
   // Returns

@@ -38,6 +38,7 @@ export const createCustomerSchema = z.object({
     (v) => (v === '' || v === null || v === undefined ? undefined : v),
     z.coerce.number().int().min(0).max(365).optional()
   ),
+  customerType: z.enum(['RETAIL', 'WHOLESALE']).optional().default('RETAIL'),
   notes: optionalText(500),
   isActive: z.boolean().optional().default(true),
 })
