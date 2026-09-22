@@ -10,6 +10,7 @@
 // configured so the unit suite can run offline anywhere.
 // ─────────────────────────────────────────────────────────────
 import prisma from '@/lib/db/prisma'
+import { recordCustomerPayment } from '@/lib/finance/finance-service'
 import {
   createHeldBill,
   createSale,
@@ -970,5 +971,148 @@ describeDb('POS sales integration (real Postgres)', () => {
     // read path returns rows without a branch-scope collision.
     const rows = await listSales({}, fx.branchA)
     expect(Array.isArray(rows.data)).toBe(true)
+  })
+
+  // ─── B2B wholesale batch-pin path ─────────────────────────────
+  // The /sales/new builder lets a manager pin a sale line to a specific
+  // batch (typically near-expiry stock). That path must:
+  //   - honour pinned batch even if a later-expiry batch is eligible.
+  //   - reject expired batches outright.
+  //   - reject non-ACTIVE batches (BLOCKED/EXHAUSTED/DISPOSED).
+  //   - run inside the credit-sale flow so outstanding balance moves.
+
+  it('B2B: pins to a specific near-expiry batch instead of FEFO', async () => {
+    // b1 is the later-expiring batch (+90d), b2 is the closer one (+30d).
+    // We pin to b1 explicitly — must bypass FEFO.
+    const sale = await createSale(
+      saleCommand(fx, {
+        items: [{ productId: fx.para, quantity: 2, batchId: fx.b1 }],
+        payments: [{ method: 'CASH', amount: 224 }],
+      }),
+      fx.actor
+    )
+    expect(sale.status).toBe('COMPLETED')
+
+    const b1After = await prisma.batch.findUniqueOrThrow({ where: { id: fx.b1 } })
+    const b2After = await prisma.batch.findUniqueOrThrow({ where: { id: fx.b2 } })
+    expect(b1After.soldQuantity).toBe(2)
+    expect(b2After.soldQuantity).toBe(0)
+
+    const saleBatches = await prisma.saleItemBatch.findMany({
+      where: { saleItem: { sale: { id: sale.id } } },
+      select: { batchId: true, quantity: true },
+    })
+    expect(saleBatches).toHaveLength(1)
+    expect(saleBatches[0].batchId).toBe(fx.b1)
+    expect(saleBatches[0].quantity).toBe(2)
+  })
+
+  it('B2B: rejects an expired batch pin', async () => {
+    // b4 is the expired batch (yesterday).
+    await expect(
+      createSale(
+        saleCommand(fx, {
+          items: [{ productId: fx.para, quantity: 1, batchId: fx.b4 }],
+        }),
+        fx.actor
+      )
+    ).rejects.toThrow(/expired/)
+  })
+
+  it('B2B: rejects a BLOCKED batch pin', async () => {
+    // b3 is BLOCKED for quality hold.
+    await expect(
+      createSale(
+        saleCommand(fx, {
+          items: [{ productId: fx.para, quantity: 1, batchId: fx.b3 }],
+        }),
+        fx.actor
+      )
+    ).rejects.toThrow()
+  })
+
+  it('B2B: credit sale creates outstanding balance for wholesale customer', async () => {
+    const customer = await prisma.customer.create({
+      data: {
+        name: 'Wellness Pharmacy',
+        phone: '9000000099',
+        customerType: 'WHOLESALE',
+        creditLimit: 100000,
+        outstandingBalance: 0,
+        creditDays: 30,
+      },
+    })
+
+    const sale = await createSale(
+      saleCommand(fx, {
+        customerId: customer.id,
+        items: [{ productId: fx.para, quantity: 2 }],
+        payments: [{ method: 'CREDIT', amount: 0 }],
+      }),
+      fx.creditActor
+    )
+    expect(sale.paymentStatus).toBe('CREDIT')
+    expect(Number(sale.balanceDue)).toBeGreaterThan(0)
+
+    const after = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(after.outstandingBalance)).toBeGreaterThan(0)
+
+    const ledger = await prisma.customerLedger.findMany({ where: { customerId: customer.id } })
+    expect(ledger.length).toBeGreaterThan(0)
+    expect(ledger[0].type).toBe('DEBIT')
+  })
+
+  it('B2B: partial payment reduces outstanding balance', async () => {
+    const customer = await prisma.customer.create({
+      data: {
+        name: 'Care Distributors',
+        phone: '9000000088',
+        customerType: 'WHOLESALE',
+        creditLimit: 50000,
+        outstandingBalance: 0,
+        creditDays: 14,
+      },
+    })
+
+    const sale = await createSale(
+      saleCommand(fx, {
+        customerId: customer.id,
+        items: [{ productId: fx.para, quantity: 1 }],
+        payments: [{ method: 'CREDIT', amount: 0 }],
+      }),
+      fx.creditActor
+    )
+    const totalDue = Number(sale.balanceDue)
+
+    // Record a partial payment.
+    await recordCustomerPayment(
+      customer.id,
+      {
+        amount: Math.round(totalDue / 2),
+        paymentMethod: 'UPI',
+        reference: 'UPI-PART-1',
+        paymentDate: new Date().toISOString(),
+      },
+      { id: fx.userAId, permissions: ['customers:payments'] } as never
+    )
+
+    const after = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(after.outstandingBalance)).toBeCloseTo(totalDue - Math.round(totalDue / 2), 0)
+
+    // Pay the rest.
+    const remaining = totalDue - Math.round(totalDue / 2)
+    await recordCustomerPayment(
+      customer.id,
+      {
+        amount: remaining,
+        paymentMethod: 'CASH',
+        reference: 'CASH-FULL',
+        paymentDate: new Date().toISOString(),
+      },
+      { id: fx.userAId, permissions: ['customers:payments'] } as never
+    )
+
+    const cleared = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(cleared.outstandingBalance)).toBeCloseTo(0, 2)
   })
 })

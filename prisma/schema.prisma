@@ -996,6 +996,7 @@ model Customer {
   creditLimit        Decimal  @default(0) @db.Decimal(12, 2)
   outstandingBalance Decimal  @default(0) @db.Decimal(12, 2)
   creditDays         Int      @default(0)
+  customerType       CustomerType @default(RETAIL)
   isActive           Boolean  @default(true)
   notes              String?
   createdAt          DateTime @default(now())
@@ -1084,6 +1085,11 @@ model SupplierLedger {
 enum LedgerEntryType {
   DEBIT
   CREDIT
+}
+
+enum CustomerType {
+  RETAIL
+  WHOLESALE
 }
 
 // ─────────────────────────────────────────────────────────────

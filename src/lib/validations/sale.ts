@@ -51,6 +51,8 @@ export const posItemSchema = z
       .min(0, 'Discount cannot be negative')
       .max(100, 'Discount cannot exceed 100%')
       .default(0),
+    // B2B wholesale: pin this line to a specific batch instead of FEFO.
+    batchId: z.string().min(1).optional(),
   })
   .superRefine((val, ctx) => {
     const identifiers = [val.productId, val.barcode, val.sku].filter(

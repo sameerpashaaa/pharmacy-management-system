@@ -20,10 +20,11 @@ import { SaleActionButtons } from './sale-action-buttons'
 export const metadata: Metadata = { title: 'Sale Details' }
 
 export default async function SaleDetailPage({ params }: { params: { id: string } }) {
-  const [canRead, canReturn, canCancel, session] = await Promise.all([
+  const [canRead, canReturn, canCancel, canRecordPayment, session] = await Promise.all([
     can(PERMISSIONS.SALES_READ),
     can(PERMISSIONS.RETURNS_CREATE),
     can(PERMISSIONS.SALES_VOID),
+    can(PERMISSIONS.CUSTOMERS_PAYMENTS),
     getSession(),
   ])
 
@@ -97,6 +98,11 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
           <SaleActionButtons
             saleId={sale.id}
             canCancel={canCancel && sale.status === 'COMPLETED'}
+            canRecordPayment={
+              canRecordPayment && sale.status !== 'CANCELLED' && Number(sale.balanceDue) > 0
+            }
+            customerId={sale.customer?.id ?? null}
+            balanceDue={Number(sale.balanceDue)}
           />
           <Button asChild variant="outline" size="sm">
             <Link href={ROUTES.SALES}>Back to sales</Link>
