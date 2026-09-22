@@ -41,6 +41,7 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
   const scope = await resolveBranchScope(session.user)
   const sale = await getSaleById(params.id, scope).catch((err) => {
     if (err instanceof Error && err.message.startsWith('Forbidden')) return null
+    if (err instanceof Error && err.message.startsWith('Not Found')) return null
     throw err
   })
   if (!sale) notFound()
