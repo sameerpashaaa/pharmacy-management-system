@@ -49,7 +49,7 @@ export default async function PrescriptionsPage() {
     prescriptionDate: rx.prescriptionDate ? rx.prescriptionDate.toISOString() : null,
     status: rx.status as PrescriptionRow['status'],
     imagesCount: rx.images?.length ?? 0,
-    approvedBy: rx.approvedBy ? { id: rx.approvedBy.id, name: rx.approvedBy.name } : null,
+    customer: rx.customer ? { id: rx.customer.id, name: rx.customer.name } : null,
     approvedAt: rx.approvedAt ? rx.approvedAt.toISOString() : null,
     createdAt: rx.createdAt.toISOString(),
   }))

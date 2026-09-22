@@ -62,7 +62,7 @@ export function SuppliersView({ initialRows, initialPagination }: SuppliersViewP
         setLoading(false)
       }
     },
-    [page, debouncedSearch, toast]
+    [page, debouncedSearch]
   )
 
   useEffect(() => {
@@ -88,10 +88,20 @@ export function SuppliersView({ initialRows, initialPagination }: SuppliersViewP
           <div className="text-sm text-muted-foreground">
             Page {page} of {Math.max(totalPages, 1)}
           </div>
-          <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => load({ page: page - 1 })}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || loading}
+            onClick={() => load({ page: page - 1 })}
+          >
             Prev
           </Button>
-          <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => load({ page: page + 1 })}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages || loading}
+            onClick={() => load({ page: page + 1 })}
+          >
             Next
           </Button>
         </div>

@@ -751,11 +751,11 @@ model Prescription {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  approvedBy Customer?           @relation(fields: [customerId], references: [id])
-  pharmacist User?               @relation("PrescriptionApprovedBy", fields: [approvedById], references: [id])
-  doctor     Doctor?             @relation(fields: [doctorId], references: [id])
-  images     PrescriptionImage[]
-  sales      Sale[]
+  customer     Customer?            @relation("PrescriptionCustomer", fields: [customerId], references: [id])
+  pharmacist   User?                @relation("PrescriptionApprovedBy", fields: [approvedById], references: [id])
+  doctor       Doctor?              @relation(fields: [doctorId], references: [id])
+  images       PrescriptionImage[]
+  sales        Sale[]
 
   @@map("prescriptions")
 }
@@ -1007,7 +1007,7 @@ model Customer {
   saleReturns   SaleReturn[]
   creditNotes   CreditNote[]
   ledgerEntries CustomerLedger[]
-  prescriptions Prescription[]
+  prescriptions Prescription[]       @relation("PrescriptionCustomer")
 
   @@index([phone])
   @@index([name])

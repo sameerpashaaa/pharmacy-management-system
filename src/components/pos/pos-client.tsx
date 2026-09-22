@@ -959,6 +959,12 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
     clearCart,
     fetchProducts,
     toast,
+    needsH1Capture,
+    h1PatientName,
+    h1PatientAddress,
+    h1PatientPhone,
+    h1DoctorName,
+    h1DoctorRegNo,
   ])
 
   // ─── Held bills ────────────────────────────────────────────

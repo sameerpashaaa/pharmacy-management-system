@@ -14,7 +14,6 @@ export const ROUTES = {
 
   // POS
   POS: '/pos',
-  INVOICES: '/invoices',
 
   // Products
   PRODUCTS: '/products',
@@ -60,7 +59,6 @@ export const ROUTES = {
   CUSTOMERS: '/customers',
   CUSTOMERS_NEW: '/customers/new',
   CUSTOMER: (id: string) => `/customers/${id}`,
-  CUSTOMER_LEDGER: (id: string) => `/customers/${id}/ledger`,
 
   // Suppliers
   SUPPLIERS: '/suppliers',
@@ -84,12 +82,23 @@ export const ROUTES = {
   // Reports
   REPORTS: '/reports',
   REPORTS_SALES: '/reports/sales',
+  REPORTS_PURCHASES: '/reports/purchases',
   REPORTS_INVENTORY: '/reports/inventory',
+  REPORTS_FINANCIAL: '/reports/financial',
+  REPORTS_GST: '/gst/reports',
+  REPORTS_NARCOTICS: '/reports/narcotics',
+  REPORTS_SUPPLIER: '/reports/supplier',
+
+  // Compliance
+  COMPLIANCE_FORM35: '/compliance/form35',
 
   // Users & Roles
   USERS: '/users',
   USERS_NEW: '/users/new',
+  USER: (id: string) => `/users/${id}`,
   ROLES: '/roles',
+  ROLES_NEW: '/roles/new',
+  ROLE: (id: string) => `/roles/${id}`,
 
   // Audit
   AUDIT: '/audit',
@@ -97,9 +106,7 @@ export const ROUTES = {
   // Settings
   SETTINGS: '/settings',
   SETTINGS_ORGANIZATION: '/settings/organization',
-  SETTINGS_BRANCHES: '/settings/branches',
   SETTINGS_GENERAL: '/settings/general',
-  SETTINGS_POS: '/settings/pos',
 } as const
 
 // Routes that don't require authentication

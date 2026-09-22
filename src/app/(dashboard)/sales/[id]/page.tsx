@@ -12,30 +12,13 @@ import { PERMISSIONS } from '@/lib/constants/permissions'
 import { ROUTES } from '@/lib/constants/routes'
 import { resolveBranchScope } from '@/lib/inventory/branch-access'
 import { getSaleById } from '@/lib/sales/sales-service'
+import { PAYMENT_STATUS_META, SALE_STATUS_META } from '@/lib/sales/status-meta'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDateTime } from '@/lib/utils/date'
 
 import { SaleActionButtons } from './sale-action-buttons'
 
-const SALE_STATUS_META: Record<
-  string,
-  { label: string; variant: 'success' | 'warning' | 'destructive' | 'secondary' | 'default' }
-> = {
-  COMPLETED: { label: 'Completed', variant: 'success' },
-  CANCELLED: { label: 'Cancelled', variant: 'destructive' },
-  PARTIALLY_RETURNED: { label: 'Partially Returned', variant: 'warning' },
-  FULLY_RETURNED: { label: 'Fully Returned', variant: 'secondary' },
-}
 
-const PAYMENT_STATUS_META: Record<
-  string,
-  { label: string; variant: 'success' | 'warning' | 'info' | 'outline' | 'default' }
-> = {
-  PAID: { label: 'Paid', variant: 'success' },
-  PARTIAL: { label: 'Partial', variant: 'warning' },
-  CREDIT: { label: 'Credit', variant: 'info' },
-  OVERPAID: { label: 'Overpaid', variant: 'outline' },
-}
 
 export const metadata: Metadata = { title: 'Sale Details' }
 
@@ -61,6 +44,7 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
   const scope = await resolveBranchScope(session.user)
   const sale = await getSaleById(params.id, scope).catch((err) => {
     if (err instanceof Error && err.message.startsWith('Forbidden')) return null
+    if (err instanceof Error && err.message.startsWith('Not Found')) return null
     throw err
   })
   if (!sale) notFound()
@@ -89,7 +73,19 @@ export default async function SaleDetailPage({ params }: { params: { id: string 
           </div>
           <p className="text-muted-foreground">
             {formatDateTime(sale.saleDate)}
-            {sale.customer ? ` · ${sale.customer.name}` : ' · Walk-in customer'}
+            {sale.customer ? (
+              <>
+                {' · '}
+                <Link
+                  href={ROUTES.CUSTOMER(sale.customer.id)}
+                  className="font-medium text-primary hover:underline"
+                >
+                  {sale.customer.name}
+                </Link>
+              </>
+            ) : (
+              ' · Walk-in customer'
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">

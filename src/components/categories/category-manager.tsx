@@ -66,7 +66,7 @@ export function CategoryManager() {
     } finally {
       setLoading(false)
     }
-  }, [toast])
+  }, [])
 
   useEffect(() => {
     void refresh()

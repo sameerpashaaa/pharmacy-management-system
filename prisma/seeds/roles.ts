@@ -53,6 +53,7 @@ const ROLES = [
       'customers:create',
       'customers:read',
       'customers:update',
+      'customers:delete',
       'customers:payments',
       'suppliers:create',
       'suppliers:read',

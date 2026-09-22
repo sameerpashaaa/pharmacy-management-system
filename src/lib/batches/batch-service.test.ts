@@ -25,6 +25,7 @@ jest.mock('@/lib/db/prisma', () => ({
     batchStatusLog: { create: jest.fn() },
     batchDisposal: { create: jest.fn() },
     product: { findUnique: jest.fn() },
+    narcoticRegister: { findFirst: jest.fn(), create: jest.fn() },
     $transaction: jest.fn(),
   },
 }))
@@ -46,6 +47,7 @@ const prismaMock = prisma as unknown as {
   batchStatusLog: { create: jest.Mock }
   batchDisposal: { create: jest.Mock }
   product: { findUnique: jest.Mock }
+  narcoticRegister: { findFirst: jest.Mock; create: jest.Mock }
   $transaction: jest.Mock
 }
 
@@ -60,6 +62,9 @@ const txMock = {
   },
   batchStatusLog: { create: jest.fn() },
   batchDisposal: { create: jest.fn() },
+  narcoticRegister: { findFirst: jest.fn(), create: jest.fn() },
+  inventory: { findUnique: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
+  inventoryMovement: { create: jest.fn() },
 }
 
 const mockedAssertBranchAccess = assertBranchAccess as jest.Mock
@@ -411,6 +416,72 @@ describe('batch-service', () => {
       await expect(
         disposeBatch('missing', { quantity: 1, reason: 'DAMAGED' }, user)
       ).rejects.toThrow('Not Found: batch')
+    })
+
+    it('writes a DESTRUCTION narcotic register entry for narcotic batches', async () => {
+      txMock.batch.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        branchId: 'br-1',
+        productId: 'prod-nar',
+        quantity: 50,
+        reservedQuantity: 0,
+        soldQuantity: 0,
+      })
+      txMock.product.findUnique.mockResolvedValue({ drugSchedule: 'NARCOTIC_NDPS' })
+      txMock.narcoticRegister.findFirst.mockResolvedValue({ balanceQuantity: 100 })
+      txMock.narcoticRegister.create.mockResolvedValue({ id: 'nr-1' })
+      txMock.batchDisposal.create.mockResolvedValue({ id: 'disp-1' })
+      txMock.batch.findUniqueOrThrow.mockResolvedValue(batchFixture)
+
+      await disposeBatch('batch-1', { quantity: 5, reason: 'DAMAGED' }, user)
+
+      expect(txMock.narcoticRegister.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          branchId: 'br-1',
+          productId: 'prod-nar',
+          batchId: 'batch-1',
+          movementType: 'DESTRUCTION',
+          quantityIn: 0,
+          quantityOut: 5,
+          balanceQuantity: 95,
+          referenceType: 'DISPOSAL',
+          enteredById: 'u-1',
+        }),
+      })
+    })
+
+    it('skips the narcotic register entry for non-narcotic batches', async () => {
+      txMock.batch.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        branchId: 'br-1',
+        productId: 'prod-1',
+        quantity: 50,
+        reservedQuantity: 0,
+        soldQuantity: 0,
+      })
+      txMock.product.findUnique.mockResolvedValue({ drugSchedule: 'NONE' })
+      txMock.batch.findUniqueOrThrow.mockResolvedValue(batchFixture)
+
+      await disposeBatch('batch-1', { quantity: 5, reason: 'DAMAGED' }, user)
+
+      expect(txMock.narcoticRegister.create).not.toHaveBeenCalled()
+    })
+
+    it('skips the narcotic register entry when the batch has no branch', async () => {
+      txMock.batch.findUnique.mockResolvedValue({
+        status: 'ACTIVE',
+        branchId: null,
+        productId: 'prod-nar',
+        quantity: 50,
+        reservedQuantity: 0,
+        soldQuantity: 0,
+      })
+      txMock.product.findUnique.mockResolvedValue({ drugSchedule: 'NARCOTIC_NDPS' })
+      txMock.batch.findUniqueOrThrow.mockResolvedValue(batchFixture)
+
+      await disposeBatch('batch-1', { quantity: 5, reason: 'DAMAGED' }, user)
+
+      expect(txMock.narcoticRegister.create).not.toHaveBeenCalled()
     })
   })
 })

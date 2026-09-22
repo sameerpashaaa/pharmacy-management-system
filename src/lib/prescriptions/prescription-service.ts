@@ -29,8 +29,8 @@ const prescriptionInclude = {
   pharmacist: {
     select: { id: true, name: true, email: true },
   },
-  approvedBy: {
-    select: { id: true, name: true, phone: true },
+  customer: {
+    select: { id: true, name: true, phone: true, email: true },
   },
   sales: {
     select: {

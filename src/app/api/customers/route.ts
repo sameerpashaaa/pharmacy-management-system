@@ -1,48 +1,83 @@
+// ─────────────────────────────────────────────────────────────
+// API — /api/customers
+// ─────────────────────────────────────────────────────────────
+import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { ZodError } from 'zod'
 
-import { can, getSession } from '@/lib/auth/auth-helpers'
+import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { createCustomer, listCustomers } from '@/lib/customers/customer-service'
-import { customerListQuerySchema, customerSchema } from '@/lib/validations/customer'
+import { createCustomerSchema, customerListQuerySchema } from '@/lib/validations/customer'
 
-export async function GET(req: Request) {
+function errStatus(message: string): number {
+  if (message === 'Unauthorized') return 401
+  if (message.startsWith('Forbidden')) return 403
+  if (message.startsWith('Not Found')) return 404
+  if (message.startsWith('Conflict')) return 409
+  return 400
+}
+
+// GET /api/customers
+export async function GET(req: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    if (!(await can(PERMISSIONS.CUSTOMERS_READ))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const user = await requirePermission(PERMISSIONS.CUSTOMERS_READ)
+    const params = Object.fromEntries(req.nextUrl.searchParams)
+    const query = customerListQuerySchema.parse(params)
+    const result = await listCustomers(query, user)
+    return NextResponse.json({
+      success: true,
+      data: result.data,
+      pagination: result.pagination,
+    })
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION',
+            message: err.errors[0]?.message ?? 'Invalid input',
+            issues: err.flatten(),
+          },
+        },
+        { status: 400 }
+      )
     }
-
-    const { searchParams } = new URL(req.url)
-    const query = {
-      page: searchParams.get('page') ? Number(searchParams.get('page')) : undefined,
-      limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined,
-      search: searchParams.get('search') || undefined,
-    }
-
-    const parsed = customerListQuerySchema.parse(query)
-    const result = await listCustomers(parsed, session.user)
-    return NextResponse.json({ success: true, ...result })
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 400 })
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json(
+      { success: false, error: { code: 'ERROR', message } },
+      { status: errStatus(message) }
+    )
   }
 }
 
-export async function POST(req: Request) {
+// POST /api/customers
+export async function POST(req: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    if (!(await can(PERMISSIONS.CUSTOMERS_CREATE))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const user = await requirePermission(PERMISSIONS.CUSTOMERS_CREATE)
+    const body: unknown = await req.json()
+    const data = createCustomerSchema.parse(body)
+    const customer = await createCustomer(data, user)
+    return NextResponse.json({ success: true, data: customer }, { status: 201 })
+  } catch (err) {
+    if (err instanceof ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION',
+            message: err.errors[0]?.message ?? 'Invalid input',
+            issues: err.flatten(),
+          },
+        },
+        { status: 400 }
+      )
     }
-
-    const body = await req.json()
-    const parsed = customerSchema.parse(body)
-    const result = await createCustomer(parsed, session.user)
-    return NextResponse.json({ success: true, data: result })
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 400 })
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json(
+      { success: false, error: { code: 'ERROR', message } },
+      { status: errStatus(message) }
+    )
   }
 }

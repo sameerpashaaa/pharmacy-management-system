@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { ROUTES } from '@/lib/constants/routes'
 
 export const metadata: Metadata = { title: 'Reports & Analytics' }
 
@@ -9,22 +10,22 @@ const reports = [
   {
     title: 'Sales & Financial Reports',
     description: 'View daily revenue, tax, and discount breakdowns.',
-    href: '/reports/sales',
+    href: ROUTES.REPORTS_SALES,
   },
   {
     title: 'Inventory & Stock Position',
     description: 'View daily stock position, near-expiry, and consumption reports.',
-    href: '/reports/inventory',
+    href: ROUTES.REPORTS_INVENTORY,
   },
   {
     title: 'Supplier Performance',
     description: 'Track supplier fulfillment rates and outstanding balances.',
-    href: '/reports/supplier',
+    href: ROUTES.REPORTS_SUPPLIER,
   },
   {
     title: 'Narcotic Register',
     description: 'Audit log for Schedule X and H1 drugs.',
-    href: '/reports/narcotics',
+    href: ROUTES.REPORTS_NARCOTICS,
   },
 ]
 

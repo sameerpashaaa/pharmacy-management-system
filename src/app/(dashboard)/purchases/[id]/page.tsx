@@ -153,48 +153,62 @@ export default async function PurchaseDetailPage({ params }: Props) {
       <Card>
         <CardHeader>
           <CardTitle>Order Items</CardTitle>
+          <CardDescription>
+            {purchase.items.length} line item{purchase.items.length === 1 ? '' : 's'} on this
+            purchase order
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-2 font-medium">Product</th>
-                  <th className="pb-2 font-medium">SKU</th>
-                  <th className="pb-2 text-right font-medium">Ordered</th>
-                  <th className="pb-2 text-right font-medium">Received</th>
-                  <th className="pb-2 text-right font-medium">Unit Cost</th>
-                  <th className="pb-2 text-right font-medium">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {purchase.items.map((item) => (
-                  <tr key={item.id} className="border-b last:border-0">
-                    <td className="py-2 font-medium">{item.product.name}</td>
-                    <td className="py-2 text-muted-foreground">{item.product.sku}</td>
-                    <td className="py-2 text-right">{item.orderedQuantity}</td>
-                    <td className="py-2 text-right">
-                      <span
-                        className={
-                          item.receivedQuantity >= item.orderedQuantity
-                            ? 'text-green-600'
-                            : 'text-amber-600'
-                        }
-                      >
-                        {item.receivedQuantity}
-                      </span>
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {formatCurrency(item.unitCost.toString())}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {formatCurrency(item.totalAmount.toString())}
-                    </td>
+          {purchase.items.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center rounded-md border border-dashed text-center text-sm text-muted-foreground">
+              <p>No items recorded on this purchase order.</p>
+              <p className="mt-1 text-xs">
+                Items are created when the purchase order is placed (Draft → Ordered). This order
+                is in <span className="font-mono">{statusMeta.label}</span> state.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="pb-2 font-medium">Product</th>
+                    <th className="pb-2 font-medium">SKU</th>
+                    <th className="pb-2 text-right font-medium">Ordered</th>
+                    <th className="pb-2 text-right font-medium">Received</th>
+                    <th className="pb-2 text-right font-medium">Unit Cost</th>
+                    <th className="pb-2 text-right font-medium">Total</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {purchase.items.map((item) => (
+                    <tr key={item.id} className="border-b last:border-0">
+                      <td className="py-2 font-medium">{item.product.name}</td>
+                      <td className="py-2 text-muted-foreground">{item.product.sku}</td>
+                      <td className="py-2 text-right">{item.orderedQuantity}</td>
+                      <td className="py-2 text-right">
+                        <span
+                          className={
+                            item.receivedQuantity >= item.orderedQuantity
+                              ? 'text-green-600'
+                              : 'text-amber-600'
+                          }
+                        >
+                          {item.receivedQuantity}
+                        </span>
+                      </td>
+                      <td className="py-2 text-right tabular-nums">
+                        {formatCurrency(item.unitCost.toString())}
+                      </td>
+                      <td className="py-2 text-right tabular-nums">
+                        {formatCurrency(item.totalAmount.toString())}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -17,6 +17,7 @@ import type {
   Prisma,
   Product,
 } from '@prisma/client'
+import { NarcoticMovementType } from '@prisma/client'
 
 import prisma from '@/lib/db/prisma'
 import { assertBranchAccess, type AuthUser } from '@/lib/inventory/branch-access'
@@ -173,10 +174,7 @@ export async function getBatches(params: BatchListParams = {}): Promise<BatchLis
   }
 }
 
-export async function getBatchById(
-  id: string,
-  user?: AuthUser
-): Promise<BatchDetailItem | null> {
+export async function getBatchById(id: string, user?: AuthUser): Promise<BatchDetailItem | null> {
   await expireDueBatches()
 
   const batch = await prisma.batch.findUnique({ where: { id }, include: detailInclude })
@@ -410,9 +408,7 @@ export async function disposeBatch(
             referenceType: 'WRITE_OFF',
             referenceId: disposal.id,
             batchId: id,
-            notes: `Batch disposal: ${input.reason}${
-              input.notes ? ` — ${input.notes}` : ''
-            }`,
+            notes: `Batch disposal: ${input.reason}${input.notes ? ` — ${input.notes}` : ''}`,
             createdById: user.id,
           },
         })
@@ -443,6 +439,45 @@ export async function disposeBatch(
         data: { quantity: nextQuantity },
       })
       if (result.count === 0) throw new Error('Conflict: batch state changed, please retry')
+    }
+
+    // ─── Narcotic Register — DESTRUCTION ─────────────────────────
+    // Disposing a narcotic batch must extend the register chain, using the
+    // same running-balance semantics as the other narcotic movements.
+    // Batches without a branch cannot join a branch-scoped balance chain,
+    // so the entry is skipped there (mirrors the inventory reconcile above).
+    if (existing.branchId) {
+      const product = await tx.product.findUnique({
+        where: { id: existing.productId },
+        select: { drugSchedule: true },
+      })
+      if (product?.drugSchedule === 'NARCOTIC_NDPS') {
+        const prevNarcotic = await tx.narcoticRegister.findFirst({
+          where: {
+            branchId: existing.branchId,
+            productId: existing.productId,
+          },
+          orderBy: { entryDate: 'desc' },
+          select: { balanceQuantity: true },
+        })
+        const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
+        await tx.narcoticRegister.create({
+          data: {
+            branchId: existing.branchId,
+            productId: existing.productId,
+            batchId: id,
+            movementType: NarcoticMovementType.DESTRUCTION,
+            quantityIn: 0,
+            quantityOut: input.quantity,
+            balanceQuantity: prevBalance - input.quantity,
+            referenceType: 'DISPOSAL',
+            referenceId: disposal.id,
+            enteredById: user.id,
+            entryDate: new Date(),
+          },
+        })
+      }
     }
 
     return tx.batch.findUniqueOrThrow({ where: { id }, include: detailInclude })

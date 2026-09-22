@@ -1,37 +1,30 @@
+import { ChevronLeft } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 
 import { CustomerForm } from '@/components/customers/customer-form'
-import { Button } from '@/components/ui/button'
-import { can, getSession } from '@/lib/auth/auth-helpers'
+import { requirePermission } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
-import { ROUTES } from '@/lib/constants/routes'
 
 export const metadata: Metadata = { title: 'New Customer' }
 
-export default async function NewCustomerPage() {
-  const [canCreate, session] = await Promise.all([can(PERMISSIONS.CUSTOMERS_CREATE), getSession()])
+export const dynamic = 'force-dynamic'
 
-  if (!canCreate || !session?.user) {
-    redirect(ROUTES.CUSTOMERS)
-  }
+export default async function AddNewCustomerPage() {
+  await requirePermission(PERMISSIONS.CUSTOMERS_CREATE)
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button asChild variant="outline" size="sm">
-          <Link href={ROUTES.CUSTOMERS}>&larr; Back</Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">New Customer</h1>
-          <p className="text-muted-foreground">Add a new customer to the database</p>
-        </div>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link href="/customers" className="inline-flex items-center hover:text-foreground">
+          <ChevronLeft className="h-4 w-4" /> Customers
+        </Link>
       </div>
-
-      <div className="mx-auto max-w-3xl rounded-lg border bg-card p-6 shadow-sm">
-        <CustomerForm />
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Add New Customer</h1>
+        <p className="text-muted-foreground">Capture customer identity, contact and credit terms</p>
       </div>
+      <CustomerForm mode="create" />
     </div>
   )
 }

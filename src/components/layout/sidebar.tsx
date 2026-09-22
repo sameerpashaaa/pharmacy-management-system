@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   ScrollText,
   Shield,
+  Building,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -31,11 +32,7 @@ import { useMemo } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ROUTES } from '@/lib/constants/routes'
 import { cn } from '@/lib/utils/cn'
 
@@ -44,6 +41,10 @@ type NavItem = {
   href?: string
   icon: React.ElementType
   permission?: string
+  children?: NavChild[]
+}
+
+type NavChild = Omit<NavItem, 'children'> & {
   children?: Omit<NavItem, 'children'>[]
 }
 
@@ -56,7 +57,12 @@ const NAV_ITEMS: NavItem[] = [
     permission: 'products:read',
     children: [
       { label: 'All Products', href: ROUTES.PRODUCTS, icon: Package, permission: 'products:read' },
-      { label: 'Categories', href: ROUTES.CATEGORIES, icon: ClipboardList, permission: 'categories:manage' },
+      {
+        label: 'Categories',
+        href: ROUTES.CATEGORIES,
+        icon: ClipboardList,
+        permission: 'categories:manage',
+      },
     ],
   },
   {
@@ -64,9 +70,24 @@ const NAV_ITEMS: NavItem[] = [
     icon: BarChart3,
     permission: 'inventory:read',
     children: [
-      { label: 'Stock Overview', href: ROUTES.INVENTORY, icon: BarChart3, permission: 'inventory:read' },
-      { label: 'Adjustments', href: ROUTES.INVENTORY_ADJUSTMENTS, icon: ScrollText, permission: 'inventory:read' },
-      { label: 'Movements', href: ROUTES.INVENTORY_MOVEMENTS, icon: TrendingDown, permission: 'inventory:read' },
+      {
+        label: 'Stock Overview',
+        href: ROUTES.INVENTORY,
+        icon: BarChart3,
+        permission: 'inventory:read',
+      },
+      {
+        label: 'Adjustments',
+        href: ROUTES.INVENTORY_ADJUSTMENTS,
+        icon: ScrollText,
+        permission: 'inventory:read',
+      },
+      {
+        label: 'Movements',
+        href: ROUTES.INVENTORY_MOVEMENTS,
+        icon: TrendingDown,
+        permission: 'inventory:read',
+      },
       { label: 'Batches', href: ROUTES.BATCHES, icon: Package, permission: 'batches:read' },
     ],
   },
@@ -75,7 +96,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: Truck,
     permission: 'purchases:read',
     children: [
-      { label: 'All Purchases', href: ROUTES.PURCHASES, icon: ClipboardList, permission: 'purchases:read' },
+      {
+        label: 'All Purchases',
+        href: ROUTES.PURCHASES,
+        icon: ClipboardList,
+        permission: 'purchases:read',
+      },
       { label: 'Suppliers', href: ROUTES.SUPPLIERS, icon: Building2, permission: 'suppliers:read' },
     ],
   },
@@ -85,7 +111,12 @@ const NAV_ITEMS: NavItem[] = [
     permission: 'sales:read',
     children: [
       { label: 'Sales History', href: ROUTES.SALES, icon: Receipt, permission: 'sales:read' },
-      { label: 'Prescriptions', href: ROUTES.PRESCRIPTIONS, icon: FileText, permission: 'prescriptions:read' },
+      {
+        label: 'Prescriptions',
+        href: ROUTES.PRESCRIPTIONS,
+        icon: FileText,
+        permission: 'prescriptions:read',
+      },
       { label: 'Customers', href: ROUTES.CUSTOMERS, icon: UserCheck, permission: 'customers:read' },
     ],
   },
@@ -96,11 +127,22 @@ const NAV_ITEMS: NavItem[] = [
     icon: BadgeDollarSign,
     permission: 'finance:read',
     children: [
-      { label: 'Overview', href: ROUTES.FINANCE, icon: BadgeDollarSign, permission: 'finance:read' },
+      {
+        label: 'Overview',
+        href: ROUTES.FINANCE,
+        icon: BadgeDollarSign,
+        permission: 'finance:read',
+      },
       { label: 'GST Reports', href: ROUTES.GST, icon: FileText, permission: 'gst:read' },
     ],
   },
   { label: 'Reports', href: ROUTES.REPORTS, icon: BarChart3, permission: 'reports:sales' },
+  {
+    label: 'Compliance',
+    href: ROUTES.COMPLIANCE_FORM35,
+    icon: ScrollText,
+    permission: 'reports:export',
+  },
   {
     label: 'Admin',
     icon: Shield,
@@ -108,7 +150,20 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'Users', href: ROUTES.USERS, icon: Users, permission: 'users:read' },
       { label: 'Roles', href: ROUTES.ROLES, icon: Shield, permission: 'roles:manage' },
       { label: 'Audit Logs', href: ROUTES.AUDIT, icon: ScrollText, permission: 'audit:read' },
-      { label: 'Settings', href: ROUTES.SETTINGS, icon: Settings, permission: 'settings:read' },
+      {
+        label: 'Settings',
+        icon: Settings,
+        permission: 'settings:read',
+        children: [
+          { label: 'Overview', href: ROUTES.SETTINGS, icon: Settings, permission: 'settings:read' },
+          {
+            label: 'Organization',
+            href: ROUTES.SETTINGS_ORGANIZATION,
+            icon: Building,
+            permission: 'organization:update',
+          },
+        ],
+      },
     ],
   },
 ]
@@ -219,7 +274,12 @@ export function Sidebar() {
             <p className="truncate text-xs text-muted-foreground">{session?.user?.email}</p>
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-destructive hover:text-destructive" onClick={handleLogout}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 text-destructive hover:text-destructive"
+          onClick={handleLogout}
+        >
           <LogOut className="h-4 w-4" />
           Sign Out
         </Button>

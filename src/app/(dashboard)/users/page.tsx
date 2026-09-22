@@ -1,17 +1,23 @@
-﻿import type { Metadata } from 'next'
+import type { Metadata } from 'next'
+
+import { UsersView } from '@/components/users/users-view'
+import { requirePermission } from '@/lib/auth/auth-helpers'
+import { PERMISSIONS } from '@/lib/constants/permissions'
 
 export const metadata: Metadata = { title: 'User Management' }
 
-export default function UserManagementPage() {
+export const dynamic = 'force-dynamic'
+
+export default async function UserManagementPage() {
+  await requirePermission(PERMISSIONS.USERS_READ)
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
-        <p className="text-muted-foreground">Manage system users and their access</p>
+        <p className="text-muted-foreground">Manage system users and their role assignments</p>
       </div>
-      <div className="flex h-64 items-center justify-center rounded-lg border-2 border-dashed border-muted">
-        <p className="text-muted-foreground">Coming in Phase 1 (Active)</p>
-      </div>
+      <UsersView />
     </div>
   )
 }

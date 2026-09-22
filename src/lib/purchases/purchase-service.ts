@@ -6,7 +6,7 @@ import type {
   Supplier,
   Payment,
 } from '@prisma/client'
-import { GstTxType, Prisma } from '@prisma/client'
+import { GstTxType, Prisma, NarcoticMovementType } from '@prisma/client'
 import type { z } from 'zod'
 
 import prisma from '@/lib/db/prisma'
@@ -1236,6 +1236,43 @@ export async function createPurchaseReturn(
         await tx.batch.update({
           where: { id: retItem.batchId },
           data: { quantity: { decrement: retItem.quantity } },
+        })
+      }
+
+      // ─── Narcotic Register — RETURN_TO_SUPPLIER ──────────────────────
+      const product = await tx.product.findUnique({
+        where: { id: poItem.productId },
+        select: { drugSchedule: true },
+      })
+      if (product?.drugSchedule === 'NARCOTIC_NDPS') {
+        if (!retItem.batchId) {
+          throw new Error('Batch ID is required for narcotic supplier returns')
+        }
+        // Fetch previous narcotic register balance for this branch + product
+        const prevNarcotic = await tx.narcoticRegister.findFirst({
+          where: {
+            branchId: purchase.branchId,
+            productId: poItem.productId,
+          },
+          orderBy: { entryDate: 'desc' },
+          select: { balanceQuantity: true },
+        })
+        const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
+        await tx.narcoticRegister.create({
+          data: {
+            branchId: purchase.branchId,
+            productId: poItem.productId,
+            batchId: retItem.batchId,
+            movementType: NarcoticMovementType.RETURN_TO_SUPPLIER,
+            quantityIn: 0,
+            quantityOut: retItem.quantity,
+            balanceQuantity: prevBalance - retItem.quantity,
+            referenceType: 'PURCHASE_RETURN',
+            referenceId: purchaseReturn.id,
+            enteredById: actor.id,
+            entryDate: new Date(data.returnDate),
+          },
         })
       }
     }

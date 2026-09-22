@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 
 import prisma from '@/lib/db/prisma'
+import { runWithRetry } from '@/lib/db/retry'
 import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
 import type {
@@ -69,288 +70,373 @@ const saleReturnInclude = {
 
 export async function createSaleReturn(input: CreateSaleReturnInput, actor: ReturnActor) {
   await ensureDefaultLedgers()
-  const sale = await prisma.sale.findUnique({
-    where: { id: input.saleId },
-    include: {
-      items: {
-        include: {
-          itemBatches: true,
-        },
-      },
-      customer: true,
-    },
-  })
-
-  if (!sale) {
-    throw new Error('Not Found: sale')
-  }
-
-  await assertBranchAccess(actor, sale.branchId)
-
-  if (sale.status === 'CANCELLED') {
-    throw new Error('Cannot return items for a cancelled sale')
-  }
-
-  if (sale.status === 'FULLY_RETURNED') {
-    throw new Error('Sale has already been fully returned')
-  }
-
-  // Validate items and compute totals
-  const itemMap = new Map(sale.items.map((i) => [i.id, i]))
-  let returnTotalAmount = 0
-
-  const processedLines: {
-    saleItemId: string
-    productId: string
-    quantity: number
-    unitPrice: number
-    totalAmount: number
-    restockDecision: 'RESTOCK' | 'QUARANTINE' | 'DAMAGE_WRITE_OFF'
-    batchId: string | null
-  }[] = []
-
-  for (const line of input.items) {
-    const saleItem = itemMap.get(line.saleItemId)
-    if (!saleItem) {
-      throw new Error(`Sale item '${line.saleItemId}' not found on this invoice`)
-    }
-
-    const remaining = saleItem.quantity - saleItem.returnedQuantity
-    if (line.quantity > remaining) {
-      throw new Error(
-        `Cannot return ${line.quantity} units; only ${remaining} units remain unreturned for '${saleItem.productName}'`
-      )
-    }
-
-    const netUnit = Number(saleItem.totalAmount) / saleItem.quantity
-    const lineTotal = Math.round(netUnit * line.quantity * 100) / 100
-    returnTotalAmount += lineTotal
-
-    const resolvedBatchId = line.batchId ?? saleItem.itemBatches[0]?.batchId ?? null
-
-    processedLines.push({
-      saleItemId: line.saleItemId,
-      productId: saleItem.productId,
-      quantity: line.quantity,
-      unitPrice: netUnit,
-      totalAmount: lineTotal,
-      restockDecision: line.restockDecision ?? 'RESTOCK',
-      batchId: resolvedBatchId,
-    })
-  }
-
-  returnTotalAmount = Math.round(returnTotalAmount * 100) / 100
-  const returnNumber = generateReturnNumber()
 
   const isCredit = input.refundMethod === 'CREDIT'
   const returnStatus = isCredit ? 'CREDITED' : 'REFUNDED'
 
-  const result = await prisma.$transaction(async (tx) => {
-    // 1. Create SaleReturn header & items
-    const saleReturn = await tx.saleReturn.create({
-      data: {
-        returnNumber,
-        saleId: sale.id,
-        customerId: sale.customerId,
-        reason: input.reason,
-        totalAmount: returnTotalAmount,
-        status: returnStatus,
-        refundMethod: input.refundMethod,
-        refundRef: input.refundRef,
-        notes: input.notes,
-        processedById: actor.id,
-        items: {
-          create: processedLines.map((l) => ({
-            saleItemId: l.saleItemId,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-            totalAmount: l.totalAmount,
-            restockDecision: l.restockDecision,
-            batchId: l.batchId,
-          })),
-        },
-      },
-    })
+  // Serializable isolation + the shared P2002/P2034 retry policy make the
+  // read-validate-write cycle atomic against concurrent returns and
+  // cancels: a conflicting transaction aborts (P2034) and re-runs against
+  // the freshly committed state, so the return cap and the cancellation
+  // status guards always operate on live data (same contract as
+  // createSale / cancelSale).
+  const result = await runWithRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        // ─── Fresh serialized snapshot — every business rule reads live state ───
+        const sale = await tx.sale.findUnique({
+          where: { id: input.saleId },
+          include: {
+            items: {
+              include: {
+                itemBatches: true,
+                product: { select: { drugSchedule: true } },
+              },
+            },
+            customer: true,
+          },
+        })
 
-    // 2. Increment returnedQuantity on each SaleItem
-    for (const line of processedLines) {
-      await tx.saleItem.update({
-        where: { id: line.saleItemId },
-        data: {
-          returnedQuantity: { increment: line.quantity },
-        },
-      })
+        if (!sale) {
+          throw new Error('Not Found: sale')
+        }
 
-      // 3. Handle Restock
-      if (line.restockDecision === 'RESTOCK') {
-        // Re-credit Inventory
-        const inv = await tx.inventory.upsert({
-          where: {
-            productId_branchId: {
-              productId: line.productId,
-              branchId: sale.branchId,
+        await assertBranchAccess(actor, sale.branchId)
+
+        if (sale.status === 'CANCELLED') {
+          throw new Error('Cannot return items for a cancelled sale')
+        }
+
+        if (sale.status === 'FULLY_RETURNED') {
+          throw new Error('Sale has already been fully returned')
+        }
+
+        // Validate items and compute totals
+        const itemMap = new Map(sale.items.map((i) => [i.id, i]))
+        let returnTotalAmount = 0
+
+        const processedLines: {
+          saleItemId: string
+          productId: string
+          quantity: number
+          unitPrice: number
+          totalAmount: number
+          restockDecision: 'RESTOCK' | 'QUARANTINE' | 'DAMAGE_WRITE_OFF'
+          isNarcotic: boolean
+          batchId: string | null
+        }[] = []
+
+        for (const line of input.items) {
+          const saleItem = itemMap.get(line.saleItemId)
+          if (!saleItem) {
+            throw new Error(`Sale item '${line.saleItemId}' not found on this invoice`)
+          }
+
+          const remaining = saleItem.quantity - saleItem.returnedQuantity
+          if (line.quantity > remaining) {
+            throw new Error(
+              `Cannot return ${line.quantity} units; only ${remaining} units remain unreturned for '${saleItem.productName}'`
+            )
+          }
+
+          const netUnit = Number(saleItem.totalAmount) / saleItem.quantity
+          const lineTotal = Math.round(netUnit * line.quantity * 100) / 100
+          returnTotalAmount += lineTotal
+
+          const restockDecision = line.restockDecision ?? 'RESTOCK'
+          const resolvedBatchId = line.batchId ?? saleItem.itemBatches[0]?.batchId ?? null
+          const isNarcotic = saleItem.product?.drugSchedule === 'NARCOTIC_NDPS'
+
+          // ─── Narcotic fail-closed batch requirement ─────────────────
+          // A narcotic RESTOCK restores narcotic stock and requires a
+          // D2-G register entry, which must reference a batch. Reject
+          // unresolvable batches before any durable mutation (mirrors the
+          // D2-C principle for narcotic supplier returns).
+          if (isNarcotic && restockDecision === 'RESTOCK' && !resolvedBatchId) {
+            throw new Error('Batch ID is required for narcotic customer returns')
+          }
+
+          processedLines.push({
+            saleItemId: line.saleItemId,
+            productId: saleItem.productId,
+            quantity: line.quantity,
+            unitPrice: netUnit,
+            totalAmount: lineTotal,
+            restockDecision,
+            isNarcotic,
+            batchId: resolvedBatchId,
+          })
+        }
+
+        returnTotalAmount = Math.round(returnTotalAmount * 100) / 100
+        // Generated inside the transaction so a P2002 retry re-rolls a
+        // fresh number instead of retrying with a doomed one.
+        const returnNumber = generateReturnNumber()
+
+        // 1. Create SaleReturn header & items
+        const saleReturn = await tx.saleReturn.create({
+          data: {
+            returnNumber,
+            saleId: sale.id,
+            customerId: sale.customerId,
+            reason: input.reason,
+            totalAmount: returnTotalAmount,
+            status: returnStatus,
+            refundMethod: input.refundMethod,
+            refundRef: input.refundRef,
+            notes: input.notes,
+            processedById: actor.id,
+            items: {
+              create: processedLines.map((l) => ({
+                saleItemId: l.saleItemId,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                totalAmount: l.totalAmount,
+                restockDecision: l.restockDecision,
+                batchId: l.batchId,
+              })),
             },
           },
-          update: {
-            totalQuantity: { increment: line.quantity },
-            availableQuantity: { increment: line.quantity },
-          },
-          create: {
-            productId: line.productId,
-            branchId: sale.branchId,
-            totalQuantity: line.quantity,
-            availableQuantity: line.quantity,
-          },
         })
 
-        // Record Inventory Movement
-        await tx.inventoryMovement.create({
-          data: {
-            inventoryId: inv.id,
-            type: 'RETURN_IN',
-            quantity: line.quantity,
-            quantityBefore: inv.totalQuantity - line.quantity,
-            quantityAfter: inv.totalQuantity,
-            referenceType: 'SALE_RETURN',
-            referenceId: saleReturn.id,
-            batchId: line.batchId,
-            createdById: actor.id,
-            notes: `Customer return ${returnNumber} for invoice ${sale.invoiceNumber}`,
-          },
-        })
-
-        // Re-credit Batch if identified
-        if (line.batchId) {
-          const batch = await tx.batch.findUnique({
-            where: { id: line.batchId },
+        // 2. Increment returnedQuantity on each SaleItem
+        for (const line of processedLines) {
+          await tx.saleItem.update({
+            where: { id: line.saleItemId },
+            data: {
+              returnedQuantity: { increment: line.quantity },
+            },
           })
-          if (batch) {
-            const newStatus =
-              batch.status === 'EXHAUSTED' && batch.expiryDate > new Date()
-                ? 'ACTIVE'
-                : batch.status
 
-            await tx.batch.update({
-              where: { id: line.batchId },
-              data: {
-                quantity: { increment: line.quantity },
-                soldQuantity: { decrement: line.quantity },
-                status: newStatus,
+          // 3. Handle Restock
+          if (line.restockDecision === 'RESTOCK') {
+            // Re-credit Inventory
+            const inv = await tx.inventory.upsert({
+              where: {
+                productId_branchId: {
+                  productId: line.productId,
+                  branchId: sale.branchId,
+                },
               },
+              update: {
+                totalQuantity: { increment: line.quantity },
+                availableQuantity: { increment: line.quantity },
+              },
+              create: {
+                productId: line.productId,
+                branchId: sale.branchId,
+                totalQuantity: line.quantity,
+                availableQuantity: line.quantity,
+              },
+            })
+
+            // Record Inventory Movement
+            await tx.inventoryMovement.create({
+              data: {
+                inventoryId: inv.id,
+                type: 'RETURN_IN',
+                quantity: line.quantity,
+                quantityBefore: inv.totalQuantity - line.quantity,
+                quantityAfter: inv.totalQuantity,
+                referenceType: 'SALE_RETURN',
+                referenceId: saleReturn.id,
+                batchId: line.batchId,
+                createdById: actor.id,
+                notes: `Customer return ${returnNumber} for invoice ${sale.invoiceNumber}`,
+              },
+            })
+
+            // Re-credit Batch if identified
+            if (line.batchId) {
+              const batch = await tx.batch.findUnique({
+                where: { id: line.batchId },
+              })
+              if (batch) {
+                const newStatus =
+                  batch.status === 'EXHAUSTED' && batch.expiryDate > new Date()
+                    ? 'ACTIVE'
+                    : batch.status
+
+                await tx.batch.update({
+                  where: { id: line.batchId },
+                  data: {
+                    quantity: { increment: line.quantity },
+                    soldQuantity: { decrement: line.quantity },
+                    status: newStatus,
+                  },
+                })
+              }
+            }
+          } else if (line.restockDecision === 'DAMAGE_WRITE_OFF') {
+            const inv = await tx.inventory.findUnique({
+              where: {
+                productId_branchId: {
+                  productId: line.productId,
+                  branchId: sale.branchId,
+                },
+              },
+            })
+
+            if (inv) {
+              await tx.inventoryMovement.create({
+                data: {
+                  inventoryId: inv.id,
+                  type: 'WRITE_OFF',
+                  quantity: line.quantity,
+                  quantityBefore: inv.totalQuantity,
+                  quantityAfter: inv.totalQuantity,
+                  referenceType: 'SALE_RETURN',
+                  referenceId: saleReturn.id,
+                  batchId: line.batchId,
+                  createdById: actor.id,
+                  notes: `Damaged return write-off for ${returnNumber}`,
+                },
+              })
+            }
+          }
+        }
+
+        // ─── Narcotic Register — SALE_RETURN (RESTOCK only) ─────────
+        // Restocking a narcotic return extends the D2-G balance chain the
+        // same way D1 cancellation does: credit the branch+product balance
+        // by the returned quantity inside the same transaction. Quantities
+        // are aggregated per productId + batchId so the NarcoticRegister
+        // @@unique([referenceType, referenceId, productId, batchId]) cannot
+        // be violated by multiple lines of the same product/batch within
+        // one SaleReturn. Only RESTOCK restores physical stock, so
+        // QUARANTINE / DAMAGE_WRITE_OFF and non-narcotic lines write nothing.
+        const narcoticRestock = new Map<
+          string,
+          { productId: string; batchId: string; quantity: number }
+        >()
+        for (const line of processedLines) {
+          if (!line.isNarcotic || line.restockDecision !== 'RESTOCK' || !line.batchId) continue
+          const key = `${line.productId}:${line.batchId}`
+          const existing = narcoticRestock.get(key)
+          if (existing) {
+            existing.quantity += line.quantity
+          } else {
+            narcoticRestock.set(key, {
+              productId: line.productId,
+              batchId: line.batchId,
+              quantity: line.quantity,
             })
           }
         }
-      } else if (line.restockDecision === 'DAMAGE_WRITE_OFF') {
-        const inv = await tx.inventory.findUnique({
-          where: {
-            productId_branchId: {
-              productId: line.productId,
+
+        for (const group of narcoticRestock.values()) {
+          const prevNarcotic = await tx.narcoticRegister.findFirst({
+            where: {
               branchId: sale.branchId,
+              productId: group.productId,
+            },
+            orderBy: { entryDate: 'desc' },
+            select: { balanceQuantity: true },
+          })
+          const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+
+          await tx.narcoticRegister.create({
+            data: {
+              branchId: sale.branchId,
+              productId: group.productId,
+              batchId: group.batchId,
+              movementType: 'RETURN_TO_SUPPLIER',
+              quantityIn: group.quantity,
+              quantityOut: 0,
+              balanceQuantity: prevBalance + group.quantity,
+              referenceType: 'SALE_RETURN',
+              referenceId: saleReturn.id,
+              enteredById: actor.id,
+              entryDate: new Date(),
+            },
+          })
+        }
+
+        // 4. Update Sale Status
+        const allSaleItems = await tx.saleItem.findMany({
+          where: { saleId: sale.id },
+        })
+        const isFullyReturned = allSaleItems.every((item) => item.returnedQuantity >= item.quantity)
+        await tx.sale.update({
+          where: { id: sale.id },
+          data: {
+            status: isFullyReturned ? 'FULLY_RETURNED' : 'PARTIALLY_RETURNED',
+          },
+        })
+
+        // 5. If Credit Note, issue CreditNote
+        if (isCredit) {
+          const noteNumber = generateCreditNoteNumber()
+          const expiresAt = new Date()
+          expiresAt.setFullYear(expiresAt.getFullYear() + 1)
+
+          await tx.creditNote.create({
+            data: {
+              noteNumber,
+              saleReturnId: saleReturn.id,
+              customerId: sale.customerId,
+              amount: returnTotalAmount,
+              balanceUsed: 0,
+              status: 'ACTIVE',
+              expiresAt,
+            },
+          })
+
+          // If customer profile exists, update ledger
+          if (sale.customerId) {
+            const customer = await tx.customer.findUnique({
+              where: { id: sale.customerId },
+              select: { outstandingBalance: true },
+            })
+            if (customer) {
+              const newBalance = customer.outstandingBalance.sub(returnTotalAmount)
+
+              await tx.customer.update({
+                where: { id: sale.customerId },
+                data: { outstandingBalance: newBalance },
+              })
+
+              await tx.customerLedger.create({
+                data: {
+                  customerId: sale.customerId,
+                  type: 'CREDIT',
+                  entryDate: new Date(),
+                  description: `Credit note ${noteNumber} for return ${returnNumber}`,
+                  amount: returnTotalAmount,
+                  balance: newBalance,
+                  referenceType: 'SALE_RETURN',
+                  referenceId: saleReturn.id,
+                },
+              })
+            }
+          }
+        }
+
+        // 6. Record Audit Log
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            action: 'SALE_RETURN_CREATE',
+            entity: 'SaleReturn',
+            entityId: saleReturn.id,
+            newData: {
+              returnNumber,
+              saleId: sale.id,
+              invoiceNumber: sale.invoiceNumber,
+              totalAmount: returnTotalAmount,
+              refundMethod: input.refundMethod,
             },
           },
         })
 
-        if (inv) {
-          await tx.inventoryMovement.create({
-            data: {
-              inventoryId: inv.id,
-              type: 'WRITE_OFF',
-              quantity: line.quantity,
-              quantityBefore: inv.totalQuantity,
-              quantityAfter: inv.totalQuantity,
-              referenceType: 'SALE_RETURN',
-              referenceId: saleReturn.id,
-              batchId: line.batchId,
-              createdById: actor.id,
-              notes: `Damaged return write-off for ${returnNumber}`,
-            },
-          })
-        }
-      }
-    }
-
-    // 4. Update Sale Status
-    const allSaleItems = await tx.saleItem.findMany({
-      where: { saleId: sale.id },
-    })
-    const isFullyReturned = allSaleItems.every((item) => item.returnedQuantity >= item.quantity)
-    await tx.sale.update({
-      where: { id: sale.id },
-      data: {
-        status: isFullyReturned ? 'FULLY_RETURNED' : 'PARTIALLY_RETURNED',
-      },
-    })
-
-    // 5. If Credit Note, issue CreditNote
-    if (isCredit) {
-      const noteNumber = generateCreditNoteNumber()
-      const expiresAt = new Date()
-      expiresAt.setFullYear(expiresAt.getFullYear() + 1)
-
-      await tx.creditNote.create({
-        data: {
-          noteNumber,
-          saleReturnId: saleReturn.id,
-          customerId: sale.customerId,
-          amount: returnTotalAmount,
-          balanceUsed: 0,
-          status: 'ACTIVE',
-          expiresAt,
-        },
-      })
-
-      // If customer profile exists, update ledger
-      if (sale.customerId) {
-        const customer = await tx.customer.findUnique({
-          where: { id: sale.customerId },
-          select: { outstandingBalance: true },
+        return tx.saleReturn.findUnique({
+          where: { id: saleReturn.id },
+          include: saleReturnInclude,
         })
-        if (customer) {
-          const newBalance = customer.outstandingBalance.sub(returnTotalAmount)
-
-          await tx.customer.update({
-            where: { id: sale.customerId },
-            data: { outstandingBalance: newBalance },
-          })
-
-          await tx.customerLedger.create({
-            data: {
-              customerId: sale.customerId,
-              type: 'CREDIT',
-              entryDate: new Date(),
-              description: `Credit note ${noteNumber} for return ${returnNumber}`,
-              amount: returnTotalAmount,
-              balance: newBalance,
-              referenceType: 'SALE_RETURN',
-              referenceId: saleReturn.id,
-            },
-          })
-        }
-      }
-    }
-
-    // 6. Record Audit Log
-    await tx.auditLog.create({
-      data: {
-        userId: actor.id,
-        action: 'SALE_RETURN_CREATE',
-        entity: 'SaleReturn',
-        entityId: saleReturn.id,
-        newData: {
-          returnNumber,
-          saleId: sale.id,
-          invoiceNumber: sale.invoiceNumber,
-          totalAmount: returnTotalAmount,
-          refundMethod: input.refundMethod,
-        },
       },
-    })
-
-    return tx.saleReturn.findUnique({
-      where: { id: saleReturn.id },
-      include: saleReturnInclude,
-    })
-  })
+      { isolationLevel: 'Serializable', maxWait: 5000, timeout: 15000 }
+    )
+  )
 
   return result
 }

@@ -32,9 +32,34 @@ export default function NarcoticRegisterPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [branchId, setBranchId] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/reports/narcotics')
+    // The API requires a branch scope. Resolve the authenticated user's
+    // accessible branches (works for branchless admins — returns all
+    // branches of the org, or all branches globally), then default to the
+    // first one. This mirrors the reference-data fetch in
+    // `purchases/new/page.tsx` and avoids hard-coding a branchId.
+    fetch('/api/inventory/branches')
+      .then((res) => res.json())
+      .then((body) => {
+        const branches = (body?.data ?? []) as { id: string }[]
+        if (branches.length === 0) {
+          setError('No branches available for the current user.')
+          setLoading(false)
+          return
+        }
+        setBranchId(branches[0].id)
+      })
+      .catch(() => {
+        setError('Failed to load branch list.')
+        setLoading(false)
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!branchId) return
+    fetch(`/api/reports/narcotics?branchId=${encodeURIComponent(branchId)}`)
       .then((res) => res.json())
       .then((res) => {
         const body = res as {
@@ -51,7 +76,7 @@ export default function NarcoticRegisterPage() {
       })
       .catch(() => setError('Failed to load narcotic register. Please try again.'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [branchId])
 
   const exportCSV = () => {
     void import('papaparse').then((Papa) => {

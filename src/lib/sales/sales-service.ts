@@ -42,6 +42,7 @@ import {
 } from '@/lib/batches/fefo'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import prisma from '@/lib/db/prisma'
+import { runWithRetry } from '@/lib/db/retry'
 import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
 import { postGstTransactionForSale } from '@/lib/finance/gst-service'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
@@ -112,6 +113,7 @@ interface NarcoticRegisterRow {
   quantityOut: number
   balanceQuantity: number
   referenceType: string
+  entryDate: Date
   patientName: string
   doctorName: string
   doctorRegNo: string
@@ -468,34 +470,6 @@ export async function deleteHeldBill(id: string, actor: SaleActor): Promise<void
 
 // ─── Create Sale ──────────────────────────────────────────────
 
-function isUniqueConstraintError(e: unknown): boolean {
-  return (
-    typeof e === 'object' && e !== null && 'code' in e && (e as { code?: string }).code === 'P2002'
-  )
-}
-
-function isSerializationError(e: unknown): boolean {
-  return (
-    typeof e === 'object' && e !== null && 'code' in e && (e as { code?: string }).code === 'P2034'
-  )
-}
-
-async function runWithRetry<T>(fn: () => Promise<T>, attempts = 5): Promise<T> {
-  let lastError: unknown
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn()
-    } catch (e) {
-      if (!isUniqueConstraintError(e) && !isSerializationError(e)) throw e
-      lastError = e
-      if (i === attempts - 1) {
-        throw new Error('Conflict: a concurrent sale changed the data, please retry')
-      }
-    }
-  }
-  throw lastError
-}
-
 async function resolveProduct(
   tx: Prisma.TransactionClient,
   line: CreateSaleItemInput
@@ -690,6 +664,13 @@ export async function createSale(
         const movements: InventoryMovementInput[] = []
         const h1Registers: H1RegisterRow[] = []
         const narcoticRegisters: NarcoticRegisterRow[] = []
+        // Serialized in-transaction register chain: keyed by branchId::productId,
+        // carrying the balance produced by the previous movement in this sale so
+        // multi-batch allocations chain  B - A1 - A2 - ...  instead of each being
+        // computed from the same pre-sale committed balance. Read from the
+        // committed chain once per product; chain every movement after that.
+        const narcoticRunningBalances = new Map<string, number>()
+        const narcoticEntryBase = new Date()
 
         const requiresH1 = resolved.some(
           (r) => r.product.drugSchedule === 'H1' || r.product.drugSchedule === 'NARCOTIC_NDPS'
@@ -819,16 +800,26 @@ export async function createSale(
               })
 
               if (product.drugSchedule === 'NARCOTIC_NDPS') {
-                // Fetch previous narcotic register balance for this branch + product
-                const prevNarcotic = await tx.narcoticRegister.findFirst({
-                  where: {
-                    branchId: branch.id,
-                    productId: product.id,
-                  },
-                  orderBy: { entryDate: 'desc' },
-                  select: { balanceQuantity: true },
-                })
-                const prevBalance = prevNarcotic?.balanceQuantity ?? 0
+                // Serialized register chain for this branch + product.
+                // Only the FIRST movement of this sale reads the committed
+                // latest balance; every subsequent movement chains from the
+                // balance produced by the previous movement in this
+                // transaction (B - A1, then B - A1 - A2, ...).
+                const chainKey = `${branch.id}::${product.id}`
+                if (!narcoticRunningBalances.has(chainKey)) {
+                  const prevNarcotic = await tx.narcoticRegister.findFirst({
+                    where: {
+                      branchId: branch.id,
+                      productId: product.id,
+                    },
+                    orderBy: { entryDate: 'desc' },
+                    select: { balanceQuantity: true },
+                  })
+                  narcoticRunningBalances.set(chainKey, prevNarcotic?.balanceQuantity ?? 0)
+                }
+                const currentBalance = narcoticRunningBalances.get(chainKey)!
+                const newBalance = currentBalance - a.allocatedQuantity
+                narcoticRunningBalances.set(chainKey, newBalance)
 
                 narcoticRegisters.push({
                   branchId: branch.id,
@@ -836,8 +827,12 @@ export async function createSale(
                   batchId: batch.id,
                   movementType: 'SALES_DISPENSE',
                   quantityOut: a.allocatedQuantity,
-                  balanceQuantity: prevBalance - a.allocatedQuantity,
+                  balanceQuantity: newBalance,
                   referenceType: 'SALE',
+                  // Strictly increasing per movement so the multi-batch chain
+                  // orders deterministically and later `orderBy entryDate desc`
+                  // readers resolve to the final movement of this sale.
+                  entryDate: new Date(narcoticEntryBase.getTime() + narcoticRegisters.length),
                   patientName: command.h1Capture.patientName,
                   doctorName: command.h1Capture.doctorName,
                   doctorRegNo: command.h1Capture.doctorRegNo,
@@ -1050,6 +1045,9 @@ export async function cancelSale(saleId: string, reason: string, actor: SaleActo
         })
         if (!sale) throw new Error('Not Found: sale')
         if (sale.status === 'CANCELLED') throw new Error('Sale is already cancelled')
+        if (sale.status === 'PARTIALLY_RETURNED' || sale.status === 'FULLY_RETURNED') {
+          throw new Error('Cannot cancel a sale that has been returned')
+        }
 
         await assertBranchAccess(actor, sale.branchId)
 

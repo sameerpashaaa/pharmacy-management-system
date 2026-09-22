@@ -45,6 +45,38 @@ const STORAGE_CONDITIONS = Object.entries(STORAGE_CONDITION_LABELS).map(([value,
   label,
 }))
 
+// Human-readable field names used by the form-level error banner so
+// users can map the message back to the input near which it appears.
+const FIELD_LABELS: Record<string, string> = {
+  name: 'Product Name',
+  genericName: 'Generic Name',
+  sku: 'SKU',
+  barcode: 'Primary Barcode',
+  description: 'Description',
+  manufacturer: 'Manufacturer',
+  composition: 'Composition',
+  drugSchedule: 'Drug Schedule',
+  storageCondition: 'Storage Condition',
+  isPrescriptionRequired: 'Prescription required',
+  unitOfMeasure: 'Unit of Measure',
+  tabsPerStrip: 'Tabs per Strip',
+  packSize: 'Pack Size',
+  hsnCode: 'HSN Code',
+  gstRate: 'GST Rate',
+  cgstRate: 'CGST',
+  sgstRate: 'SGST',
+  igstRate: 'IGST',
+  isGstExempt: 'GST exempt',
+  mrp: 'MRP',
+  ptr: 'PTR',
+  costPrice: 'Cost Price',
+  minStockLevel: 'Min Stock Level',
+  maxStockLevel: 'Max Stock Level',
+  reorderLevel: 'Reorder Level',
+  categoryIds: 'Categories',
+  barcodes: 'Barcodes',
+}
+
 interface ProductFormInit {
   id?: string
   name: string
@@ -106,9 +138,11 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
     setValue,
     watch,
     control,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isSubmitted, isSubmitSuccessful },
   } = useForm<ProductFormValues>({
     resolver: zodResolver(createProductSchema),
+    mode: 'onSubmit',
+    reValidateMode: 'onChange',
     defaultValues: {
       name: initialData?.name ?? '',
       genericName: initialData?.genericName ?? '',
@@ -203,7 +237,6 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
     data.maxStockLevel = optNum(data.maxStockLevel)
     data.ptr = optNum(data.ptr)
     data.costPrice = optNum(data.costPrice)
-
     const url = isEditing ? `/api/products/${initialData!.id}` : '/api/products'
     const method = isEditing ? 'PUT' : 'POST'
 
@@ -233,7 +266,42 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
+      {/* ── Submission status banner ────────────────── */}
+      {isSubmitted && Object.keys(errors).length > 0 && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+        >
+          <p className="font-medium">
+            Could not save product — please fix the highlighted fields below.
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+            {Object.entries(errors)
+              .filter(([key]) => key !== 'root')
+              .slice(0, 5)
+              .map(([key, err]) => {
+                const msg = (err as { message?: string })?.message ?? 'Invalid value'
+                const label = FIELD_LABELS[key] ?? key
+                return (
+                  <li key={key}>
+                    <span className="font-medium">{label}:</span> {msg}
+                  </li>
+                )
+              })}
+          </ul>
+        </div>
+      )}
+      {isSubmitSuccessful && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm text-green-800"
+        >
+          {isEditing ? 'Product updated successfully.' : 'Product created successfully.'}
+        </div>
+      )}
       {/* ── Basic Info ─────────────────────────────── */}
       <section className="space-y-4">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -352,6 +420,9 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('tabsPerStrip', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.tabsPerStrip && (
+              <p className="text-xs text-destructive">{errors.tabsPerStrip.message}</p>
+            )}
           </div>
           <div className="flex items-end gap-4 pb-1">
             <Checkbox
@@ -465,6 +536,7 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('gstRate', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.gstRate && <p className="text-xs text-destructive">{errors.gstRate.message}</p>}
           </div>
           <div className="space-y-1">
             <Label htmlFor="product-cgst">CGST (%)</Label>
@@ -475,6 +547,9 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('cgstRate', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.cgstRate && (
+              <p className="text-xs text-destructive">{errors.cgstRate.message}</p>
+            )}
           </div>
           <div className="space-y-1">
             <Label htmlFor="product-sgst">SGST (%)</Label>
@@ -485,6 +560,9 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('sgstRate', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.sgstRate && (
+              <p className="text-xs text-destructive">{errors.sgstRate.message}</p>
+            )}
           </div>
           <div className="space-y-1">
             <Label htmlFor="product-igst">IGST (%)</Label>
@@ -495,6 +573,9 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('igstRate', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.igstRate && (
+              <p className="text-xs text-destructive">{errors.igstRate.message}</p>
+            )}
           </div>
           <div className="flex items-end gap-4 pb-1">
             <Checkbox
@@ -530,6 +611,7 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('ptr', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.ptr && <p className="text-xs text-destructive">{errors.ptr.message}</p>}
           </div>
           <div className="space-y-1">
             <Label htmlFor="product-cost">Cost Price (₹)</Label>
@@ -541,6 +623,9 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('costPrice', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.costPrice && (
+              <p className="text-xs text-destructive">{errors.costPrice.message}</p>
+            )}
           </div>
         </div>
       </section>
@@ -560,6 +645,9 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('minStockLevel', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.minStockLevel && (
+              <p className="text-xs text-destructive">{errors.minStockLevel.message}</p>
+            )}
           </div>
           <div className="space-y-1">
             <Label htmlFor="product-max">Max Stock Level</Label>
@@ -570,6 +658,9 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('maxStockLevel', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.maxStockLevel && (
+              <p className="text-xs text-destructive">{errors.maxStockLevel.message}</p>
+            )}
           </div>
           <div className="space-y-1">
             <Label htmlFor="product-reorder">Reorder Level</Label>
@@ -580,6 +671,9 @@ export function ProductForm({ initialData, onSuccess, onCancel, successHref }: P
               {...register('reorderLevel', { valueAsNumber: true })}
               {...numeric}
             />
+            {errors.reorderLevel && (
+              <p className="text-xs text-destructive">{errors.reorderLevel.message}</p>
+            )}
           </div>
         </div>
       </section>

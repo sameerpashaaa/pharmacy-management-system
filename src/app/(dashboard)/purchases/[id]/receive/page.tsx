@@ -188,10 +188,22 @@ export default function ReceiveGoodsPage() {
         }
       }
 
+      const payload: CreateGrnForm = {
+        ...data,
+        grnDate: new Date(data.grnDate).toISOString(),
+        items: data.items.map((item) => ({
+          ...item,
+          expiryDate: new Date(item.expiryDate).toISOString(),
+          manufacturingDate: item.manufacturingDate
+            ? new Date(item.manufacturingDate).toISOString()
+            : undefined,
+        })),
+      }
+
       const res = await fetch(`/api/purchases/${purchaseId}/grn`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       })
 
       const json = (await res.json()) as { success: boolean; error?: { message: string } }

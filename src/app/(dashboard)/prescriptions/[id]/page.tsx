@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { PrescriptionDetailActions } from '@/components/prescriptions/prescription-detail-actions'
-import { PRESCRIPTION_STATUS_META } from '@/components/prescriptions/prescriptions-table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,6 +11,7 @@ import { can, getSession } from '@/lib/auth/auth-helpers'
 import { PERMISSIONS } from '@/lib/constants/permissions'
 import { ROUTES } from '@/lib/constants/routes'
 import { getPrescriptionById } from '@/lib/prescriptions/prescription-service'
+import { PRESCRIPTION_STATUS_META } from '@/lib/prescriptions/status-meta'
 import { formatCurrency } from '@/lib/utils/currency'
 import { formatDateTime } from '@/lib/utils/date'
 
@@ -101,10 +101,10 @@ export default async function PrescriptionDetailPage({ params }: PrescriptionPag
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Customer Profile:</span>
                 <Link
-                  href={`/customers/${rx.customerId}`}
+                  href={ROUTES.CUSTOMER(rx.customerId)}
                   className="font-medium text-primary hover:underline"
                 >
-                  {rx.approvedBy?.name ?? 'View Customer'}
+                  {rx.customer?.name ?? 'View Customer'}
                 </Link>
               </div>
             )}
@@ -226,7 +226,7 @@ export default async function PrescriptionDetailPage({ params }: PrescriptionPag
                 <div key={s.id} className="flex items-center justify-between py-2">
                   <div>
                     <Link
-                      href={`/sales/${s.id}`}
+                      href={ROUTES.SALE(s.id)}
                       className="font-medium text-primary hover:underline"
                     >
                       {s.invoiceNumber}

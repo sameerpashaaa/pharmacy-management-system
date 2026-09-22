@@ -390,6 +390,124 @@ describe('Prescription API Integration (Real PostgreSQL)', () => {
     })
   })
 
+  // ─── Regression: Prescription relation contract ──────────
+  //
+  // Guards the fix for the misnamed `approvedBy` accessor which used to
+  // resolve through `customerId`. After the schema correction the API
+  // response must expose `customer` (Customer shape) and `pharmacist`
+  // (User shape, the approver), and must never carry an `approvedBy`
+  // relation field.
+
+  describe('Prescription relation contract (regression)', () => {
+    it('exposes customer (Customer) and pharmacist (User) as distinct relations and no approvedBy relation', async () => {
+      mockUser(actor)
+      const rx = await prisma.prescription.create({
+        data: {
+          prescriptionNumber: 'RX-CONTRACT-001',
+          patientName: 'Contract Patient',
+          branchId,
+          customerId,
+          status: 'PENDING',
+        },
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/prescriptions/' + rx.id)
+      const res = await prescriptionGET(req, { params: { id: rx.id } })
+      const json = (await res.json()) as {
+        success: boolean
+        data: {
+          approvedById: string | null
+          customerId: string | null
+          customer: { id: string; name: string } | null
+          pharmacist: { id: string; name: string } | null
+        }
+      }
+
+      expect(res.status).toBe(200)
+      expect(json.success).toBe(true)
+
+      // The approver column still exists and is null before approval.
+      expect(json.data.approvedById).toBeNull()
+
+      // customer relation must resolve to the Customer (id matches the
+      // customer's id, NOT the actor user's id).
+      expect(json.data.customer).not.toBeNull()
+      expect(json.data.customer!.id).toBe(customerId)
+      expect(json.data.customer!.id).not.toBe(actor.id)
+      expect(json.data.customer!.name).toBe('Rx Patient')
+
+      // pharmacist must be null until approval.
+      expect(json.data.pharmacist).toBeNull()
+
+      // The misleading `approvedBy` relation accessor must not appear.
+      const dataRecord = json.data as Record<string, unknown>
+      expect(dataRecord).not.toHaveProperty('approvedBy')
+    })
+
+    it('after approval, pharmacist resolves to the approving User and customer remains the Customer', async () => {
+      mockUser(actor)
+      const rx = await prisma.prescription.create({
+        data: {
+          prescriptionNumber: 'RX-CONTRACT-002',
+          patientName: 'Contract Patient 2',
+          branchId,
+          customerId,
+          status: 'PENDING',
+        },
+      })
+
+      const approveReq = new NextRequest(
+        'http://localhost:3000/api/prescriptions/' + rx.id + '/approve',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: 'Looks good' }),
+        }
+      )
+      const approveRes = await approvePOST(approveReq, { params: { id: rx.id } })
+      expect(approveRes.status).toBe(200)
+
+      const detailReq = new NextRequest('http://localhost:3000/api/prescriptions/' + rx.id)
+      const detailRes = await prescriptionGET(detailReq, { params: { id: rx.id } })
+      const json = (await detailRes.json()) as {
+        success: boolean
+        data: {
+          status: string
+          approvedById: string
+          customerId: string | null
+          customer: { id: string; name: string } | null
+          pharmacist: { id: string; name: string } | null
+        }
+      }
+
+      expect(json.success).toBe(true)
+      expect(json.data.status).toBe('APPROVED')
+      expect(json.data.approvedById).toBe(actor.id)
+
+      // pharmacist must resolve to the approving User (id matches actor,
+      // NOT the customer).
+      expect(json.data.pharmacist).not.toBeNull()
+      expect(json.data.pharmacist!.id).toBe(actor.id)
+      expect(json.data.pharmacist!.id).not.toBe(customerId)
+      expect(json.data.pharmacist!.name).toBe('Dr. Test')
+
+      // customer relation unaffected by approval; still points to the
+      // Customer, not the User actor.
+      expect(json.data.customer).not.toBeNull()
+      expect(json.data.customer!.id).toBe(customerId)
+      expect(json.data.customer!.id).not.toBe(actor.id)
+
+      // Sanity: the FK columns in the database match the relation rows.
+      const dbRx = await prisma.prescription.findUnique({ where: { id: rx.id } })
+      expect(dbRx!.customerId).toBe(customerId)
+      expect(dbRx!.approvedById).toBe(actor.id)
+
+      // No `approvedBy` relation accessor on the payload.
+      const dataRecord = json.data as Record<string, unknown>
+      expect(dataRecord).not.toHaveProperty('approvedBy')
+    })
+  })
+
   // ─── POST /api/prescriptions/[id]/reject ─────────────────
 
   describe('POST /api/prescriptions/[id]/reject', () => {
