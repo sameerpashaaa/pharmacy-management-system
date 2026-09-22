@@ -107,6 +107,16 @@ export const ROUTES = {
   SETTINGS: '/settings',
   SETTINGS_ORGANIZATION: '/settings/organization',
   SETTINGS_GENERAL: '/settings/general',
+
+  // Store / Rack Management
+  STORE: '/store',
+  STORE_LOCATE: '/store/locate',
+  STORE_WALLS: '/store/walls',
+  STORE_WALL: (id: string) => `/store/walls/${id}`,
+  STORE_RACKS: '/store/racks',
+  STORE_RACK: (id: string) => `/store/racks/${id}`,
+  STORE_BINS: '/store/bins',
+  STORE_BIN: (id: string) => `/store/bins/${id}`,
 } as const
 
 // Routes that don't require authentication
@@ -147,4 +157,10 @@ export const API = {
   AUDIT: '/api/audit',
   NOTIFICATIONS: '/api/notifications',
   FILES: '/api/files',
+  STORE_WALLS: '/api/store/walls',
+  STORE_RACKS: '/api/store/racks',
+  STORE_SHELVES: '/api/store/shelves',
+  STORE_BINS: '/api/store/bins',
+  STORE_BIN_STOCK: '/api/store/bin-stock',
+  STORE_LOCATE: '/api/store/locate',
 } as const

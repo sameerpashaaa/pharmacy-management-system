@@ -379,7 +379,7 @@ export async function searchPosProducts(
       composition: true,
       packSize: true,
       imageUrl: true,
-      rack: { select: { code: true, shelfNumber: true } },
+      primaryBin: { select: { fullAddress: true } },
       categories: {
         take: 1,
         select: {
@@ -415,7 +415,7 @@ export async function searchPosProducts(
     isGstExempt: p.isGstExempt,
     additionalBarcodes: p.barcodes.map((b) => b.barcode).filter((b) => b !== p.barcode),
     availableQuantity: availableByProduct.get(p.id) ?? 0,
-    rackCode: p.rack ? `${p.rack.code}/${p.rack.shelfNumber}` : null,
+    rackCode: p.primaryBin ? p.primaryBin.fullAddress : null,
     categoryName: p.categories[0]?.category.name ?? null,
     manufacturer: p.manufacturer ?? null,
     composition: p.composition ?? null,

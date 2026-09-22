@@ -100,6 +100,11 @@ export const PERMISSIONS = {
   // Settings
   SETTINGS_READ: 'settings:read',
   SETTINGS_MANAGE: 'settings:manage',
+
+  // Store / Rack Management
+  STORE_READ: 'store:read',
+  STORE_MANAGE: 'store:manage',  // create/edit walls, racks, shelves, bins
+  STORE_ASSIGN: 'store:assign',  // assign products/batches to bins
 } as const
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]

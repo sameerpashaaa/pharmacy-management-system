@@ -237,7 +237,7 @@ model Branch {
   inventory        Inventory[]
   sales            Sale[]
   purchases        Purchase[]
-  racks            Rack[]
+  walls            Wall[]
   NarcoticRegister NarcoticRegister[]
 
   @@unique([organizationId, code])
@@ -258,18 +258,130 @@ model OrganizationSetting {
   @@map("organization_settings")
 }
 
-model Rack {
-  id          String    @id @default(cuid())
-  branchId    String
-  code        String
-  shelfNumber String
-  description String?
-  branch      Branch    @relation(fields: [branchId], references: [id])
-  products    Product[]
+// ─────────────────────────────────────────────────────────────
+// MODULE 3B: STORE / RACK MANAGEMENT
+// Wall → Rack → RackShelf → StoreBin → BinStock
+// ─────────────────────────────────────────────────────────────
 
-  @@unique([branchId, code, shelfNumber])
+enum WallType {
+  OPEN // Standard open shelving
+  REFRIGERATED // +2°C to +8°C cold chain
+  COLD_CHAIN // Deep freeze -25°C to -15°C
+  CONTROLLED_ACCESS // Schedule H / Narcotic controlled access
+}
+
+/// A physical wall or zone within the store/branch.
+/// Each branch can have multiple walls (e.g., Wall A, Wall B, Refrigerated Zone).
+model Wall {
+  id          String   @id @default(cuid())
+  branchId    String
+  code        String // Short code, e.g. "A", "B", "REF"
+  name        String // Full descriptive name, e.g. "Wall A – Antibiotics"
+  description String?
+  wallType    WallType @default(OPEN)
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  racks  Rack[]
+
+  @@unique([branchId, code])
   @@index([branchId])
+  @@map("walls")
+}
+
+/// A physical rack attached to a wall.
+/// e.g., Rack code "A-03" on Wall A.
+model Rack {
+  id          String   @id @default(cuid())
+  wallId      String
+  code        String // e.g. "A-03" (full rack code including wall prefix)
+  name        String? // e.g. "Rack 3"
+  description String?
+  capacity    Int? // Max number of shelves
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  wall     Wall        @relation(fields: [wallId], references: [id], onDelete: Cascade)
+  shelves  RackShelf[]
+  // Legacy product references (kept for backwards compat during migration)
+  products Product[]
+
+  @@unique([wallId, code])
+  @@index([wallId])
   @@map("racks")
+}
+
+/// A shelf (level) within a rack.
+/// e.g., Shelf level 1, 2, 3 on Rack A-03.
+model RackShelf {
+  id          String   @id @default(cuid())
+  rackId      String
+  level       Int // 1-indexed shelf level from bottom
+  label       String? // e.g. "Top", "Middle", "Bottom" or null
+  description String?
+  maxBins     Int      @default(10)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  rack Rack       @relation(fields: [rackId], references: [id], onDelete: Cascade)
+  bins StoreBin[]
+
+  @@unique([rackId, level])
+  @@index([rackId])
+  @@map("rack_shelves")
+}
+
+/// A storage bin — the smallest physical unit within a shelf.
+/// e.g., Bin "B" on Shelf 2 of Rack A-03 on Wall A → full address "A-03-2-B"
+model StoreBin {
+  id          String   @id @default(cuid())
+  shelfId     String
+  binCode     String // Short code, e.g. "A", "B", "C"
+  fullAddress String // Computed: "wall-rack-shelf-bin", e.g. "A-03-2-B"
+  capacity    Int? // Max units (strips/bottles) that fit
+  currentFill Int      @default(0) // Derived / cached fill count
+  isActive    Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shelf    RackShelf  @relation(fields: [shelfId], references: [id], onDelete: Cascade)
+  stock    BinStock[]
+  products Product[]  @relation("ProductPrimaryBin")
+
+  @@unique([shelfId, binCode])
+  @@index([shelfId])
+  @@index([fullAddress])
+  @@map("store_bins")
+}
+
+/// Tracks how many units of a specific batch sit in a specific bin.
+/// One row per (bin, product, batch) combination.
+model BinStock {
+  id          String   @id @default(cuid())
+  binId       String
+  productId   String
+  batchId     String? // Nullable for bulk/non-batch items
+  quantity    Int      @default(0)
+  reservedQty Int      @default(0) // Reserved for pending sales
+  placedAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  placedById  String? // User who placed it
+
+  bin     StoreBin @relation(fields: [binId], references: [id], onDelete: Cascade)
+  product Product  @relation(fields: [productId], references: [id])
+  batch   Batch?   @relation(fields: [batchId], references: [id])
+
+  @@unique([binId, productId, batchId])
+  @@index([binId])
+  @@index([productId])
+  @@index([batchId])
+  @@map("bin_stocks")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -321,7 +433,8 @@ model Product {
   ptr                    Decimal?          @db.Decimal(12, 2) // Price to retailer
   pts                    Decimal?          @db.Decimal(12, 2) // Price to stockist
   costPrice              Decimal?          @db.Decimal(12, 2)
-  rackId                 String?
+  rackId                 String? // Legacy: kept for backwards compat
+  primaryBinId           String? // New: FK to StoreBin (primary location)
   minStockLevel          Int               @default(10)
   maxStockLevel          Int?
   reorderLevel           Int               @default(20)
@@ -341,6 +454,8 @@ model Product {
   purchaseItems      PurchaseItem[]
   hsnCodeRef         HsnCode?             @relation(fields: [hsnCode], references: [code])
   rack               Rack?                @relation(fields: [rackId], references: [id])
+  primaryBin         StoreBin?            @relation("ProductPrimaryBin", fields: [primaryBinId], references: [id])
+  binStocks          BinStock[]
   ScheduleH1Register ScheduleH1Register[]
   NarcoticRegister   NarcoticRegister[]
 
@@ -350,6 +465,7 @@ model Product {
   @@index([sku])
   @@index([drugSchedule])
   @@index([rackId])
+  @@index([primaryBinId])
   @@map("products")
 }
 
@@ -525,6 +641,7 @@ model Batch {
   inventoryMovements InventoryMovement[]
   purchaseItems      PurchaseItem[]
   ScheduleH1Register ScheduleH1Register[]
+  binStocks          BinStock[]
 
   @@unique([productId, batchNumber])
   @@index([productId, expiryDate])
@@ -751,11 +868,11 @@ model Prescription {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  customer     Customer?            @relation("PrescriptionCustomer", fields: [customerId], references: [id])
-  pharmacist   User?                @relation("PrescriptionApprovedBy", fields: [approvedById], references: [id])
-  doctor       Doctor?              @relation(fields: [doctorId], references: [id])
-  images       PrescriptionImage[]
-  sales        Sale[]
+  customer   Customer?           @relation("PrescriptionCustomer", fields: [customerId], references: [id])
+  pharmacist User?               @relation("PrescriptionApprovedBy", fields: [approvedById], references: [id])
+  doctor     Doctor?             @relation(fields: [doctorId], references: [id])
+  images     PrescriptionImage[]
+  sales      Sale[]
 
   @@map("prescriptions")
 }
@@ -1007,7 +1124,7 @@ model Customer {
   saleReturns   SaleReturn[]
   creditNotes   CreditNote[]
   ledgerEntries CustomerLedger[]
-  prescriptions Prescription[]       @relation("PrescriptionCustomer")
+  prescriptions Prescription[]   @relation("PrescriptionCustomer")
 
   @@index([phone])
   @@index([name])
@@ -1389,10 +1506,10 @@ model NarcoticRegister {
   product         Product              @relation(fields: [productId], references: [id])
   enteredBy       User                 @relation(fields: [enteredById], references: [id])
 
+  @@unique([referenceType, referenceId, productId, batchId])
   @@index([branchId, entryDate])
   @@index([productId])
   @@index([branchId, productId, entryDate])
-  @@unique([referenceType, referenceId, productId, batchId])
   @@map("narcotic_register")
 }
 

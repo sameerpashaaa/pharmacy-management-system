@@ -219,11 +219,13 @@ export async function getLowStockDetails(branchId?: string, limit: number = 5) {
   `
 
   interface LowStockRow {
+    id: string
     productId: string
     productName: string
-    sku: string
     availableQuantity: number
     minStockLevel: number
+    reorderLevel: number | null
+    categoryName: string | null
   }
   return result as LowStockRow[]
 }

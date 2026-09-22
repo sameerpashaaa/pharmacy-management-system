@@ -29,6 +29,77 @@ export async function seedProducts(prisma: PrismaClient) {
   const admin = await prisma.user.findFirst({ where: { email: 'admin@pharmacare.local' } })
   if (!admin) return
 
+  // Get or verify default branch
+  let branch = await prisma.branch.findFirst({ where: { id: 'default-branch' } })
+  if (!branch) {
+    branch = await prisma.branch.findFirst()
+  }
+  if (!branch) return
+
+  // 1. Create a Wall
+  const wall = await prisma.wall.upsert({
+    where: { branchId_code: { branchId: branch.id, code: 'W1' } },
+    update: {},
+    create: {
+      branchId: branch.id,
+      code: 'W1',
+      name: 'Main Wall 1',
+      description: 'Primary storage wall for medicines',
+      wallType: 'OPEN',
+      sortOrder: 1,
+    },
+  })
+
+  // 2. Create 4 Racks on this Wall
+  const racksData = [
+    { code: 'R1', name: 'Rack 1', desc: 'Rack for general tablets & analgesics' },
+    { code: 'R2', name: 'Rack 2', desc: 'Rack for antibiotics & anti-inflammatories' },
+    { code: 'R3', name: 'Rack 3', desc: 'Rack for syrups & respiratory care' },
+    { code: 'R4', name: 'Rack 4', desc: 'Rack for vitamins & supplements' },
+  ]
+
+  const rackBins: { rackId: string; binId: string }[] = []
+
+  for (let i = 0; i < racksData.length; i++) {
+    const r = racksData[i]
+    const rack = await prisma.rack.upsert({
+      where: { wallId_code: { wallId: wall.id, code: r.code } },
+      update: {},
+      create: {
+        wallId: wall.id,
+        code: r.code,
+        name: r.name,
+        description: r.desc,
+        sortOrder: i + 1,
+      },
+    })
+
+    const shelf = await prisma.rackShelf.upsert({
+      where: { rackId_level: { rackId: rack.id, level: 1 } },
+      update: {},
+      create: {
+        rackId: rack.id,
+        level: 1,
+        label: 'Shelf 1',
+        description: 'Level 1 shelf',
+      },
+    })
+
+    const bin = await prisma.storeBin.upsert({
+      where: { shelfId_binCode: { shelfId: shelf.id, binCode: 'B1' } },
+      update: { fullAddress: `Rack-${i + 1}` },
+      create: {
+        shelfId: shelf.id,
+        binCode: 'B1',
+        fullAddress: `Rack-${i + 1}`,
+        capacity: 500,
+      },
+    })
+
+    rackBins.push({ rackId: rack.id, binId: bin.id })
+  }
+
+  // 3. Sample dummy medical products assigned across the 4 racks
   const sampleProducts = [
     {
       name: 'Paracetamol 500mg',
@@ -52,6 +123,7 @@ export async function seedProducts(prisma: PrismaClient) {
       unitOfMeasure: 'Strip',
       tabsPerStrip: 10,
       categorySlug: 'tablets',
+      rackIndex: 0,
     },
     {
       name: 'Amoxicillin 500mg',
@@ -75,6 +147,7 @@ export async function seedProducts(prisma: PrismaClient) {
       unitOfMeasure: 'Strip',
       tabsPerStrip: 10,
       categorySlug: 'tablets',
+      rackIndex: 1,
     },
     {
       name: 'Cough Syrup 100ml',
@@ -97,6 +170,7 @@ export async function seedProducts(prisma: PrismaClient) {
       reorderLevel: 60,
       unitOfMeasure: 'Bottle',
       categorySlug: 'syrups-liquids',
+      rackIndex: 2,
     },
     {
       name: 'Vitamin C 500mg',
@@ -120,6 +194,7 @@ export async function seedProducts(prisma: PrismaClient) {
       unitOfMeasure: 'Bottle',
       tabsPerStrip: 60,
       categorySlug: 'vitamins-supplements',
+      rackIndex: 3,
     },
     {
       name: 'Betadine Ointment 20g',
@@ -142,14 +217,91 @@ export async function seedProducts(prisma: PrismaClient) {
       reorderLevel: 40,
       unitOfMeasure: 'Tube',
       categorySlug: 'topical-ointments',
+      rackIndex: 0,
+    },
+    {
+      name: 'Ibuprofen 400mg',
+      genericName: 'Ibuprofen',
+      sku: 'IBU-400',
+      barcode: '8901234567895',
+      manufacturer: 'Generic Pharma',
+      composition: 'Ibuprofen 400mg',
+      drugSchedule: 'NONE' as const,
+      isPrescriptionRequired: false,
+      hsnCode: '3004',
+      gstRate: 12,
+      cgstRate: 6,
+      sgstRate: 6,
+      igstRate: 12,
+      mrp: 38.00,
+      ptr: 30.00,
+      costPrice: 22.00,
+      minStockLevel: 25,
+      reorderLevel: 50,
+      unitOfMeasure: 'Strip',
+      tabsPerStrip: 10,
+      categorySlug: 'tablets',
+      rackIndex: 1,
+    },
+    {
+      name: 'Cetirizine 10mg',
+      genericName: 'Cetirizine Hydrochloride',
+      sku: 'CET-10',
+      barcode: '8901234567896',
+      manufacturer: 'Generic Pharma',
+      composition: 'Cetirizine 10mg',
+      drugSchedule: 'NONE' as const,
+      isPrescriptionRequired: false,
+      hsnCode: '3004',
+      gstRate: 12,
+      cgstRate: 6,
+      sgstRate: 6,
+      igstRate: 12,
+      mrp: 32.00,
+      ptr: 25.00,
+      costPrice: 18.00,
+      minStockLevel: 25,
+      reorderLevel: 50,
+      unitOfMeasure: 'Strip',
+      tabsPerStrip: 10,
+      categorySlug: 'tablets',
+      rackIndex: 2,
+    },
+    {
+      name: 'Digene Antacid Gel 200ml',
+      genericName: 'Magnesium Hydroxide + Aluminium Hydroxide',
+      sku: 'DIG-200',
+      barcode: '8901234567897',
+      manufacturer: 'Abbott',
+      composition: 'Antacid & Antigas Gel 200ml',
+      drugSchedule: 'NONE' as const,
+      isPrescriptionRequired: false,
+      hsnCode: '3004',
+      gstRate: 12,
+      cgstRate: 6,
+      sgstRate: 6,
+      igstRate: 12,
+      mrp: 145.00,
+      ptr: 116.00,
+      costPrice: 90.00,
+      minStockLevel: 15,
+      reorderLevel: 30,
+      unitOfMeasure: 'Bottle',
+      categorySlug: 'syrups-liquids',
+      rackIndex: 3,
     },
   ]
 
   for (const prod of sampleProducts) {
-    const { categorySlug, ...productData } = prod
+    const { categorySlug, rackIndex, ...productData } = prod
+    const loc = rackBins[rackIndex]
+
     const product = await prisma.product.upsert({
       where: { sku: productData.sku },
-      update: {},
+      update: {
+        rackId: loc.rackId,
+        primaryBinId: loc.binId,
+      },
       create: {
         ...productData,
         mrp: productData.mrp,
@@ -160,6 +312,8 @@ export async function seedProducts(prisma: PrismaClient) {
         sgstRate: productData.sgstRate,
         igstRate: productData.igstRate,
         createdById: admin.id,
+        rackId: loc.rackId,
+        primaryBinId: loc.binId,
       },
     })
 
@@ -172,7 +326,66 @@ export async function seedProducts(prisma: PrismaClient) {
         create: { productId: product.id, categoryId },
       })
     }
+
+    // Upsert Inventory with availableQuantity so POS shows stock
+    await prisma.inventory.upsert({
+      where: {
+        productId_branchId: { productId: product.id, branchId: branch.id },
+      },
+      update: {
+        totalQuantity: 100,
+        availableQuantity: 100,
+        reservedQuantity: 0,
+      },
+      create: {
+        productId: product.id,
+        branchId: branch.id,
+        totalQuantity: 100,
+        availableQuantity: 100,
+        reservedQuantity: 0,
+      },
+    })
+
+    // Upsert Batch
+    const batchNumber = `${productData.sku}-B1`
+    const batch = await prisma.batch.upsert({
+      where: {
+        productId_batchNumber: { productId: product.id, batchNumber },
+      },
+      update: {
+        quantity: 100,
+        branchId: branch.id,
+      },
+      create: {
+        productId: product.id,
+        batchNumber,
+        manufacturingDate: new Date('2024-01-01'),
+        expiryDate: new Date('2026-12-31'),
+        purchasePrice: productData.costPrice,
+        mrp: productData.mrp,
+        quantity: 100,
+        branchId: branch.id,
+      },
+    })
+
+    // Link BinStock
+    await prisma.binStock.upsert({
+      where: {
+        id: `${loc.binId}_${product.id}`,
+      },
+      update: {
+        quantity: 100,
+      },
+      create: {
+        id: `${loc.binId}_${product.id}`,
+        binId: loc.binId,
+        productId: product.id,
+        batchId: batch.id,
+        quantity: 100,
+      },
+    })
   }
 
-  console.log(`  ✓ ${sampleProducts.length} sample products seeded (${categories.length} categories)`)
+  // eslint-disable-next-line no-console
+  console.log(`  ✓ ${sampleProducts.length} sample products seeded with 4 racks and stock!`)
 }

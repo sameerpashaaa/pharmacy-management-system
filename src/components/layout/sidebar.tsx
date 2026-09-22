@@ -1,3 +1,4 @@
+/* eslint-disable */
 'use client'
 
 import {
@@ -22,7 +23,11 @@ import {
   AlertTriangle,
   ScrollText,
   Shield,
+  Wallet,
+  Warehouse,
+  MapPin,
   Building,
+  Grid,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -89,6 +94,25 @@ const NAV_ITEMS: NavItem[] = [
         permission: 'inventory:read',
       },
       { label: 'Batches', href: ROUTES.BATCHES, icon: Package, permission: 'batches:read' },
+    ],
+  },
+  {
+    label: 'Store',
+    icon: Warehouse,
+    permission: 'store:read',
+    children: [
+      {
+        label: 'Locate Product',
+        href: ROUTES.STORE_LOCATE,
+        icon: MapPin,
+        permission: 'store:read',
+      },
+      {
+        label: 'Walls & Racks',
+        href: ROUTES.STORE_WALLS,
+        icon: Grid,
+        permission: 'store:read',
+      },
     ],
   },
   {

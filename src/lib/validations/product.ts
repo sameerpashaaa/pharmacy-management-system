@@ -95,6 +95,7 @@ export const createProductSchema = z.object({
     .regex(/^[0-9A-Za-z\-]*$/, 'Barcode can only contain alphanumeric characters and hyphens')
     .optional()
     .or(z.literal('')),
+  primaryBinId: z.string().optional().nullable(),
   description: z.string().max(2000).optional(),
   manufacturer: z.string().max(100).optional(),
   composition: z.string().max(1000).optional(),
