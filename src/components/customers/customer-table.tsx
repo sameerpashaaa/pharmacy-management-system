@@ -39,6 +39,7 @@ export interface CustomerRow {
   creditLimit: number
   outstandingBalance: number
   creditDays: number
+  customerType?: 'RETAIL' | 'WHOLESALE'
   isActive: boolean
   notes: string | null
 }
@@ -165,6 +166,7 @@ export function CustomerTable({
                 <TableHead>Customer</TableHead>
                 <TableHead>Contact</TableHead>
                 <TableHead>Location</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead className="text-right">Credit</TableHead>
                 <TableHead className="text-right">Outstanding</TableHead>
                 <TableHead>Status</TableHead>
@@ -174,14 +176,14 @@ export function CustomerTable({
             <TableBody>
               {isLoading && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               )}
               {!isLoading && customers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
                     No customers found. Add a customer to get started.
                   </TableCell>
                 </TableRow>
@@ -238,6 +240,13 @@ export function CustomerTable({
                           <MapPin className="h-3 w-3" />
                           {[c.city, c.state, c.pincode].filter(Boolean).join(', ')}
                         </p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {c.customerType === 'WHOLESALE' ? (
+                        <Badge variant="default">Wholesale</Badge>
+                      ) : (
+                        <Badge variant="secondary">Retail</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right text-xs">

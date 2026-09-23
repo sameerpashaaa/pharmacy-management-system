@@ -79,20 +79,24 @@ function classifyExpiry(expiryIso: string): {
   return { label: `${days}d`, variant: 'success', days }
 }
 
+function lineSubtotal(line: CartLine): number {
+  return line.product.mrp * line.quantity * (1 - line.discountPercent / 100)
+}
+
+function lineGst(line: CartLine): number {
+  return lineSubtotal(line) * (line.product.gstRate / 100)
+}
+
 function lineTotal(line: CartLine): number {
-  const base = line.product.mrp * line.quantity
-  const disc = (base * line.discountPercent) / 100
-  const taxable = base - disc
-  const gst = taxable * (line.product.gstRate / 100)
-  return taxable + gst
+  return lineSubtotal(line) + lineGst(line)
 }
 
 function cartSubtotal(lines: CartLine[]): number {
-  return lines.reduce((s, l) => s + l.product.mrp * l.quantity * (1 - l.discountPercent / 100), 0)
+  return lines.reduce((s, l) => s + lineSubtotal(l), 0)
 }
 
 function cartGst(lines: CartLine[]): number {
-  return cartSubtotal(lines) + 0 // placeholder so totals layout matches page
+  return lines.reduce((s, l) => s + lineGst(l), 0)
 }
 
 function cartTotal(lines: CartLine[]): number {
@@ -115,6 +119,7 @@ export function WholesaleInvoiceClient({
   const [productSearch, setProductSearch] = useState('')
   const [productResults, setProductResults] = useState<PosProduct[]>([])
   const [searching, setSearching] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CREDIT'>('CREDIT')
   const [amountPaid, setAmountPaid] = useState('0')
   const [notes, setNotes] = useState('')
@@ -131,14 +136,23 @@ export function WholesaleInvoiceClient({
 
   const total = useMemo(() => cartTotal(lines), [lines])
   const subtotal = useMemo(() => cartSubtotal(lines), [lines])
-  const tax = useMemo(() => total - subtotal, [subtotal, total])
+  const tax = useMemo(() => cartGst(lines), [lines])
+
+  // Credit-limit check is a soft warning + hard block when fully exceeded.
+  const overLimit = useMemo(() => {
+    if (!selectedCustomer || selectedCustomer.creditLimit <= 0) return 0
+    const projected = selectedCustomer.outstandingBalance + total
+    return Math.max(0, projected - selectedCustomer.creditLimit)
+  }, [selectedCustomer, total])
 
   function searchProducts() {
     if (!branchId || !productSearch.trim()) {
       setProductResults([])
+      setHasSearched(false)
       return
     }
     setSearching(true)
+    setHasSearched(true)
     const params = new URLSearchParams({
       search: productSearch,
       branchId,
@@ -208,7 +222,23 @@ export function WholesaleInvoiceClient({
   }
 
   function updateLine(key: string, patch: Partial<CartLine>) {
-    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l
+        const next = { ...l, ...patch }
+        // Clamp qty to selected batch stock; clamp discount to 0–100.
+        if (next.batch && patch.quantity !== undefined) {
+          next.quantity = Math.max(
+            1,
+            Math.min(next.batch.availableQuantity, Number(patch.quantity) || 1)
+          )
+        }
+        if (patch.discountPercent !== undefined) {
+          next.discountPercent = Math.max(0, Math.min(100, Number(patch.discountPercent) || 0))
+        }
+        return next
+      })
+    )
   }
 
   function removeLine(key: string) {
@@ -250,6 +280,12 @@ export function WholesaleInvoiceClient({
         )
         return
       }
+    }
+    if (overLimit > 0 && paymentMethod === 'CREDIT') {
+      setError(
+        `Credit sale would exceed ${selectedCustomer?.name}'s limit by ${formatCurrency(String(overLimit))}. Reduce invoice or take cash payment.`
+      )
+      return
     }
     const paid = Number(amountPaid) || 0
     if (paymentMethod === 'CASH' && paid < total - 0.01) {
@@ -295,7 +331,9 @@ export function WholesaleInvoiceClient({
         )
         setLines([])
         setProductResults([])
+        setProductSearch('')
         setAmountPaid('0')
+        setBatchesByProduct({})
         setTimeout(() => router.push(`/sales/${j.data.id}`), 600)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Submit failed')
@@ -359,6 +397,12 @@ export function WholesaleInvoiceClient({
               </span>{' '}
               of {formatCurrency(String(selectedCustomer.creditLimit))} limit ·{' '}
               {selectedCustomer.creditDays}-day credit terms
+              {overLimit > 0 && (
+                <span className="ml-2 inline-block rounded bg-destructive/15 px-1.5 py-0.5 text-destructive">
+                  Would exceed limit by {formatCurrency(String(overLimit))}
+                  {paymentMethod === 'CREDIT' ? ' — switch to cash or reduce invoice' : ''}
+                </span>
+              )}
             </div>
           )}
 
@@ -376,7 +420,7 @@ export function WholesaleInvoiceClient({
             </Button>
           </div>
 
-          {productResults.length > 0 && (
+          {productResults.length > 0 ? (
             <div className="rounded-md border">
               {productResults.map((p) => (
                 <button
@@ -395,7 +439,11 @@ export function WholesaleInvoiceClient({
                 </button>
               ))}
             </div>
-          )}
+          ) : hasSearched && !searching ? (
+            <div className="rounded-md border border-dashed py-3 text-center text-xs text-muted-foreground">
+              No products match “{productSearch}”.
+            </div>
+          ) : null}
 
           {lines.length === 0 ? (
             <div className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">
@@ -576,7 +624,9 @@ export function WholesaleInvoiceClient({
             type="button"
             className="w-full"
             onClick={submit}
-            disabled={submitting || lines.length === 0}
+            disabled={
+              submitting || lines.length === 0 || (overLimit > 0 && paymentMethod === 'CREDIT')
+            }
           >
             {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Create invoice
@@ -601,6 +651,3 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
     </div>
   )
 }
-
-// Suppress unused warning on cartGst (retained for future split-out tax line items).
-void cartGst

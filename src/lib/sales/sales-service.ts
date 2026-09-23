@@ -1003,9 +1003,25 @@ export async function createSale(
         })
 
         if (customerId && balanceDue > 0 && tx.customer?.findUnique && tx.customerLedger?.create) {
-          const customer = await tx.customer.findUnique({ where: { id: customerId } })
+          const customer = await tx.customer.findUnique({
+            where: { id: customerId },
+            select: { outstandingBalance: true, creditLimit: true },
+          })
           if (customer) {
             const newBal = customer.outstandingBalance.add(new Prisma.Decimal(balanceDue))
+            // Server-enforced credit limit. creditLimit = 0 means unlimited
+            // (matches existing semantics for retail/cash customers without a limit).
+            // Concurrency: transaction runs at Serializable isolation; runWithRetry
+            // catches P2034, retries with a fresh snapshot, and this same guard
+            // re-evaluates against the committed balance. Two concurrent CREDIT
+            // sales therefore cannot both pass — the loser sees the winner's
+            // committed balance on retry and is rejected.
+            const limit = new Prisma.Decimal(customer.creditLimit)
+            if (limit.gt(0) && newBal.gt(limit)) {
+              throw new Error(
+                `Conflict: credit limit exceeded for customer (limit ${limit.toFixed(2)}, would reach ${newBal.toFixed(2)})`
+              )
+            }
             await tx.customer.update({
               where: { id: customerId },
               data: { outstandingBalance: newBal },

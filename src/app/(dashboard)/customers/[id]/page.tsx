@@ -47,6 +47,11 @@ export default async function CustomerDetailPage({ params }: PageProps) {
             {customer.gstin && (
               <p className="font-mono text-xs text-muted-foreground">GSTIN: {customer.gstin}</p>
             )}
+            <div className="mt-1">
+              <Badge variant={customer.customerType === 'WHOLESALE' ? 'default' : 'secondary'}>
+                {customer.customerType === 'WHOLESALE' ? 'Wholesale / B2B' : 'Retail'}
+              </Badge>
+            </div>
           </div>
           <div>
             <p className="text-xs uppercase text-muted-foreground">Contact</p>
@@ -103,6 +108,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
             pincode: customer.pincode ?? undefined,
             creditLimit: customer.creditLimit,
             creditDays: customer.creditDays,
+            customerType: customer.customerType,
             notes: customer.notes ?? undefined,
             isActive: customer.isActive,
           }}

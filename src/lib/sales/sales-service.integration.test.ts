@@ -1115,4 +1115,209 @@ describeDb('POS sales integration (real Postgres)', () => {
     const cleared = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
     expect(Number(cleared.outstandingBalance)).toBeCloseTo(0, 2)
   })
+
+  // ─── Credit-limit invariant (server-enforced) ─────────────
+  // Para unit balance due at qty=1 is 112.00; uses that to size limits.
+
+  it('B2B: CREDIT sale within credit limit succeeds', async () => {
+    const customer = await prisma.customer.create({
+      data: {
+        name: 'WithinLimit Co',
+        phone: '9000000101',
+        customerType: 'WHOLESALE',
+        creditLimit: 100000,
+        outstandingBalance: 0,
+        creditDays: 30,
+      },
+    })
+    const sale = await createSale(
+      saleCommand(fx, {
+        customerId: customer.id,
+        items: [{ productId: fx.para, quantity: 1 }],
+        payments: [{ method: 'CREDIT', amount: 0 }],
+      }),
+      fx.creditActor
+    )
+    expect(sale.paymentStatus).toBe('CREDIT')
+    expect(Number(sale.balanceDue)).toBeCloseTo(112, 0)
+    const after = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(after.outstandingBalance)).toBeCloseTo(112, 0)
+  })
+
+  it('B2B: CREDIT sale exactly at credit limit succeeds', async () => {
+    const customer = await prisma.customer.create({
+      data: {
+        name: 'AtLimit Co',
+        phone: '9000000102',
+        customerType: 'WHOLESALE',
+        creditLimit: 112,
+        outstandingBalance: 0,
+        creditDays: 30,
+      },
+    })
+    const sale = await createSale(
+      saleCommand(fx, {
+        customerId: customer.id,
+        items: [{ productId: fx.para, quantity: 1 }],
+        payments: [{ method: 'CREDIT', amount: 0 }],
+      }),
+      fx.creditActor
+    )
+    expect(Number(sale.balanceDue)).toBeCloseTo(112, 0)
+    const after = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(after.outstandingBalance)).toBeCloseTo(112, 0)
+  })
+
+  it('B2B: CREDIT sale exceeding credit limit is rejected', async () => {
+    const customer = await prisma.customer.create({
+      data: {
+        name: 'OverLimit Co',
+        phone: '9000000103',
+        customerType: 'WHOLESALE',
+        creditLimit: 100,
+        outstandingBalance: 0,
+        creditDays: 30,
+      },
+    })
+    await expect(
+      createSale(
+        saleCommand(fx, {
+          customerId: customer.id,
+          items: [{ productId: fx.para, quantity: 1 }],
+          payments: [{ method: 'CREDIT', amount: 0 }],
+        }),
+        fx.creditActor
+      )
+    ).rejects.toThrow(/credit limit exceeded/i)
+
+    // No partial state: outstanding balance unchanged, no sale rows persisted.
+    const after = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(after.outstandingBalance)).toBe(0)
+    const sales = await prisma.sale.count({ where: { customerId: customer.id } })
+    expect(sales).toBe(0)
+    const ledger = await prisma.customerLedger.count({ where: { customerId: customer.id } })
+    expect(ledger).toBe(0)
+  })
+
+  it('B2B: CREDIT sale on top of existing outstanding that busts the limit is rejected', async () => {
+    const customer = await prisma.customer.create({
+      data: {
+        name: 'TopUp Co',
+        phone: '9000000104',
+        customerType: 'WHOLESALE',
+        creditLimit: 200,
+        outstandingBalance: 100, // already owes 100
+        creditDays: 30,
+      },
+    })
+    await expect(
+      createSale(
+        saleCommand(fx, {
+          customerId: customer.id,
+          items: [{ productId: fx.para, quantity: 1 }], // +112 → 212 > 200
+          payments: [{ method: 'CREDIT', amount: 0 }],
+        }),
+        fx.creditActor
+      )
+    ).rejects.toThrow(/credit limit exceeded/i)
+
+    const after = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(after.outstandingBalance)).toBeCloseTo(100, 0)
+    const sales = await prisma.sale.count({ where: { customerId: customer.id } })
+    expect(sales).toBe(0)
+  })
+
+  it('B2B: creditLimit = 0 keeps existing unlimited semantics', async () => {
+    const customer = await prisma.customer.create({
+      data: {
+        name: 'Unlimited Co',
+        phone: '9000000105',
+        customerType: 'WHOLESALE',
+        creditLimit: 0,
+        outstandingBalance: 0,
+        creditDays: 30,
+      },
+    })
+    // Big CREDIT sale — would normally blow a positive limit; 0 means unlimited.
+    const sale = await createSale(
+      saleCommand(fx, {
+        customerId: customer.id,
+        items: [{ productId: fx.para, quantity: 5 }], // 5 × 112 = 560
+        payments: [{ method: 'CREDIT', amount: 0 }],
+      }),
+      fx.creditActor
+    )
+    expect(Number(sale.balanceDue)).toBeGreaterThan(500)
+    const after = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(after.outstandingBalance)).toBeCloseTo(Number(sale.balanceDue), 0)
+  })
+
+  it('B2B: paid (CASH) sale is unaffected by a tight credit limit', async () => {
+    const customer = await prisma.customer.create({
+      data: {
+        name: 'CashOnly Co',
+        phone: '9000000106',
+        customerType: 'RETAIL',
+        creditLimit: 1, // would block any CREDIT
+        outstandingBalance: 0,
+        creditDays: 0,
+      },
+    })
+    const sale = await createSale(
+      saleCommand(fx, {
+        customerId: customer.id,
+        items: [{ productId: fx.para, quantity: 1 }],
+        payments: [{ method: 'CASH', amount: 112 }],
+      }),
+      fx.actor
+    )
+    expect(sale.paymentStatus).toBe('PAID')
+    expect(Number(sale.balanceDue)).toBe(0)
+    const after = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(after.outstandingBalance)).toBe(0) // no ledger movement
+  })
+
+  it('B2B: concurrent CREDIT sales cannot collectively exceed the limit', async () => {
+    // Limit = 200; each CREDIT sale is ~112. Sequentially: at most one succeeds.
+    const customer = await prisma.customer.create({
+      data: {
+        name: 'Race Co',
+        phone: '9000000107',
+        customerType: 'WHOLESALE',
+        creditLimit: 200,
+        outstandingBalance: 0,
+        creditDays: 30,
+      },
+    })
+
+    const results = await Promise.allSettled([
+      createSale(
+        saleCommand(fx, {
+          customerId: customer.id,
+          items: [{ productId: fx.para, quantity: 1 }],
+          payments: [{ method: 'CREDIT', amount: 0 }],
+        }),
+        fx.creditActor
+      ),
+      createSale(
+        saleCommand(fx, {
+          customerId: customer.id,
+          items: [{ productId: fx.para, quantity: 1 }],
+          payments: [{ method: 'CREDIT', amount: 0 }],
+        }),
+        fx.creditActor
+      ),
+    ])
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled').length
+    const rejected = results.filter((r) => r.status === 'rejected').length
+    expect(fulfilled + rejected).toBe(2)
+    // Invariant: at most one CREDIT sale may push outstanding to <= limit (200).
+    // Two sequential ~112 sales would total ~224, breaching the limit.
+    expect(fulfilled).toBeLessThanOrEqual(1)
+    expect(rejected).toBeGreaterThanOrEqual(1)
+
+    const after = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })
+    expect(Number(after.outstandingBalance)).toBeLessThanOrEqual(200)
+  })
 })

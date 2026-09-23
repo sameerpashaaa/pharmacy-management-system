@@ -17,6 +17,13 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/lib/hooks/use-toast'
 import {
@@ -55,6 +62,7 @@ export function CustomerForm({ mode, initial, onSavedRedirect }: CustomerFormPro
       pincode: initial?.pincode ?? undefined,
       creditLimit: initial?.creditLimit ?? 0,
       creditDays: initial?.creditDays ?? 0,
+      customerType: initial?.customerType ?? 'RETAIL',
       notes: initial?.notes ?? undefined,
       isActive: initial?.isActive ?? true,
     },
@@ -70,9 +78,11 @@ export function CustomerForm({ mode, initial, onSavedRedirect }: CustomerFormPro
   } = form
 
   const isActive = watch('isActive')
+  const customerType = watch('customerType')
 
   useEffect(() => {
     register('isActive')
+    register('customerType')
   }, [register])
 
   async function onSubmit(values: CreateCustomerInput) {
@@ -118,6 +128,23 @@ export function CustomerForm({ mode, initial, onSavedRedirect }: CustomerFormPro
                 <Label htmlFor="name">Name *</Label>
                 <Input id="name" {...register('name')} />
                 {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="customerType">Type</Label>
+                <Select
+                  value={customerType ?? 'RETAIL'}
+                  onValueChange={(v) =>
+                    setValue('customerType', v as 'RETAIL' | 'WHOLESALE', { shouldDirty: true })
+                  }
+                >
+                  <SelectTrigger id="customerType">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="RETAIL">Retail</SelectItem>
+                    <SelectItem value="WHOLESALE">Wholesale / B2B</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="gstin">GSTIN</Label>

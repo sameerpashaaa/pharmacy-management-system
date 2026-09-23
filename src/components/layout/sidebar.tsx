@@ -112,6 +112,12 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: 'Sales History', href: ROUTES.SALES, icon: Receipt, permission: 'sales:read' },
       {
+        label: 'Wholesale Invoice',
+        href: ROUTES.SALES_NEW,
+        icon: Truck,
+        permission: 'sales:create',
+      },
+      {
         label: 'Prescriptions',
         href: ROUTES.PRESCRIPTIONS,
         icon: FileText,

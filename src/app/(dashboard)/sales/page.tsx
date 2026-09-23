@@ -1,4 +1,5 @@
-﻿import type { Metadata } from 'next'
+﻿import { Truck } from 'lucide-react'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 
 import type { SalesRow } from '@/components/sales/sales-table'
@@ -54,9 +55,18 @@ export default async function SalesHistoryPage() {
           <h1 className="text-2xl font-bold tracking-tight">Sales History</h1>
           <p className="text-muted-foreground">View all completed sales and invoices</p>
         </div>
-        <Button asChild>
-          <Link href={ROUTES.POS}>New Sale</Link>
-        </Button>
+        <div className="flex gap-2">
+          {session.user.permissions?.includes(PERMISSIONS.SALES_CREATE) && (
+            <Button asChild variant="outline">
+              <Link href={ROUTES.SALES_NEW}>
+                <Truck className="mr-2 h-4 w-4" /> Wholesale Invoice
+              </Link>
+            </Button>
+          )}
+          <Button asChild>
+            <Link href={ROUTES.POS}>New Sale</Link>
+          </Button>
+        </div>
       </div>
       <SalesView initialRows={initialRows} initialPagination={firstPage.pagination} />
     </div>
