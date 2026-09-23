@@ -30,6 +30,7 @@
     "graphify:view": "npm run graphify && node scripts/graphify/view.js",
     "graphify:update": "node scripts/graphify/update.js",
     "graphify:check": "node scripts/graphify/verify-render.js",
+    "cron:eod": "ts-node --compiler-options {\"module\":\"CommonJS\"} scripts/eod-cron.ts",
     "prepare": "husky install"
   },
   "dependencies": {
@@ -63,6 +64,7 @@
     "@tanstack/react-query": "^5.51.23",
     "@tanstack/react-query-devtools": "^5.51.23",
     "@tanstack/react-table": "^8.19.3",
+    "@types/node-cron": "^3.0.11",
     "axios": "^1.7.3",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.0",
@@ -77,6 +79,7 @@
     "next": "14.2.5",
     "next-auth": "^4.24.7",
     "next-themes": "^0.3.0",
+    "node-cron": "^4.6.0",
     "nodemailer": "^6.9.14",
     "papaparse": "^5.7.0",
     "qrcode": "^1.5.4",

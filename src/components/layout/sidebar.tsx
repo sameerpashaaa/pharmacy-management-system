@@ -28,6 +28,7 @@ import {
   MapPin,
   Building,
   Grid,
+  MessageSquare,
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -185,6 +186,12 @@ const NAV_ITEMS: NavItem[] = [
             href: ROUTES.SETTINGS_ORGANIZATION,
             icon: Building,
             permission: 'organization:update',
+          },
+          {
+            label: 'WhatsApp',
+            href: ROUTES.SETTINGS_WHATSAPP,
+            icon: MessageSquare,
+            permission: 'settings:manage',
           },
         ],
       },

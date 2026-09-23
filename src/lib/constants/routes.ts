@@ -108,6 +108,7 @@ export const ROUTES = {
   SETTINGS: '/settings',
   SETTINGS_ORGANIZATION: '/settings/organization',
   SETTINGS_GENERAL: '/settings/general',
+  SETTINGS_WHATSAPP: '/settings/whatsapp',
 
   // Store / Rack Management
   STORE: '/store',
