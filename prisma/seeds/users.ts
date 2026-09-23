@@ -41,6 +41,9 @@ export async function seedUsers(prisma: PrismaClient) {
 
     const user = await prisma.user.upsert({
       where: { email: u.email },
+      // On re-seeds, keep an existing user's mustChangePassword flag if they
+      // already cleared it (idempotent seed). On first creation, force the
+      // change so the well-known seed credentials never become a backdoor.
       update: {},
       create: {
         name: u.name,
@@ -48,6 +51,7 @@ export async function seedUsers(prisma: PrismaClient) {
         password: hashedPassword,
         isActive: true,
         branchId: branch?.id,
+        mustChangePassword: true,
       },
     })
 

@@ -15,6 +15,7 @@ export interface AuthenticatedUserPayload {
   roles: string[]
   branchId: string | null
   mfaVerified: boolean
+  mustChangePassword: boolean
 }
 
 type PasswordStepResult =
@@ -84,13 +85,14 @@ function buildPayload(
     roles,
     branchId: user.branchId,
     mfaVerified,
+    mustChangePassword: user.mustChangePassword,
   })
 }
 
 /**
  * Step 1 of login: verifies credentials (with the existing lockout behavior).
- * Owner accounts with MFA enabled do NOT receive a session payload here —
- * they receive a short-lived MFA-pending credential instead.
+ * Any account with MFA enabled does NOT receive a session payload here —
+ * it receives a short-lived MFA-pending credential instead.
  */
 export async function verifyPasswordStep(
   email: string,
@@ -118,10 +120,7 @@ export async function verifyPasswordStep(
     throw new Error('Invalid email or password')
   }
 
-  const roles = user.userRoles.map((ur) => ur.role.name)
-  const isOwner = roles.includes('owner')
-
-  if (isOwner && user.mfaEnabled) {
+  if (user.mfaEnabled) {
     const mfaToken = await createMfaPendingToken(user.id)
     return { status: 'mfa_required', mfaToken, userId: user.id }
   }
@@ -149,8 +148,7 @@ export async function completeMfaChallenge(
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     throw new Error('Account temporarily locked due to too many failed attempts')
   }
-  const roles = user.userRoles.map((ur) => ur.role.name)
-  if (!roles.includes('owner') || !user.mfaEnabled || !user.totpSecret) {
+  if (!user.mfaEnabled || !user.totpSecret) {
     throw new Error('Invalid or expired MFA session')
   }
 

@@ -20,6 +20,63 @@ export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100
 }
 
+/**
+ * Loose-tab stock math.
+ *
+ * Pharmacy inventory is recorded in whole strips (the unit of purchase).
+ * When a customer buys loose tablets we open one additional strip, so:
+ *
+ *   stripsToDeduct = quantity + (looseUnits > 0 ? 1 : 0)
+ *   billableQuantity = quantity + looseUnits / tabsPerStrip
+ *
+ * The pricing layer bills by `billableQuantity` (passed to
+ * `computeItemPricing`) so the customer pays the pro-rata tab price for
+ * the loose portion. The inventory layer deducts `stripsToDeduct` so the
+ * warehouse loses exactly the strips it would have to open.
+ */
+export interface LooseUnitBreakdown {
+  /** Whole strips to deduct from Inventory.availableQuantity. */
+  stripsToDeduct: number
+  /** Strip-equivalents for pricing (handed to computeItemPricing). */
+  billableQuantity: number
+  /** Tabs represented by this line — quantity*tabsPerStrip + looseUnits. */
+  totalBaseQty: number
+}
+
+/**
+ * Compute the stock/pricing breakdown for a POS line.
+ *
+ * Returns null when the inputs are invalid for loose-tab dispensing (used by
+ * both the UI preview and the server-side guard so they agree).
+ */
+export function computeLooseUnitBreakdown(args: {
+  quantity: number
+  looseUnits: number
+  tabsPerStrip: number | null
+}): LooseUnitBreakdown | null {
+  const { quantity, looseUnits } = args
+  const tabsPerStrip = args.tabsPerStrip ?? null
+
+  if (!Number.isFinite(quantity) || !Number.isFinite(looseUnits)) return null
+  if (quantity < 0 || looseUnits < 0) return null
+  if (quantity <= 0 && looseUnits <= 0) return null
+  if (looseUnits === 0) {
+    return {
+      stripsToDeduct: quantity,
+      billableQuantity: quantity,
+      totalBaseQty: quantity * (tabsPerStrip ?? 1),
+    }
+  }
+  // Loose tabs requested.
+  if (!tabsPerStrip || tabsPerStrip < 2) return null
+  if (looseUnits >= tabsPerStrip) return null
+  return {
+    stripsToDeduct: quantity + 1,
+    billableQuantity: quantity + looseUnits / tabsPerStrip,
+    totalBaseQty: quantity * tabsPerStrip + looseUnits,
+  }
+}
+
 export interface PricingProductInput {
   mrp: number
   gstRate: number
@@ -29,12 +86,21 @@ export interface PricingProductInput {
   isGstExempt: boolean
 }
 
+export type TaxMode = 'INTRASTATE' | 'INTERSTATE'
+
 export interface ItemPricingInput extends PricingProductInput {
   quantity: number
   /** 0..100, applied on the MRP (gross) value. Default 0. */
   discountPercent?: number
   /** `gst.tax_inclusive` — are stored prices inclusive of GST? */
   taxInclusive: boolean
+  /**
+   * Which GST split to use for this line.
+   *  - INTRASTATE (default): cgst + sgst from the product's stored rates.
+   *  - INTERSTATE: full igst rate applied as a single component.
+   * Driven by branch.state vs customer.state at sale time.
+   */
+  taxMode?: TaxMode
 }
 
 export interface ItemPricingRow {
@@ -95,10 +161,11 @@ export function computeItemPricing(input: ItemPricingInput): ItemPricingRow {
   const lineAmount = round2(grossAmount - discountAmount)
 
   const exempt = input.isGstExempt
-  const cgstPercent = exempt ? 0 : input.cgstRate
-  const sgstPercent = exempt ? 0 : input.sgstRate
-  const igstPercent = exempt ? 0 : 0
-  const taxPercent = exempt ? 0 : input.cgstRate + input.sgstRate
+  const taxMode: TaxMode = input.taxMode ?? 'INTRASTATE'
+  const cgstPercent = exempt || taxMode === 'INTERSTATE' ? 0 : input.cgstRate
+  const sgstPercent = exempt || taxMode === 'INTERSTATE' ? 0 : input.sgstRate
+  const igstPercent = exempt ? 0 : taxMode === 'INTERSTATE' ? input.gstRate : 0
+  const taxPercent = exempt ? 0 : input.gstRate
 
   if (exempt || taxPercent === 0) {
     return {
@@ -121,13 +188,24 @@ export function computeItemPricing(input: ItemPricingInput): ItemPricingRow {
     }
   }
 
+  // Compute the split components for the chosen tax mode.
+  const splitInclusive = (taxable: number) => {
+    const cgst = round2((taxable * cgstPercent) / 100)
+    const sgst = round2((taxable * sgstPercent) / 100)
+    const igst = round2((taxable * igstPercent) / 100)
+    return {
+      cgstAmount: cgst,
+      sgstAmount: sgst,
+      igstAmount: igst,
+      // Total tax = full rate applied once (intra = cgst+sgst = gstRate; inter = igst = gstRate).
+      taxAmount: round2(cgst + sgst + igst),
+    }
+  }
+
   if (input.taxInclusive) {
     // MRP includes GST. Back out the taxable base and the embedded tax.
     const taxableAmount = round2(lineAmount / (1 + taxPercent / 100))
-    const cgstAmount = round2((taxableAmount * cgstPercent) / 100)
-    const sgstAmount = round2((taxableAmount * sgstPercent) / 100)
-    const igstAmount = round2((taxableAmount * igstPercent) / 100)
-    const taxAmount = round2(cgstAmount + sgstAmount) // intra-state
+    const { cgstAmount, sgstAmount, igstAmount, taxAmount } = splitInclusive(taxableAmount)
     return {
       quantity,
       unitPrice,
@@ -150,10 +228,7 @@ export function computeItemPricing(input: ItemPricingInput): ItemPricingRow {
 
   // GST exclusive (default): tax is added on top of the discounted value.
   const taxableAmount = round2(lineAmount)
-  const cgstAmount = round2((taxableAmount * cgstPercent) / 100)
-  const sgstAmount = round2((taxableAmount * sgstPercent) / 100)
-  const igstAmount = round2((taxableAmount * igstPercent) / 100)
-  const taxAmount = round2(cgstAmount + sgstAmount)
+  const { cgstAmount, sgstAmount, igstAmount, taxAmount } = splitInclusive(taxableAmount)
   return {
     quantity,
     unitPrice,

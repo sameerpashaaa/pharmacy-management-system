@@ -229,7 +229,8 @@ export function PurchaseReturnForm({ initialPurchase }: PurchaseReturnFormProps)
         items: activeItems.map((item) => ({
           purchaseItemId: item.purchaseItemId,
           quantity: item.quantity,
-          unitCost: item.unitCost,
+          // unitCost intentionally omitted — server prices the return from the
+          // PurchaseItem.unitCost captured at goods receipt.
           reason: item.reason,
           batchId: item.batchId,
         })),

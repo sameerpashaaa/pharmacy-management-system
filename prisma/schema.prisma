@@ -563,6 +563,7 @@ enum MovementType {
   RETURN_OUT // Supplier return
   TRANSFER // Branch transfer
   WRITE_OFF // Expired/damaged write-off
+  QUARANTINE // Customer return held out of sellable stock (batch blocked)
 }
 
 model StockAdjustment {
@@ -808,6 +809,12 @@ model Payment {
   purchaseId  String?
   method      PaymentMethod
   amount      Decimal       @db.Decimal(12, 2)
+  // Lifecycle of this payment RECORD. Original amounts are never mutated:
+  // a cancelled sale marks its payments VOIDED (amounts kept for audit) and
+  // records money returned to the customer as separate REFUND rows.
+  status      PaymentRecordStatus @default(ACTIVE)
+  voidedAt    DateTime?
+  voidReason  String?
   reference   String? // UPI ref, card last 4, cheque number
   notes       String?
   paymentDate DateTime      @default(now())
@@ -817,7 +824,16 @@ model Payment {
   customer Customer? @relation(fields: [customerId], references: [id])
   supplier Supplier? @relation(fields: [supplierId], references: [id])
 
+  @@index([saleId])
+  @@index([customerId])
+  @@index([supplierId])
   @@map("payments")
+}
+
+enum PaymentRecordStatus {
+  ACTIVE // Money received/owed as recorded
+  VOIDED // Belonged to a cancelled sale — kept for audit, excluded from money sums
+  REFUND // Money returned to a customer (cancellation or return refund)
 }
 
 enum PaymentMethod {
@@ -862,6 +878,7 @@ model Prescription {
   status             PrescriptionStatus @default(PENDING)
   approvedById       String?
   approvedAt         DateTime?
+  dispensedAt        DateTime?
   rejectionReason    String?
   customerId         String?
   branchId           String
@@ -953,6 +970,7 @@ model PurchaseItem {
   batchId           String?
   orderedQuantity   Int
   receivedQuantity  Int       @default(0)
+  returnedQuantity  Int       @default(0) // Total units already returned to supplier; capped against receivedQuantity
   freeQuantity      Int       @default(0)
   unitCost          Decimal   @db.Decimal(12, 2)
   mrp               Decimal   @db.Decimal(12, 2)

@@ -1,4 +1,4 @@
-import { computeItemPricing, computeSaleTotals, round2 } from '@/lib/sales/pricing'
+import { computeItemPricing, computeLooseUnitBreakdown, computeSaleTotals, round2 } from '@/lib/sales/pricing'
 
 describe('round2', () => {
   it('rounds to 2 decimal places', () => {
@@ -146,5 +146,107 @@ describe('computeSaleTotals', () => {
     const totals = computeSaleTotals([d], { taxInclusive: false, roundOffTotal: false })
     expect(totals.discountAmount).toBe(10)
     expect(totals.discountPercent).toBe(10)
+  })
+})
+
+describe('computeLooseUnitBreakdown', () => {
+  it('whole-strip line deducts only the strip count', () => {
+    expect(
+      computeLooseUnitBreakdown({ quantity: 3, looseUnits: 0, tabsPerStrip: 10 })
+    ).toEqual({ stripsToDeduct: 3, billableQuantity: 3, totalBaseQty: 30 })
+  })
+
+  it('loose tabs open one extra strip and price pro-rata', () => {
+    expect(
+      computeLooseUnitBreakdown({ quantity: 1, looseUnits: 3, tabsPerStrip: 10 })
+    ).toEqual({
+      stripsToDeduct: 2,
+      billableQuantity: 1.3,
+      totalBaseQty: 13,
+    })
+  })
+
+  it('non-tab products cannot dispense loose units', () => {
+    expect(
+      computeLooseUnitBreakdown({ quantity: 1, looseUnits: 1, tabsPerStrip: null })
+    ).toBeNull()
+    expect(
+      computeLooseUnitBreakdown({ quantity: 1, looseUnits: 1, tabsPerStrip: 1 })
+    ).toBeNull()
+  })
+
+  it('loose units must be 0..tabsPerStrip-1', () => {
+    expect(
+      computeLooseUnitBreakdown({ quantity: 1, looseUnits: 10, tabsPerStrip: 10 })
+    ).toBeNull()
+    expect(
+      computeLooseUnitBreakdown({ quantity: 1, looseUnits: -1, tabsPerStrip: 10 })
+    ).toBeNull()
+  })
+
+  it('empty lines are rejected', () => {
+    expect(
+      computeLooseUnitBreakdown({ quantity: 0, looseUnits: 0, tabsPerStrip: 10 })
+    ).toBeNull()
+  })
+})
+
+describe('computeItemPricing — taxMode (H8)', () => {
+  const base = {
+    mrp: 100,
+    gstRate: 18,
+    cgstRate: 9,
+    sgstRate: 9,
+    igstRate: 18,
+    isGstExempt: false,
+    taxInclusive: false,
+  }
+
+  it('intra-state charges cgst + sgst (H8 default)', () => {
+    const line = computeItemPricing({ ...base, quantity: 1 })
+    expect(line.cgstPercent).toBe(9)
+    expect(line.sgstPercent).toBe(9)
+    expect(line.igstPercent).toBe(0)
+    expect(line.cgstAmount).toBe(9)
+    expect(line.sgstAmount).toBe(9)
+    expect(line.igstAmount).toBe(0)
+    expect(line.taxAmount).toBe(18)
+  })
+
+  it('interstate charges a single igst component (H8)', () => {
+    const line = computeItemPricing({ ...base, quantity: 1, taxMode: 'INTERSTATE' })
+    expect(line.cgstPercent).toBe(0)
+    expect(line.sgstPercent).toBe(0)
+    expect(line.igstPercent).toBe(18)
+    expect(line.cgstAmount).toBe(0)
+    expect(line.sgstAmount).toBe(0)
+    expect(line.igstAmount).toBe(18)
+    expect(line.taxAmount).toBe(18)
+  })
+
+  it('interstate + GST exempt still produces zero tax', () => {
+    const line = computeItemPricing({
+      ...base,
+      quantity: 1,
+      taxMode: 'INTERSTATE',
+      isGstExempt: true,
+    })
+    expect(line.cgstAmount + line.sgstAmount + line.igstAmount).toBe(0)
+    expect(line.taxAmount).toBe(0)
+  })
+
+  it('interstate + tax-inclusive back-outs the embedded IGST correctly', () => {
+    const line = computeItemPricing({
+      ...base,
+      quantity: 1,
+      taxMode: 'INTERSTATE',
+      taxInclusive: true,
+    })
+    // 100 includes 18% IGST → taxable = 100/1.18 = 84.75 (rounded)
+    expect(line.taxableAmount).toBeCloseTo(84.75, 2)
+    expect(line.igstAmount).toBeCloseTo(15.26, 2)
+    expect(line.cgstAmount).toBe(0)
+    expect(line.sgstAmount).toBe(0)
+    expect(line.taxAmount).toBeCloseTo(15.26, 2)
   })
 })

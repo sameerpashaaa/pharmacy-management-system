@@ -134,7 +134,11 @@ export async function getFinanceSummary(
           ...(Object.keys(dateRangeWhere(query)).length
             ? { paymentDate: dateRangeWhere(query) }
             : {}),
+          // Only ACTIVE non-credit receipts represent money actually taken.
+          // VOIDED payments are canceled sale artifacts; REFUND rows are
+          // money returned (negative) and would otherwise inflate cash.
           method: { not: 'CREDIT' },
+          status: 'ACTIVE',
           supplierId: null,
           purchaseId: null,
         },

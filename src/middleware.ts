@@ -33,10 +33,10 @@ export const config = {
   matcher: [
     /*
      * Match all request paths EXCEPT:
-     * - /login, /register, /reset-password (auth pages)
+     * - /login, /register, /forgot-password, /reset-password (auth pages)
      * - /api/auth (NextAuth API)
      * - /_next/static, /_next/image, /favicon.ico (static files)
      */
-    '/((?!login|register|reset-password|api/auth|_next/static|_next/image|favicon.ico|public).*)',
+    '/((?!login|register|forgot-password|reset-password|api/auth|_next/static|_next/image|favicon.ico|public).*)',
   ],
 }

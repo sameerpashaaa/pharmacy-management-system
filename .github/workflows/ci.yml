@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [pharmacare-phase2]
+    branches: [master, 'arena/**']
   pull_request:
-    branches: [pharmacare-phase2]
+    branches: [master]
 
 jobs:
   ci:
@@ -56,8 +56,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Unit tests
-        run: npm run test -- --passWithNoTests
+      # `npm run test` runs BOTH projects: unit (mocked Prisma) and
+      # integration (real PostgreSQL service above). No --passWithNoTests:
+      # a missing/empty suite must fail CI, not silently pass.
+      - name: Unit + integration tests
+        run: npm run test
 
       - name: Build
         run: npm run build

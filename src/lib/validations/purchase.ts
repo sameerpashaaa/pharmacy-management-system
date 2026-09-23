@@ -227,7 +227,10 @@ export const supplierPaymentSchema = z.object({
 export const purchaseReturnItemSchema = z.object({
   purchaseItemId: z.string().min(1, 'Purchase item is required'),
   quantity: z.number().int().positive('Return quantity must be positive'),
-  unitCost: z.number().min(0),
+  // unitCost is intentionally NOT accepted from the client. The server prices
+  // the return from PurchaseItem.unitCost captured at the time the goods were
+  // received — sending one would let the client over-credit a supplier by
+  // inflating the cost, so we just ignore it if present.
   reason: z.string().min(1, 'Return reason is required').max(500),
   batchId: z.string().optional(),
 })

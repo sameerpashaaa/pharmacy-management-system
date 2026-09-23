@@ -1,0 +1,18 @@
+import type { Metadata } from 'next'
+import { Suspense } from 'react'
+
+import { ForgotPasswordForm } from '@/components/auth/forgot-password-form'
+
+export const metadata: Metadata = {
+  title: 'Forgot password',
+}
+
+export default function ForgotPasswordPage() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 p-4">
+      <Suspense>
+        <ForgotPasswordForm />
+      </Suspense>
+    </main>
+  )
+}

@@ -48,6 +48,7 @@ import { postGstTransactionForSale } from '@/lib/finance/gst-service'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
 import {
   computeItemPricing,
+  computeLooseUnitBreakdown,
   computeSaleTotals,
   round2,
   type ItemPricingRow,
@@ -660,6 +661,24 @@ export async function createSale(
           customerId = created.id
         }
 
+        // H8 — branch.state for source-of-supply.
+        const branchState = branch.state ?? null
+        // H9 + H8 — customer details for credit-limit and state matching.
+        let customerCreditLimit: Prisma.Decimal | null = null
+        let customerOutstanding: Prisma.Decimal | null = null
+        let customerState: string | null = null
+        if (customerId) {
+          const c = await tx.customer.findUnique({
+            where: { id: customerId },
+            select: { creditLimit: true, outstandingBalance: true, state: true },
+          })
+          if (c) {
+            customerCreditLimit = c.creditLimit
+            customerOutstanding = c.outstandingBalance
+            customerState = c.state ?? null
+          }
+        }
+
         // ─── Per line: price, allocate stock, deduct with CAS ────
         const pricingLines: ItemPricingRow[] = []
         const saleItemInputs: Prisma.SaleItemCreateWithoutSaleInput[] = []
@@ -682,24 +701,31 @@ export async function createSale(
         }
 
         for (const { product, input } of resolved) {
+          const tabsPerStrip = product.tabsPerStrip ?? null
+          const breakdown = computeLooseUnitBreakdown({
+            quantity: input.quantity,
+            looseUnits: input.looseUnits ?? 0,
+            tabsPerStrip,
+          })
+          if (!breakdown) {
+            const reason =
+              (input.looseUnits ?? 0) > 0 && (!tabsPerStrip || tabsPerStrip < 2)
+                ? 'product is not packaged as tabs'
+                : (input.looseUnits ?? 0) >= (tabsPerStrip ?? 1)
+                  ? `loose units must be 0..${(tabsPerStrip ?? 1) - 1}`
+                  : 'quantity must be positive'
+            throw new Error(`Invalid loose-tab line for ${product.name}: ${reason}`)
+          }
+          const { stripsToDeduct, billableQuantity, totalBaseQty } = breakdown
           const quantity = input.quantity
-          // Inventory is accounted in sale units (strips/bottles). Loose-unit
-          // (tablet-level) dispensing would require base-unit inventory and is
-          // not supported: fail closed instead of mis-deducting stock.
-          if ((input.looseUnits ?? 0) > 0) {
-            throw new Error(`Loose-unit dispensing is not supported for ${product.name}`)
-          }
-          const totalBaseQty = quantity
-          const billableQuantity = quantity
-          if (totalBaseQty <= 0) {
-            throw new Error(`Quantity must be positive for ${product.name}`)
-          }
+          const looseUnits = input.looseUnits ?? 0
+
           const inventory = await tx.inventory.findUnique({
             where: { productId_branchId: { productId: product.id, branchId: branch.id } },
           })
           if (!inventory)
             throw new Error(`Insufficient available stock: ${product.name} (available 0)`)
-          if (inventory.availableQuantity < totalBaseQty) {
+          if (inventory.availableQuantity < stripsToDeduct) {
             throw new Error(
               `Insufficient available stock: ${product.name} (available ${inventory.availableQuantity})`
             )
@@ -768,30 +794,30 @@ export async function createSale(
               )
             }
             const pinnedFree = pinned.quantity - pinned.reservedQuantity - pinned.soldQuantity
-            if (pinnedFree < totalBaseQty) {
+            if (pinnedFree < stripsToDeduct) {
               throw new Error(
-                `Insufficient stock in selected batch ${pinned.batchNumber}: requested ${totalBaseQty}, available ${pinnedFree} (${product.name})`
+                `Insufficient stock in selected batch ${pinned.batchNumber}: requested ${stripsToDeduct}, available ${pinnedFree} (${product.name})`
               )
             }
             allocation = {
               status: 'success',
-              requestedQuantity: totalBaseQty,
-              allocatedQuantity: totalBaseQty,
+              requestedQuantity: stripsToDeduct,
+              allocatedQuantity: stripsToDeduct,
               allocations: [
                 {
                   batchId: pinned.id,
                   batchNumber: pinned.batchNumber,
                   expiryDate: pinned.expiryDate,
-                  allocatedQuantity: totalBaseQty,
+                  allocatedQuantity: stripsToDeduct,
                   availableQuantityBefore: pinnedFree,
-                  remainingQuantity: pinnedFree - totalBaseQty,
+                  remainingQuantity: pinnedFree - stripsToDeduct,
                 },
               ],
             }
           } else {
             allocation = settings.fefoEnabled
-              ? allocateFefo(filterEligibleBatches(batchRows as FefoBatchCandidate[]), totalBaseQty)
-              : allocateByCreationDate(batchRows, totalBaseQty)
+              ? allocateFefo(filterEligibleBatches(batchRows as FefoBatchCandidate[]), stripsToDeduct)
+              : allocateByCreationDate(batchRows, stripsToDeduct)
           }
 
           if (allocation.status !== 'success') {
@@ -907,8 +933,10 @@ export async function createSale(
           }
 
           // Aggregate product-branch inventory deduction (CAS by updatedAt).
-          const afterTotal = inventory.totalQuantity - totalBaseQty
-          const afterAvailable = inventory.availableQuantity - totalBaseQty
+          // Inventory is tracked in whole strips; loose tabs open one extra
+          // strip. stripsToDeduct is what the bin actually loses.
+          const afterTotal = inventory.totalQuantity - stripsToDeduct
+          const afterAvailable = inventory.availableQuantity - stripsToDeduct
           if (afterAvailable < 0) {
             throw new Error('Conflict: stock changed concurrently, please retry')
           }
@@ -923,12 +951,35 @@ export async function createSale(
             inventoryId: inventory.id,
             quantityBefore: inventory.totalQuantity,
             quantityAfter: afterTotal,
-            quantity: -totalBaseQty,
+            quantity: -stripsToDeduct,
           })
+
+          // H7 — price from the allocated batches (printed MRP). When a
+          // single batch fulfils the line we bill its exact MRP; when a line
+          // splits across multiple batches we use a strip-weighted average so
+          // the line total reconciles to the per-batch SaleItemBatch rows
+          // recorded below.
+          const effectiveMrp = (() => {
+            const totalQty = itemBatchMoves.reduce((s, m) => s + m.quantity, 0)
+            if (totalQty <= 0) return Number(product.mrp)
+            const weighted = itemBatchMoves.reduce(
+              (s, m) => s + m.unitPrice * m.quantity,
+              0
+            )
+            return weighted / totalQty
+          })()
+
+          // H8 — interstate vs intra-state decision. Falls back to intra when
+          // either side is missing a configured state, so existing one-branch
+          // deployments keep working unchanged.
+          const taxMode: 'INTRASTATE' | 'INTERSTATE' =
+            customerState && branchState && customerState !== branchState
+              ? 'INTERSTATE'
+              : 'INTRASTATE'
 
           const pricing = computeItemPricing({
             quantity: billableQuantity,
-            mrp: Number(product.mrp),
+            mrp: effectiveMrp,
             gstRate: Number(product.gstRate),
             cgstRate: Number(product.cgstRate),
             sgstRate: Number(product.sgstRate),
@@ -936,17 +987,22 @@ export async function createSale(
             isGstExempt: product.isGstExempt,
             discountPercent: input.discountPercent ?? 0,
             taxInclusive: settings.taxInclusive,
+            taxMode,
           })
           pricingLines.push(pricing)
 
+          // billedUnits = billableQuantity (strip-equivalents incl. loose
+          // tabs pro-rated to a strip) so the invoice shows what the customer
+          // paid for. quantity remains whole strips; looseUnits captures the
+          // broken-strip portion in tabs.
           saleItemInputs.push({
             product: { connect: { id: product.id } },
             productName: product.name,
             productSku: product.sku,
             quantity,
-            billedUnits: quantity,
-            looseUnits: 0,
-            totalBaseQty: quantity,
+            billedUnits: Math.round(billableQuantity * 100) / 100,
+            looseUnits,
+            totalBaseQty,
             unitPrice: pricing.unitPrice,
             discountPercent: pricing.discountPercent,
             discountAmount: pricing.discountAmount,
@@ -966,6 +1022,33 @@ export async function createSale(
           taxInclusive: settings.taxInclusive,
           roundOffTotal: settings.roundOffTotal,
         })
+
+        // ─── H9 — Credit-limit enforcement ───────────────────────
+        // Reject when this sale would push the customer over their configured
+        // limit (and the user isn't over-riding via settings.allowCreditSales
+        // override semantics). Only the CREDIT-portion of the bill counts.
+        if (
+          customerId &&
+          customerCreditLimit &&
+          customerCreditLimit.gt(0) &&
+          customerOutstanding
+        ) {
+          const creditPortion = command.payments
+            .filter((p) => p.method === 'CREDIT')
+            .reduce((s, p) => s + p.amount, 0)
+          if (creditPortion > 0) {
+            const projected = Number(
+              customerOutstanding.toString()
+            ) + creditPortion
+            const limit = Number(customerCreditLimit.toString())
+            if (projected - limit > 0.01) {
+              throw new Error(
+                `Credit limit exceeded for customer: outstanding ${customerOutstanding.toFixed(2)} + ` +
+                  `credit sale ${creditPortion.toFixed(2)} = ${projected.toFixed(2)} > limit ${limit.toFixed(2)}`
+              )
+            }
+          }
+        }
 
         // ─── Invoice number: atomic per-branch counter ───────────
         const sequence = branch.invoiceCounter
@@ -1082,6 +1165,23 @@ export async function createSale(
           },
         })
 
+        // Mark the attached prescription as DISPENSED so Schedule H/X cannot
+        // be reused indefinitely. Done inside the same transaction so a sale
+        // rollback also rolls the dispensing decision back.
+        if (command.prescriptionId) {
+          const dispensed = await tx.prescription.updateMany({
+            where: { id: command.prescriptionId, status: 'APPROVED', dispensedAt: null },
+            data: { status: 'DISPENSED', dispensedAt: new Date() },
+          })
+          if (dispensed.count === 0) {
+            // Defensive: if the prescription moved out of APPROVED between
+            // the gate check above and now, fail the whole transaction.
+            throw new Error(
+              `Prescription '${command.prescriptionId}' is no longer available for dispensing`
+            )
+          }
+        }
+
         return sale
       },
       { isolationLevel: 'Serializable', maxWait: 5000, timeout: 15000 }
@@ -1125,7 +1225,11 @@ export async function cancelSale(saleId: string, reason: string, actor: SaleActo
         })
 
         // ─── Restore Inventory & Batches ───────────────────────────
+        // Inverse of createSale: re-credit exactly the strip-equivalent
+        // count we deducted (loose tabs already opened 1 extra strip).
         for (const item of sale.items) {
+          const stripsToRestore =
+            item.quantity + (item.looseUnits > 0 ? 1 : 0)
           const inv = await tx.inventory.findUnique({
             where: { productId_branchId: { productId: item.productId, branchId: sale.branchId } },
           })
@@ -1133,8 +1237,8 @@ export async function cancelSale(saleId: string, reason: string, actor: SaleActo
             await tx.inventory.update({
               where: { id: inv.id },
               data: {
-                totalQuantity: { increment: item.quantity },
-                availableQuantity: { increment: item.quantity },
+                totalQuantity: { increment: stripsToRestore },
+                availableQuantity: { increment: stripsToRestore },
               },
             })
 
@@ -1142,9 +1246,9 @@ export async function cancelSale(saleId: string, reason: string, actor: SaleActo
               data: {
                 inventoryId: inv.id,
                 type: 'RETURN_IN',
-                quantity: item.quantity,
+                quantity: stripsToRestore,
                 quantityBefore: inv.availableQuantity,
-                quantityAfter: inv.availableQuantity + item.quantity,
+                quantityAfter: inv.availableQuantity + stripsToRestore,
                 referenceType: 'SALE',
                 referenceId: sale.id,
                 createdById: actor.id,
@@ -1226,13 +1330,34 @@ export async function cancelSale(saleId: string, reason: string, actor: SaleActo
         }
 
         // ─── Reverse Payments ──────────────────────────────────────
-        // Mark payments as cancelled rather than deleting to preserve audit trail
+        // Audit-safe non-destructive void: original amounts are preserved,
+        // the row is flagged VOIDED (excluded from money sums) and a matching
+        // REFUND row records the money returned to the customer.
         for (const payment of sale.payments) {
+          if (payment.status !== 'ACTIVE') continue
           await tx.payment.update({
             where: { id: payment.id },
             data: {
-              amount: new Prisma.Decimal(0),
-              reference: `VOIDED: ${payment.reference ?? ''}`.trim(),
+              status: 'VOIDED',
+              voidedAt: new Date(),
+              voidReason: reason,
+            },
+          })
+          // Issue a REFUND record only for money that was actually received
+          // (i.e. non-credit methods). CREDIT balances are reversed via the
+          // customer ledger above and never touched the cash drawer.
+          if (payment.method === 'CREDIT') continue
+          if (payment.amount.lte(0)) continue
+          await tx.payment.create({
+            data: {
+              saleId: payment.saleId,
+              customerId: payment.customerId,
+              method: payment.method,
+              amount: payment.amount.neg(),
+              status: 'REFUND',
+              reference: `REFUND_OF:${payment.id}`,
+              notes: `Refund for voided sale ${sale.invoiceNumber}: ${reason}`,
+              paymentDate: new Date(),
             },
           })
         }

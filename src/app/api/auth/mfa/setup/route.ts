@@ -12,15 +12,12 @@ function errStatus(message: string): number {
   return 500
 }
 
-// POST /api/auth/mfa/setup — Owner only. Generates a TOTP secret, stores it
-// encrypted with mfaEnabled=false, and returns QR provisioning data.
+// POST /api/auth/mfa/setup — any authenticated user. Generates a TOTP secret,
+// stores it encrypted with mfaEnabled=false, and returns QR provisioning data.
 // The raw secret is never returned.
 export async function POST() {
   try {
     const sessionUser = await requireAuth()
-    if (!sessionUser.roles.includes('owner')) {
-      throw new Error('Forbidden: MFA enrollment is restricted to Owner accounts')
-    }
 
     const user = await prisma.user.findUnique({ where: { id: sessionUser.id } })
     if (!user || !user.isActive) throw new Error('Unauthorized')
