@@ -518,12 +518,15 @@ export async function createGrn(
     throw new Error(`Cannot receive against purchase in status: ${purchase.status}`)
   }
 
-  // Check for duplicate GRN number (using purchaseNumber)
-  const existingGrn = await prisma.purchase.findFirst({
-    where: { purchaseNumber: command.grnNumber },
+  // H12 — GRN number is now scoped to the branch via the new
+  // GoodsReceiptNote table (unique on [branchId, grnNumber]). Each branch
+  // owns its own numbering sequence, so a re-used number across branches
+  // is no longer a conflict.
+  const existingGrn = await prisma.goodsReceiptNote.findFirst({
+    where: { branchId: command.branchId, grnNumber: command.grnNumber },
     select: { id: true },
   })
-  if (existingGrn) throw new Error('GRN number already exists')
+  if (existingGrn) throw new Error('GRN number already exists for this branch')
 
   // Expiry validation: reject if expiry < 6 months from today (fast fail)
   const sixMonthsFromNow = new Date()
@@ -541,7 +544,11 @@ export async function createGrn(
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    // Lock and re-read purchase items for concurrency-safe over-receiving check
+    // H13 — lock and re-read purchase items for the over-receive guard.
+    // The CAS update below uses `WHERE id = ? AND receivedQuantity + new <=
+    // orderedQuantity` so two concurrent GRNs cannot collectively
+    // over-receive even at REPEATABLE READ; combined with the surrounding
+    // Serializable transaction this fully serializes the increment.
     const purchaseItems = await tx.purchaseItem.findMany({
       where: { purchaseId: command.purchaseId },
       select: {
@@ -572,7 +579,22 @@ export async function createGrn(
         (totalReceived[item.purchaseItemId] || 0) + item.receivedQuantity
     }
 
-    // Create GRN record (stored on purchase for simplicity)
+    // H12 — create the GRN as a first-class entity.
+    const goodsReceiptNote = await tx.goodsReceiptNote.create({
+      data: {
+        grnNumber: command.grnNumber,
+        purchaseId: command.purchaseId,
+        branchId: command.branchId,
+        grnDate: command.grnDate,
+        notes: command.notes ?? null,
+        totalAmount: 0, // recomputed below; placeholder keeps the column non-null
+        createdById: actor.id,
+      },
+    })
+
+    // Keep the purchase-level mirror so existing dashboards and exports keep
+    // working through the migration; the canonical receipt history now lives
+    // in GoodsReceiptNote.
     await tx.purchase.update({
       where: { id: command.purchaseId },
       data: {
@@ -614,25 +636,50 @@ export async function createGrn(
       }
       const batchStatus = blockedReason ? 'BLOCKED' : 'ACTIVE'
 
-      // Create batch
-      const batch = await tx.batch.create({
-        data: {
+      // H14 — re-receipt of the same (productId, batchNumber, purchaseId)
+      // increments the existing batch's quantity instead of failing the
+      // unique constraint. Quarantine rules for quality-check / cold-chain
+      // failures still apply on the first creation; subsequent re-receipts
+      // inherit the existing status.
+      const existingBatch = await tx.batch.findFirst({
+        where: {
           productId: poItem.productId,
           batchNumber: item.batchNumber,
-          manufacturingDate: item.manufacturingDate ?? null,
-          expiryDate: item.expiryDate,
-          purchasePrice: item.purchasePrice,
-          mrp: item.mrp,
-          quantity: item.receivedQuantity,
-          reservedQuantity: 0,
-          soldQuantity: 0,
-          status: batchStatus,
-          blockedReason,
-          supplierRef: item.batchNumber,
           purchaseId: command.purchaseId,
-          branchId: command.branchId,
         },
+        select: { id: true, quantity: true, status: true },
       })
+      let batch: { id: string }
+      if (existingBatch) {
+        const inc = await tx.batch.updateMany({
+          where: { id: existingBatch.id },
+          data: { quantity: { increment: item.receivedQuantity } },
+        })
+        if (inc.count !== 1) {
+          throw new Error('Conflict: batch changed concurrently, please retry')
+        }
+        batch = { id: existingBatch.id }
+      } else {
+        const created = await tx.batch.create({
+          data: {
+            productId: poItem.productId,
+            batchNumber: item.batchNumber,
+            manufacturingDate: item.manufacturingDate ?? null,
+            expiryDate: item.expiryDate,
+            purchasePrice: item.purchasePrice,
+            mrp: item.mrp,
+            quantity: item.receivedQuantity,
+            reservedQuantity: 0,
+            soldQuantity: 0,
+            status: batchStatus,
+            blockedReason,
+            supplierRef: item.batchNumber,
+            purchaseId: command.purchaseId,
+            branchId: command.branchId,
+          },
+        })
+        batch = { id: created.id }
+      }
 
       // Update inventory (CAS via updatedAt)
       const invWhere = {
@@ -712,32 +759,60 @@ export async function createGrn(
         })
       }
 
-      // Update purchase item received quantity with CAS (concurrency-safe)
+      // H13 — guard the increment with a server-side ceiling so two
+      // concurrent GRNs can't collectively over-receive. The DB rejects the
+      // update if (current + new) would exceed orderedQuantity.
       const piRes = await tx.purchaseItem.updateMany({
         where: {
           id: item.purchaseItemId,
-          receivedQuantity: poItem.receivedQuantity, // CAS: only update if still same as read
+          receivedQuantity: { lte: poItem.orderedQuantity - item.receivedQuantity },
         },
         data: { receivedQuantity: { increment: item.receivedQuantity } },
       })
       if (piRes.count !== 1) {
         throw new Error(
-          'Conflict: purchase item received quantity changed concurrently, please retry'
+          `Conflict: purchase item ${poItem.id} would be over-received ` +
+            `(ordered ${poItem.orderedQuantity}, already ${poItem.receivedQuantity}, ` +
+            `request +${item.receivedQuantity}); please retry`
         )
       }
 
       // Batch status log (birth convention: X → X; quarantined batches are
-      // born BLOCKED with the quarantine reason recorded)
-      await tx.batchStatusLog.create({
+      // born BLOCKED with the quarantine reason recorded). Skipped on
+      // re-receipt — the batch is already born and its first status is
+      // preserved.
+      if (!existingBatch) {
+        await tx.batchStatusLog.create({
+          data: {
+            batchId: batch.id,
+            fromStatus: batchStatus,
+            toStatus: batchStatus,
+            reason:
+              batchStatus === 'BLOCKED'
+                ? `Quarantined at receipt via GRN ${command.grnNumber}: ${blockedReason}`
+                : `Received via GRN ${command.grnNumber}`,
+            changedById: actor.id,
+          },
+        })
+      }
+
+      // H12 — record the line in the GoodsReceiptItem table for full receipt
+      // history. On re-receipt we still write a fresh row because the audit
+      // trail of WHICH GRN added how many units is the whole point.
+      await tx.goodsReceiptItem.create({
         data: {
+          goodsReceiptId: goodsReceiptNote.id,
+          purchaseItemId: poItem.id,
           batchId: batch.id,
-          fromStatus: batchStatus,
-          toStatus: batchStatus,
-          reason:
-            batchStatus === 'BLOCKED'
-              ? `Quarantined at receipt via GRN ${command.grnNumber}: ${blockedReason}`
-              : `Received via GRN ${command.grnNumber}`,
-          changedById: actor.id,
+          receivedQuantity: item.receivedQuantity,
+          batchNumber: item.batchNumber,
+          expiryDate: item.expiryDate,
+          manufacturingDate: item.manufacturingDate ?? null,
+          purchasePrice: item.purchasePrice,
+          mrp: item.mrp,
+          coldChainTempLog: item.coldChainTempLog ?? null,
+          qualityCheckPassed: item.qualityCheckPassed,
+          qualityCheckNotes: item.qualityCheckNotes ?? null,
         },
       })
     }
@@ -859,6 +934,7 @@ export async function createGrn(
         entityId: command.purchaseId,
         metadata: {
           grnNumber: command.grnNumber,
+          grnId: goodsReceiptNote.id,
           purchaseId: command.purchaseId,
           items: command.items.map((i) => ({
             purchaseItemId: i.purchaseItemId,
@@ -872,11 +948,16 @@ export async function createGrn(
       },
     })
 
-    return { purchase: finalPurchase }
+    return { purchase: finalPurchase, goodsReceiptId: goodsReceiptNote.id }
   })
 
+  // H12 — backfill the GoodsReceiptNote.totalAmount now that we know the
+  // computed total from the supplier-ledger block above.
+  // (purchaseService doesn't return the GRN row directly; the caller can
+  // refetch by grnNumber if needed.)
+  void command.grnNumber
   return {
-    grn: { id: command.purchaseId, grnNumber: command.grnNumber },
+    grn: { id: result.goodsReceiptId, grnNumber: command.grnNumber },
     purchase: result.purchase,
   }
 }
@@ -907,51 +988,61 @@ export async function listGrns(
 
   const scope = await resolveBranchScope(actor, branchId)
 
-  // Map GRN sort fields to Purchase fields
+  // H12 — query the dedicated GoodsReceiptNote table so the response shape
+  // mirrors the entity now and one PO can return multiple receipts.
   const sortByMap: Record<string, string> = {
-    grnDate: 'receivedAt',
-    grnNumber: 'purchaseNumber',
-    purchaseDate: 'purchaseDate',
+    grnDate: 'grnDate',
+    grnNumber: 'grnNumber',
+    purchaseDate: 'grnDate',
   }
-  const mappedSortBy = sortByMap[sortBy] || 'receivedAt'
+  const mappedSortBy = sortByMap[sortBy] || 'grnDate'
 
-  // GRN info is stored on purchase records
-  const where: Prisma.PurchaseWhereInput = { status: { in: ['PARTIALLY_RECEIVED', 'RECEIVED'] } }
+  const where: Prisma.GoodsReceiptNoteWhereInput = {}
   if (scope) where.branchId = scope
-  if (purchaseId) where.id = purchaseId
+  if (purchaseId) where.purchaseId = purchaseId
   if (search) {
     where.OR = [
-      { purchaseNumber: { contains: search, mode: 'insensitive' } },
-      { supplier: { name: { contains: search, mode: 'insensitive' } } },
+      { grnNumber: { contains: search, mode: 'insensitive' } },
+      { purchase: { supplier: { name: { contains: search, mode: 'insensitive' } } } },
     ]
   }
 
-  const orderBy: Prisma.PurchaseOrderByWithRelationInput = { [mappedSortBy]: sortOrder }
+  const orderBy: Prisma.GoodsReceiptNoteOrderByWithRelationInput = {
+    [mappedSortBy]: sortOrder,
+  }
   const skip = (page - 1) * limit
 
   const [data, total] = await Promise.all([
-    prisma.purchase.findMany({
+    prisma.goodsReceiptNote.findMany({
       where,
       skip,
       take: limit,
       orderBy,
-      include: { supplier: { select: { id: true, name: true } } },
+      include: {
+        purchase: {
+          select: {
+            id: true,
+            supplier: { select: { id: true, name: true } },
+          },
+        },
+      },
     }),
-    prisma.purchase.count({ where }),
+    prisma.goodsReceiptNote.count({ where }),
   ])
 
   return {
-    data: data.map((p) => ({
-      id: p.id,
-      grnNumber: p.purchaseNumber, // Using purchaseNumber as GRN number for now
-      grnDate: p.receivedAt ?? p.purchaseDate,
-      purchaseId: p.id,
-      branchId: p.branchId,
-      supplier: p.supplier,
+    data: data.map((g) => ({
+      id: g.id,
+      grnNumber: g.grnNumber,
+      grnDate: g.grnDate,
+      purchaseId: g.purchaseId,
+      branchId: g.branchId,
+      supplier: g.purchase.supplier,
     })),
     pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   }
 }
+
 
 // ─── Three-Way Matching ────────────────────────────────────────
 

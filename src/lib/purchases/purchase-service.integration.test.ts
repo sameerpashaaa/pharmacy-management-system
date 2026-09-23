@@ -1236,10 +1236,9 @@ describeDb('Purchase management integration (real Postgres)', () => {
       fx.globalActor
     )
     expect(grns.pagination.total).toBe(1)
-    // GRNs are stored on the purchase record; listGrns surfaces the PO
-    // purchase number as the GRN number (see service implementation).
-    const po = await getPurchase(purchaseId, fx.globalActor)
-    expect(grns.data[0].grnNumber).toBe(po?.purchaseNumber)
+    // H12 — listGrns reads from the GoodsReceiptNote entity now and surfaces
+    // the user-provided grnNumber (no longer aliases the PO purchaseNumber).
+    expect(grns.data[0].grnNumber).toBe('GRN-L1')
     expect(grns.data[0].purchaseId).toBe(purchaseId)
     expect(grns.data[0].branchId).toBe(fx.branchA)
   })
