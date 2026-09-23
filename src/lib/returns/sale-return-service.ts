@@ -4,6 +4,7 @@ import prisma from '@/lib/db/prisma'
 import { runWithRetry } from '@/lib/db/retry'
 import { ensureDefaultLedgers } from '@/lib/finance/coa-seed'
 import { assertBranchAccess } from '@/lib/inventory/branch-access'
+import { GstTxType } from '@prisma/client'
 import type {
   CreateSaleReturnInput,
   CreditNoteQueryParams,
@@ -119,6 +120,7 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
           saleItemId: string
           productId: string
           quantity: number
+          saleItemQty: number
           unitPrice: number
           totalAmount: number
           restockDecision: 'RESTOCK' | 'QUARANTINE' | 'DAMAGE_WRITE_OFF'
@@ -160,6 +162,7 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
             saleItemId: line.saleItemId,
             productId: saleItem.productId,
             quantity: line.quantity,
+            saleItemQty: saleItem.quantity,
             unitPrice: netUnit,
             totalAmount: lineTotal,
             restockDecision,
@@ -199,6 +202,52 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
           },
         })
 
+        // ─── GST reversal (one reverse row per returned sale line) ─────
+        // Mirror the cancelSale pattern: for each processed line, find the
+        // original SALE-side gstTransaction and write a SALE_RETURN row with
+        // negated amounts so GSTR-1 totals and the audit trail stay correct.
+        const saleGst = await tx.gstTransaction.findMany({
+          where: { referenceType: 'SALE', referenceId: input.saleId },
+        })
+        const gstByLine = new Map(saleGst.map((g) => [g.referenceLineId, g]))
+
+        for (const line of processedLines) {
+          const original = gstByLine.get(line.saleItemId)
+          if (!original) continue
+
+          // Pro-rata: refund only the share that this return line represents
+          // out of the original sale line quantity.
+          const ratio = line.quantity / line.saleItemQty
+          const prorate = (n: Prisma.Decimal | number | null | undefined): number => {
+            const v = Number(n ?? 0)
+            return Math.round(v * ratio * 100) / 100
+          }
+
+          await tx.gstTransaction.create({
+            data: {
+              branchId: sale.branchId,
+              type: original.type,
+              referenceType: 'SALE_RETURN',
+              referenceId: saleReturn.id,
+              referenceLineId: original.referenceLineId,
+              invoiceNumber: sale.invoiceNumber,
+              invoiceDate: sale.saleDate,
+              partyGstin: original.partyGstin,
+              partyName: original.partyName,
+              partyState: original.partyState,
+              hsnCode: original.hsnCode,
+              taxableAmount: -prorate(original.taxableAmount),
+              cgstAmount: -prorate(original.cgstAmount),
+              sgstAmount: -prorate(original.sgstAmount),
+              igstAmount: -prorate(original.igstAmount),
+              totalTax: -prorate(original.totalTax),
+              totalAmount: -prorate(original.totalAmount),
+              returnPeriod: original.returnPeriod,
+              isFiled: false,
+            },
+          })
+        }
+
         // 2. Increment returnedQuantity on each SaleItem
         for (const line of processedLines) {
           await tx.saleItem.update({
@@ -210,7 +259,93 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
 
           // 3. Handle Restock
           if (line.restockDecision === 'RESTOCK') {
-            // Re-credit Inventory
+            // Guard: never RESTOCK into a batch that is expired, recalled, or
+            // already blocked. The stock must remain visible for traceability
+            // but unavailable to FEFO. Force the safe disposition instead.
+            let targetBatchId = line.batchId
+            let forceDecision: 'QUARANTINE' | null = null
+            if (targetBatchId) {
+              const batch = await tx.batch.findUnique({ where: { id: targetBatchId } })
+              if (
+                batch &&
+                (batch.expiryDate <= new Date() ||
+                  batch.status === 'EXPIRED' ||
+                  batch.status === 'RECALLED' ||
+                  batch.status === 'BLOCKED')
+              ) {
+                forceDecision = 'QUARANTINE'
+              }
+            }
+
+            if (forceDecision === 'QUARANTINE') {
+              // Fall through to the QUARANTINE branch below by re-pointing
+              // the local decision. Keep targetBatchId so traceability is
+              // preserved on the movement + quarantine block.
+              line.restockDecision = 'QUARANTINE'
+            } else {
+              // Re-credit Inventory
+              const inv = await tx.inventory.upsert({
+                where: {
+                  productId_branchId: {
+                    productId: line.productId,
+                    branchId: sale.branchId,
+                  },
+                },
+                update: {
+                  totalQuantity: { increment: line.quantity },
+                  availableQuantity: { increment: line.quantity },
+                },
+                create: {
+                  productId: line.productId,
+                  branchId: sale.branchId,
+                  totalQuantity: line.quantity,
+                  availableQuantity: line.quantity,
+                },
+              })
+
+              // Record Inventory Movement
+              await tx.inventoryMovement.create({
+                data: {
+                  inventoryId: inv.id,
+                  type: 'RETURN_IN',
+                  quantity: line.quantity,
+                  quantityBefore: inv.totalQuantity - line.quantity,
+                  quantityAfter: inv.totalQuantity,
+                  referenceType: 'SALE_RETURN',
+                  referenceId: saleReturn.id,
+                  batchId: line.batchId,
+                  createdById: actor.id,
+                  notes: `Customer return ${returnNumber} for invoice ${sale.invoiceNumber}`,
+                },
+              })
+
+              // Re-credit Batch if identified
+              if (line.batchId) {
+                const batch = await tx.batch.findUnique({
+                  where: { id: line.batchId },
+                })
+                if (batch) {
+                  const newStatus =
+                    batch.status === 'EXHAUSTED' && batch.expiryDate > new Date()
+                      ? 'ACTIVE'
+                      : batch.status
+
+                  await tx.batch.update({
+                    where: { id: line.batchId },
+                    data: {
+                      quantity: { increment: line.quantity },
+                      soldQuantity: { decrement: line.quantity },
+                      status: newStatus,
+                    },
+                  })
+                }
+              }
+            }
+          } else if (line.restockDecision === 'QUARANTINE') {
+            // QUARANTINE keeps the returned stock visible in Inventory.totalQuantity
+            // (so it isn't silently lost) but excluded from
+            // Inventory.availableQuantity so FEFO never sells it. The batch is
+            // flipped to BLOCKED so no other path can dispense it.
             const inv = await tx.inventory.upsert({
               where: {
                 productId_branchId: {
@@ -220,21 +355,21 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
               },
               update: {
                 totalQuantity: { increment: line.quantity },
-                availableQuantity: { increment: line.quantity },
+                // availableQuantity intentionally NOT incremented.
               },
               create: {
                 productId: line.productId,
                 branchId: sale.branchId,
                 totalQuantity: line.quantity,
-                availableQuantity: line.quantity,
+                // New batch already starts out unavailable.
+                availableQuantity: 0,
               },
             })
 
-            // Record Inventory Movement
             await tx.inventoryMovement.create({
               data: {
                 inventoryId: inv.id,
-                type: 'RETURN_IN',
+                type: 'QUARANTINE',
                 quantity: line.quantity,
                 quantityBefore: inv.totalQuantity - line.quantity,
                 quantityAfter: inv.totalQuantity,
@@ -242,30 +377,15 @@ export async function createSaleReturn(input: CreateSaleReturnInput, actor: Retu
                 referenceId: saleReturn.id,
                 batchId: line.batchId,
                 createdById: actor.id,
-                notes: `Customer return ${returnNumber} for invoice ${sale.invoiceNumber}`,
+                notes: `Quarantined customer return ${returnNumber} for invoice ${sale.invoiceNumber}`,
               },
             })
 
-            // Re-credit Batch if identified
             if (line.batchId) {
-              const batch = await tx.batch.findUnique({
+              await tx.batch.update({
                 where: { id: line.batchId },
+                data: { status: 'BLOCKED' },
               })
-              if (batch) {
-                const newStatus =
-                  batch.status === 'EXHAUSTED' && batch.expiryDate > new Date()
-                    ? 'ACTIVE'
-                    : batch.status
-
-                await tx.batch.update({
-                  where: { id: line.batchId },
-                  data: {
-                    quantity: { increment: line.quantity },
-                    soldQuantity: { decrement: line.quantity },
-                    status: newStatus,
-                  },
-                })
-              }
             }
           } else if (line.restockDecision === 'DAMAGE_WRITE_OFF') {
             const inv = await tx.inventory.findUnique({

@@ -374,13 +374,27 @@ describeDb('Merge verification: compliance + cancellation (real Postgres)', () =
     const voidActor = { id: userAId, branchId: branchA, permissions: ['sales:void'] }
     await cancelSale(sale.id, 'Payment void test', voidActor)
 
-    const paymentsAfter = await prisma.payment.findMany({ where: { saleId: sale.id } })
-    expect(paymentsAfter.length).toBe(2)
+    // Audit-safe cancel preserves original rows (VOIDED) and issues matching
+    // REFUND rows so the cash trail stays correct without losing evidence.
+    const allPayments = await prisma.payment.findMany({
+      where: { saleId: sale.id },
+      orderBy: { createdAt: 'asc' },
+    })
+    const voided = allPayments.filter((p) => p.status === 'VOIDED')
+    const refunds = allPayments.filter((p) => p.status === 'REFUND')
+    expect(voided).toHaveLength(2)
+    expect(refunds).toHaveLength(2)
 
-    // Payments should be zeroed and reference marked as VOIDED
-    for (const p of paymentsAfter) {
-      expect(p.amount.toNumber()).toBe(0)
-      expect(p.reference).toMatch(/^VOIDED:/)
+    // Original amounts preserved on VOIDED rows (no destructive mutation).
+    for (const p of voided) {
+      expect(p.amount.toNumber()).toBeGreaterThan(0)
+      expect(p.voidedAt).not.toBeNull()
+      expect(p.voidReason).toBe('Payment void test')
+    }
+    // Refunds mirror the originals with opposite sign.
+    for (const r of refunds) {
+      expect(r.amount.toNumber()).toBeLessThan(0)
+      expect(r.reference).toMatch(/^REFUND_OF:/)
     }
   })
 

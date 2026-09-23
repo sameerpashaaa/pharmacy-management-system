@@ -54,6 +54,8 @@ export const authOptions: NextAuthOptions = {
         token.roles = (user as { roles?: string[] }).roles ?? []
         token.branchId = (user as { branchId?: string | null }).branchId ?? null
         token.mfaVerified = (user as { mfaVerified?: boolean }).mfaVerified ?? false
+        token.mustChangePassword =
+          (user as { mustChangePassword?: boolean }).mustChangePassword ?? false
       }
 
       // If token has owner or admin role, guarantee ALL permissions
@@ -110,6 +112,7 @@ export const authOptions: NextAuthOptions = {
         session.user.roles = token.roles
         session.user.branchId = token.branchId
         session.user.mfaVerified = token.mfaVerified
+        session.user.mustChangePassword = token.mustChangePassword ?? false
       }
       return session
     },

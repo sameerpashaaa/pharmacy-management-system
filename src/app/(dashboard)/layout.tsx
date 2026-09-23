@@ -19,6 +19,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect(ROUTES.LOGIN)
   }
 
+  // Accounts whose admin-provisioned password has not been changed yet must
+  // not reach the dashboard — they go straight to the forced change screen.
+  if (session.user.mustChangePassword) {
+    redirect(ROUTES.CHANGE_PASSWORD)
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar />

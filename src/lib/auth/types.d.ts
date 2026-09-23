@@ -10,6 +10,7 @@ declare module 'next-auth' {
       roles: string[]
       branchId: string | null
       mfaVerified?: boolean
+      mustChangePassword?: boolean
     }
   }
 
@@ -18,6 +19,7 @@ declare module 'next-auth' {
     roles: string[]
     branchId: string | null
     mfaVerified?: boolean
+    mustChangePassword?: boolean
   }
 }
 
@@ -28,5 +30,6 @@ declare module 'next-auth/jwt' {
     roles: string[]
     branchId: string | null
     mfaVerified?: boolean
+    mustChangePassword?: boolean
   }
 }

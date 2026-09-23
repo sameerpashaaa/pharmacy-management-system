@@ -60,6 +60,8 @@ describe('getPosSettings', () => {
       fefoEnabled: false,
       negativeStock: true,
       taxInclusive: true,
+      // Not seeded in the rows above — falls back to DEFAULT_POS_SETTINGS.
+      lowStockThreshold: DEFAULT_POS_SETTINGS.lowStockThreshold,
     })
   })
 

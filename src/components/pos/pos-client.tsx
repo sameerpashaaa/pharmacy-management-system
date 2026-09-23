@@ -53,7 +53,11 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/lib/hooks/use-toast'
-import { computeItemPricing, computeSaleTotals } from '@/lib/sales/pricing'
+import {
+  computeItemPricing,
+  computeLooseUnitBreakdown,
+  computeSaleTotals,
+} from '@/lib/sales/pricing'
 import type { PosSettings } from '@/lib/settings/settings-service'
 import { cn } from '@/lib/utils/cn'
 import { formatCurrency } from '@/lib/utils/currency'
@@ -509,9 +513,19 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
 
   // ─── Pricing preview ───────────────────────────────────────
   const pricing = useMemo(() => {
-    const lines = cart.map((line) =>
-      computeItemPricing({
-        quantity: line.quantity + line.looseUnits / (line.tabsPerStrip ?? 1),
+    const lines = cart.map((line) => {
+      // Match the server's pricing math exactly via the shared helper so the
+      // client preview and the committed sale always agree.
+      const breakdown = computeLooseUnitBreakdown({
+        quantity: line.quantity,
+        looseUnits: line.looseUnits,
+        tabsPerStrip: line.tabsPerStrip,
+      })
+      const billableQuantity = breakdown
+        ? breakdown.billableQuantity
+        : line.quantity + line.looseUnits / (line.tabsPerStrip ?? 1)
+      return computeItemPricing({
+        quantity: billableQuantity,
         mrp: line.mrp,
         gstRate: line.gstRate,
         cgstRate: line.cgstRate,
@@ -521,7 +535,7 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
         discountPercent: line.discountPercent,
         taxInclusive: config.taxInclusive,
       })
-    )
+    })
     const totals = computeSaleTotals(lines, {
       taxInclusive: config.taxInclusive,
       roundOffTotal: config.roundOffTotal,
@@ -547,11 +561,14 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
         const existing = prev.find((c) => c.productId === p.id)
         if (existing) {
           const tabsPerStrip = existing.tabsPerStrip ?? 1
-          const existingBaseQty = existing.quantity * tabsPerStrip + existing.looseUnits
-          if (existingBaseQty + tabsPerStrip > p.availableQuantity) {
+          // Inventory is in strips; adding 1 more strip brings the deduction
+          // to (existing.quantity + 1) + (existing.looseUnits > 0 ? 1 : 0).
+          const stripsNeeded =
+            existing.quantity + 1 + (existing.looseUnits > 0 ? 1 : 0)
+          if (stripsNeeded > p.availableQuantity) {
             toast.warning(
               'Stock limit reached',
-              `Only ${p.availableQuantity} units of ${p.name} available in stock`
+              `Only ${p.availableQuantity} ${p.unitOfMeasure}(s) of ${p.name} available in stock`
             )
             return prev
           }
@@ -595,17 +612,20 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
         prev.map((c) => {
           if (c.productId !== productId) return c
           const tabsPerStrip = c.tabsPerStrip ?? 1
-          const requestedBaseQty = requestedQuantity * tabsPerStrip + c.looseUnits
+          // Inventory is in whole strips; loose tabs require opening one
+          // extra strip. Compare strip-level deduction to availableQuantity.
+          const stripsNeeded = requestedQuantity + (c.looseUnits > 0 ? 1 : 0)
 
-          if (requestedBaseQty > c.availableQuantity) {
+          if (stripsNeeded > c.availableQuantity) {
             toast.warning(
               'Stock limit exceeded',
-              `Maximum available stock for ${c.name} is ${c.availableQuantity}`
+              `Maximum available stock for ${c.name} is ${c.availableQuantity} ${c.unitOfMeasure}(s)`
             )
+            // Cap quantity to the largest whole-strip count we can give.
+            const maxStrips = Math.max(1, c.availableQuantity - (c.looseUnits > 0 ? 1 : 0))
             return {
               ...c,
-              quantity: Math.max(1, Math.floor(c.availableQuantity / tabsPerStrip)),
-              looseUnits: c.availableQuantity % tabsPerStrip,
+              quantity: maxStrips,
             }
           }
 
@@ -626,8 +646,9 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           if (c.productId !== productId) return c
           const tabsPerStrip = c.tabsPerStrip ?? 1
           const looseUnits = Math.max(0, Math.min(requestedLooseUnits || 0, tabsPerStrip - 1))
-          const totalBaseQty = c.quantity * tabsPerStrip + looseUnits
-          if (totalBaseQty > c.availableQuantity) {
+          // Loose tabs open 1 extra strip in inventory; compare strip-level.
+          const stripsNeeded = c.quantity + (looseUnits > 0 ? 1 : 0)
+          if (stripsNeeded > c.availableQuantity) {
             toast.warning(
               'Stock limit exceeded',
               `Maximum available stock for ${c.name} is ${c.availableQuantity}`
@@ -1510,9 +1531,18 @@ export function PosClient({ user, branches, initialConfig }: PosClientProps) {
           {cart.map((c) => {
             const over = c.discountPercent > config.maxDiscountPercent && !canDiscountOverride
             const tabsPerStrip = c.tabsPerStrip ?? 1
-            const totalBaseQty = c.quantity * tabsPerStrip + c.looseUnits
-            const atMaxStock = totalBaseQty >= c.availableQuantity
-            const billableQuantity = c.quantity + c.looseUnits / tabsPerStrip
+            const breakdown = computeLooseUnitBreakdown({
+              quantity: c.quantity,
+              looseUnits: c.looseUnits,
+              tabsPerStrip: c.tabsPerStrip,
+            })
+            // stripsToDeduct is what the inventory will actually lose.
+            const atMaxStock = breakdown
+              ? breakdown.stripsToDeduct >= c.availableQuantity
+              : c.quantity >= c.availableQuantity
+            const billableQuantity = breakdown
+              ? breakdown.billableQuantity
+              : c.quantity + c.looseUnits / tabsPerStrip
 
             return (
               <div

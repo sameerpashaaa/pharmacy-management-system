@@ -18,14 +18,11 @@ function errStatus(message: string): number {
   return 400
 }
 
-// POST /api/auth/mfa/verify — Owner only. Verifies the first TOTP code and
-// only then enables MFA.
+// POST /api/auth/mfa/verify — any authenticated user. Verifies the first
+// TOTP code and only then enables MFA for the account.
 export async function POST(req: NextRequest) {
   try {
     const sessionUser = await requireAuth()
-    if (!sessionUser.roles.includes('owner')) {
-      throw new Error('Forbidden: MFA enrollment is restricted to Owner accounts')
-    }
 
     const body: unknown = await req.json()
     const data = verifySchema.parse(body)

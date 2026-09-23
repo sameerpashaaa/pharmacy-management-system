@@ -6,7 +6,9 @@ export const ROUTES = {
   // Auth
   LOGIN: '/login',
   LOGOUT: '/logout',
+  FORGOT_PASSWORD: '/forgot-password',
   RESET_PASSWORD: '/reset-password',
+  CHANGE_PASSWORD: '/change-password',
   REGISTER: '/register',
 
   // Dashboard
@@ -122,7 +124,13 @@ export const ROUTES = {
 } as const
 
 // Routes that don't require authentication
-export const PUBLIC_ROUTES = [ROUTES.LOGIN, ROUTES.REGISTER, ROUTES.RESET_PASSWORD, '/api/auth']
+export const PUBLIC_ROUTES = [
+  ROUTES.LOGIN,
+  ROUTES.REGISTER,
+  ROUTES.FORGOT_PASSWORD,
+  ROUTES.RESET_PASSWORD,
+  '/api/auth',
+]
 
 // API base routes
 export const API = {
